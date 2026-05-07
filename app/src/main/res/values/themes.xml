@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose が全てのテーマを担うため XML 側は最小限 -->
+    <style name="Theme.Foldex" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
