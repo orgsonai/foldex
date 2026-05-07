@@ -1,0 +1,80 @@
+# =========================================================
+# Foldex .gitignore
+# =========================================================
+
+# ---- Gradle ----
+.gradle/
+build/
+**/build/
+!**/src/**/build/
+out/
+.gradletasknamecache
+
+# ---- Android ----
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+captures/
+.cxx/
+proguard/
+release/
+*.hprof
+
+# 署名鍵 (絶対にコミットしない)
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+google-services.json
+play-services.json
+
+# ---- IDE: IntelliJ / Android Studio ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.navigation/
+.kotlin/
+
+# ---- IDE: VS Code ----
+.vscode/
+*.code-workspace
+
+# ---- IDE: Fleet ----
+.fleet/
+
+# ---- macOS / Linux / Windows ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+*.swp
+*.swo
+
+# ---- Logs ----
+*.log
+hs_err_pid*
+replay_pid*
+
+# ---- Test outputs ----
+**/test-results/
+**/reports/
+**/jacoco/
+
+# ---- KSP / Kapt 生成物 ----
+**/generated/
+
+# ---- Claude Code 個別設定 ----
+.claude/settings.local.json
+.claude/cache/
+.claude/logs/
+
+# ---- Misc ----
+node_modules/
+*.bak
+*.tmp
+.env
+.env.local
