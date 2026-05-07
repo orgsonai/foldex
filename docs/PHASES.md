@@ -46,24 +46,24 @@
 ## 1. P1 — プロジェクトスケルトン
 
 ### 達成条件
-- [ ] ルートの `settings.gradle.kts` / `build.gradle.kts` が用意されている
-- [ ] `gradle/libs.versions.toml` (Version Catalog) が用意されている
-- [ ] 12モジュールのディレクトリと最小 `build.gradle.kts` が存在する
-  - [ ] `app`
-  - [ ] `core/core-common`
-  - [ ] `core/core-model`
-  - [ ] `core/core-data`
-  - [ ] `storage/storage-local`
-  - [ ] `storage/storage-smb`
-  - [ ] `storage/storage-sftp`
-  - [ ] `storage/storage-ftp`
-  - [ ] `storage/storage-webdav`
-  - [ ] `server`
-  - [ ] `sync`
-- [ ] Hilt の最低限のセットアップ (Application クラス + `@HiltAndroidApp`)
-- [ ] 何も表示しない MainActivity (Compose) が起動する
-- [ ] `./gradlew assembleDebug` が成功する
-- [ ] 依存方向ルール (`CLAUDE.md §4-A`) が守られている (横方向依存なし)
+- [x] ルートの `settings.gradle.kts` / `build.gradle.kts` が用意されている
+- [x] `gradle/libs.versions.toml` (Version Catalog) が用意されている
+- [x] 12モジュールのディレクトリと最小 `build.gradle.kts` が存在する
+  - [x] `app`
+  - [x] `core/core-common`
+  - [x] `core/core-model`
+  - [x] `core/core-data`
+  - [x] `storage/storage-local`
+  - [x] `storage/storage-smb`
+  - [x] `storage/storage-sftp`
+  - [x] `storage/storage-ftp`
+  - [x] `storage/storage-webdav`
+  - [x] `server`
+  - [x] `sync`
+- [x] Hilt の最低限のセットアップ (Application クラス + `@HiltAndroidApp`)
+- [x] 何も表示しない MainActivity (Compose) が起動する
+- [x] `./gradlew assembleDebug` が成功する
+- [x] 依存方向ルール (`CLAUDE.md §4-A`) が守られている (横方向依存なし)
 
 ### スコープ外 (やらない)
 - 実機能の実装 (P2 以降)
