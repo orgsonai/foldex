@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Foldex</string>
+    <string name="storage_access_required">ストレージへのアクセスが必要です</string>
+    <string name="grant_all_files_access">すべてのファイルへのアクセスを許可</string>
+    <string name="pick_folder">フォルダを選択して開く</string>
+    <string name="internal_storage">内部ストレージ</string>
+    <string name="storage">ストレージ</string>
+    <string name="folder_empty">このフォルダは空です</string>
+    <string name="retry">再試行</string>
+    <string name="view_list">リスト表示</string>
+    <string name="view_detailed">詳細表示</string>
+    <string name="view_grid">グリッド表示</string>
+    <string name="navigate_up">上へ</string>
+    <string name="refresh">更新</string>
 </resources>

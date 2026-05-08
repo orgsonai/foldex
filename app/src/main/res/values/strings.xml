@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Foldex</string>
+    <string name="storage_access_required">Storage access is required</string>
+    <string name="grant_all_files_access">Grant All Files Access</string>
+    <string name="pick_folder">Open a Folder</string>
+    <string name="internal_storage">Internal Storage</string>
+    <string name="storage">Storage</string>
+    <string name="folder_empty">This folder is empty</string>
+    <string name="retry">Retry</string>
+    <string name="view_list">List view</string>
+    <string name="view_detailed">Detailed view</string>
+    <string name="view_grid">Grid view</string>
+    <string name="navigate_up">Up</string>
+    <string name="refresh">Refresh</string>
 </resources>

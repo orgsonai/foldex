@@ -84,14 +84,14 @@ docs: P1 達成サマリ
 ## 2. P2 — ローカルファイルブラウザ (read-only)
 
 ### 達成条件
-- [ ] `core-model`: `FileNode` / `FileUri` / `Permissions` / `NodeType` 定義
-- [ ] `core-model`: `StorageProvider` インターフェース定義 (`FOLDEX-HANDOFF.md §5-C`)
-- [ ] `core-common`: `Result<T, E>` 型定義
-- [ ] `storage-local`: read 系のみ実装 (`stat` / `list` / `openInput`)
-- [ ] SAF アクセスの最低限のラッパ (`Android/data` 領域も触れる)
-- [ ] パンくずナビ + ファイル一覧の Compose 画面
-- [ ] List / Detailed / Grid の3表示モード切替
-- [ ] `MANAGE_EXTERNAL_STORAGE` 権限要求フロー (任意取得)
+- [x] `core-model`: `FileNode` / `FileUri` / `Permissions` / `NodeType` 定義
+- [x] `core-model`: `StorageProvider` インターフェース定義 (`FOLDEX-HANDOFF.md §5-C`)
+- [x] `core-common`: `Result<T, E>` 型定義
+- [x] `storage-local`: read 系のみ実装 (`stat` / `list` / `openInput`)
+- [x] SAF アクセスの最低限のラッパ (`Android/data` 領域も触れる)
+- [x] パンくずナビ + ファイル一覧の Compose 画面
+- [x] List / Detailed / Grid の3表示モード切替
+- [x] `MANAGE_EXTERNAL_STORAGE` 権限要求フロー (任意取得)
 
 ### スコープ外
 - 書き込み・削除・リネーム (P3)
