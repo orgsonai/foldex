@@ -1,6 +1,8 @@
 package com.zerotoship.foldex.ui.filebrowser
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,6 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material3.Icon
@@ -22,21 +26,35 @@ import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.NodeType
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FileListItem(node: FileNode, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun FileListItem(
+    node: FileNode,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
-            contentDescription = null,
-            tint = if (node.type == NodeType.DIRECTORY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
+        if (selected) {
+            Icon(Icons.Default.CheckBox, contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.primary)
+        } else {
+            Icon(
+                imageVector = if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
+                contentDescription = null,
+                tint = if (node.type == NodeType.DIRECTORY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
         Spacer(Modifier.width(16.dp))
         Text(
             text = node.name,
@@ -48,21 +66,35 @@ fun FileListItem(node: FileNode, onClick: () -> Unit, modifier: Modifier = Modif
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FileDetailedItem(node: FileNode, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun FileDetailedItem(
+    node: FileNode,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
-            contentDescription = null,
-            tint = if (node.type == NodeType.DIRECTORY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
+        if (selected) {
+            Icon(Icons.Default.CheckBox, contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.primary)
+        } else {
+            Icon(
+                imageVector = if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
+                contentDescription = null,
+                tint = if (node.type == NodeType.DIRECTORY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -89,7 +121,7 @@ fun FileDetailedItem(node: FileNode, onClick: () -> Unit, modifier: Modifier = M
     }
 }
 
-private fun formatSize(bytes: Long): String = when {
+fun formatSize(bytes: Long): String = when {
     bytes < 1_024L -> "${bytes}B"
     bytes < 1_048_576L -> "${"%.1f".format(bytes / 1_024f)}KB"
     bytes < 1_073_741_824L -> "${"%.1f".format(bytes / 1_048_576f)}MB"

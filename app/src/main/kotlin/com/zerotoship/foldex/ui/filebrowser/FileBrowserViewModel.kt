@@ -1,20 +1,25 @@
 package com.zerotoship.foldex.ui.filebrowser
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.storage.local.LocalStorageProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -28,12 +33,17 @@ class FileBrowserViewModel @Inject constructor(
     private val _state = MutableStateFlow(FileBrowserState())
     val state: StateFlow<FileBrowserState> = _state.asStateFlow()
 
+    private val _snackbar = Channel<SnackbarEvent>(Channel.BUFFERED)
+    val snackbarEvents = _snackbar.receiveAsFlow()
+
     init {
         val hasPerm = checkStoragePermission()
         val safRootUri = prefs.getString(KEY_SAF_ROOT, null)
+        val favorites = prefs.getStringSet(KEY_FAVORITES, emptySet()) ?: emptySet()
         _state.value = _state.value.copy(
             hasStoragePermission = hasPerm,
             hasSafRoot = safRootUri != null,
+            favoriteUris = favorites,
         )
         when {
             hasPerm -> navigateTo(
@@ -43,6 +53,8 @@ class FileBrowserViewModel @Inject constructor(
             safRootUri != null -> navigateTo(FileUri.Saf(safRootUri), displayName = "ストレージ")
         }
     }
+
+    // --- Navigation ---
 
     fun checkStoragePermission(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -63,7 +75,7 @@ class FileBrowserViewModel @Inject constructor(
     fun onSafRootPicked(treeUri: Uri) {
         context.contentResolver.takePersistableUriPermission(
             treeUri,
-            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         )
         prefs.edit().putString(KEY_SAF_ROOT, treeUri.toString()).apply()
         _state.value = _state.value.copy(hasSafRoot = true, breadcrumbs = emptyList())
@@ -72,7 +84,7 @@ class FileBrowserViewModel @Inject constructor(
 
     fun navigateTo(uri: FileUri, displayName: String) {
         val newCrumbs = _state.value.breadcrumbs + BreadcrumbItem(uri, displayName)
-        _state.value = _state.value.copy(breadcrumbs = newCrumbs)
+        _state.value = _state.value.copy(breadcrumbs = newCrumbs, selectedUris = emptySet())
         loadFiles(uri)
     }
 
@@ -80,7 +92,7 @@ class FileBrowserViewModel @Inject constructor(
         val crumbs = _state.value.breadcrumbs
         if (index !in crumbs.indices) return
         val newCrumbs = crumbs.take(index + 1)
-        _state.value = _state.value.copy(breadcrumbs = newCrumbs)
+        _state.value = _state.value.copy(breadcrumbs = newCrumbs, selectedUris = emptySet())
         loadFiles(newCrumbs.last().uri)
     }
 
@@ -100,6 +112,232 @@ class FileBrowserViewModel @Inject constructor(
         loadFiles(uri)
     }
 
+    // --- Selection ---
+
+    fun toggleSelection(node: FileNode) {
+        val key = node.uri.toStorageString()
+        val current = _state.value.selectedUris
+        _state.value = _state.value.copy(
+            selectedUris = if (key in current) current - key else current + key
+        )
+    }
+
+    fun selectAll() {
+        val all = _state.value.files.map { it.uri.toStorageString() }.toSet()
+        _state.value = _state.value.copy(selectedUris = all)
+    }
+
+    fun clearSelection() {
+        _state.value = _state.value.copy(selectedUris = emptySet())
+    }
+
+    // --- Clipboard (X-plore style) ---
+
+    fun copySelected() {
+        val nodes = _state.value.selectedNodes
+        if (nodes.isEmpty()) return
+        _state.value = _state.value.copy(clipboard = ClipboardOperation.Copy(nodes), selectedUris = emptySet())
+    }
+
+    fun cutSelected() {
+        val nodes = _state.value.selectedNodes
+        if (nodes.isEmpty()) return
+        _state.value = _state.value.copy(clipboard = ClipboardOperation.Cut(nodes), selectedUris = emptySet())
+    }
+
+    fun clearClipboard() {
+        _state.value = _state.value.copy(clipboard = null)
+    }
+
+    fun paste() {
+        val clipboard = _state.value.clipboard ?: return
+        val destDir = _state.value.currentUri ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoading = true)
+            val nodes = clipboard.nodes
+            val undoActions = mutableListOf<suspend () -> Unit>()
+            var lastError: String? = null
+
+            for (node in nodes) {
+                val destUri = destUriFor(destDir, node.name) ?: continue
+                val result = when (clipboard) {
+                    is ClipboardOperation.Copy -> localStorage.copyWithin(node.uri, destUri)
+                    is ClipboardOperation.Cut -> localStorage.moveWithin(node.uri, destUri)
+                }
+                when (result) {
+                    is Result.Success -> {
+                        when (clipboard) {
+                            is ClipboardOperation.Copy ->
+                                undoActions.add { localStorage.delete(destUri, recursive = true) }
+                            is ClipboardOperation.Cut ->
+                                undoActions.add { localStorage.moveWithin(destUri, node.uri) }
+                        }
+                    }
+                    is Result.Failure -> lastError = result.error.message
+                }
+            }
+
+            val newClipboard = if (clipboard is ClipboardOperation.Cut) null else clipboard
+            _state.value = _state.value.copy(isLoading = false, clipboard = newClipboard)
+            loadFilesSync(destDir)
+
+            if (lastError != null) {
+                emit(SnackbarEvent("エラー: $lastError"))
+            } else {
+                val msg = when (clipboard) {
+                    is ClipboardOperation.Copy -> "${nodes.size}件コピーしました"
+                    is ClipboardOperation.Cut -> "${nodes.size}件移動しました"
+                }
+                val undo: suspend () -> Unit = {
+                    undoActions.forEach { it() }
+                    loadFilesSync(destDir)
+                }
+                emit(SnackbarEvent(msg, actionLabel = "元に戻す", onAction = undo))
+            }
+        }
+    }
+
+    // --- Delete ---
+
+    fun requestDelete() {
+        val nodes = _state.value.selectedNodes
+        if (nodes.isEmpty()) return
+        _state.value = _state.value.copy(pendingDeleteNodes = nodes)
+    }
+
+    fun requestDeleteSingle(node: FileNode) {
+        _state.value = _state.value.copy(pendingDeleteNodes = listOf(node))
+    }
+
+    fun dismissDeleteDialog() {
+        _state.value = _state.value.copy(pendingDeleteNodes = emptyList())
+    }
+
+    fun confirmDelete() {
+        val nodes = _state.value.pendingDeleteNodes
+        if (nodes.isEmpty()) return
+        _state.value = _state.value.copy(pendingDeleteNodes = emptyList(), isLoading = true)
+        viewModelScope.launch {
+            var lastError: String? = null
+            for (node in nodes) {
+                when (val r = localStorage.delete(node.uri, recursive = true)) {
+                    is Result.Success -> Unit
+                    is Result.Failure -> lastError = r.error.message
+                }
+            }
+            val currentUri = _state.value.currentUri
+            _state.value = _state.value.copy(isLoading = false, selectedUris = emptySet())
+            if (currentUri != null) loadFilesSync(currentUri)
+            if (lastError != null) {
+                emit(SnackbarEvent("削除エラー: $lastError"))
+            } else {
+                emit(SnackbarEvent("${nodes.size}件削除しました"))
+            }
+        }
+    }
+
+    // --- Rename ---
+
+    fun requestRename(node: FileNode) {
+        _state.value = _state.value.copy(renameTarget = node, selectedUris = emptySet())
+    }
+
+    fun dismissRenameDialog() {
+        _state.value = _state.value.copy(renameTarget = null)
+    }
+
+    fun confirmRename(newName: String) {
+        val node = _state.value.renameTarget ?: return
+        if (newName.isBlank() || newName == node.name) {
+            _state.value = _state.value.copy(renameTarget = null)
+            return
+        }
+        _state.value = _state.value.copy(renameTarget = null, isLoading = true)
+        viewModelScope.launch {
+            val to = newUriForRename(node.uri, newName)
+            val oldName = node.name
+            when (val r = localStorage.rename(node.uri, to)) {
+                is Result.Success -> {
+                    val currentUri = _state.value.currentUri
+                    _state.value = _state.value.copy(isLoading = false)
+                    if (currentUri != null) loadFilesSync(currentUri)
+                    val undo: suspend () -> Unit = {
+                        localStorage.rename(to, node.uri)
+                        _state.value.currentUri?.let { loadFilesSync(it) }
+                    }
+                    emit(SnackbarEvent("「$oldName」→「$newName」に変更", "元に戻す", undo))
+                }
+                is Result.Failure -> {
+                    _state.value = _state.value.copy(isLoading = false)
+                    emit(SnackbarEvent("名前変更エラー: ${r.error.message}"))
+                }
+            }
+        }
+    }
+
+    // --- Create folder ---
+
+    fun showCreateFolderDialog() {
+        _state.value = _state.value.copy(showCreateFolderDialog = true)
+    }
+
+    fun dismissCreateFolderDialog() {
+        _state.value = _state.value.copy(showCreateFolderDialog = false)
+    }
+
+    fun createFolder(name: String) {
+        if (name.isBlank()) return
+        val currentUri = _state.value.currentUri ?: return
+        val newUri = destUriFor(currentUri, name) ?: return
+        _state.value = _state.value.copy(showCreateFolderDialog = false, isLoading = true)
+        viewModelScope.launch {
+            when (val r = localStorage.mkdir(newUri, false)) {
+                is Result.Success -> {
+                    loadFilesSync(currentUri)
+                    _state.value = _state.value.copy(isLoading = false)
+                    val undo: suspend () -> Unit = {
+                        localStorage.delete(newUri, recursive = false)
+                        loadFilesSync(currentUri)
+                    }
+                    emit(SnackbarEvent("「$name」を作成しました", "元に戻す", undo))
+                }
+                is Result.Failure -> {
+                    _state.value = _state.value.copy(isLoading = false)
+                    emit(SnackbarEvent("フォルダ作成エラー: ${r.error.message}"))
+                }
+            }
+        }
+    }
+
+    // --- Search ---
+
+    fun toggleSearch() {
+        val active = !_state.value.isSearchActive
+        _state.value = _state.value.copy(isSearchActive = active, searchQuery = if (!active) "" else _state.value.searchQuery)
+    }
+
+    fun setSearchQuery(query: String) {
+        _state.value = _state.value.copy(searchQuery = query)
+    }
+
+    fun closeSearch() {
+        _state.value = _state.value.copy(isSearchActive = false, searchQuery = "")
+    }
+
+    // --- Favorites ---
+
+    fun toggleFavorite(uri: FileUri) {
+        val key = uri.toStorageString()
+        val current = _state.value.favoriteUris
+        val updated = if (key in current) current - key else current + key
+        _state.value = _state.value.copy(favoriteUris = updated)
+        prefs.edit().putStringSet(KEY_FAVORITES, updated).apply()
+    }
+
+    fun isFavorite(uri: FileUri): Boolean = uri.toStorageString() in _state.value.favoriteUris
+
+    // --- Internal helpers ---
+
     private fun loadFiles(uri: FileUri) {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null)
@@ -115,7 +353,36 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
+    private suspend fun loadFilesSync(uri: FileUri) {
+        try {
+            val files = mutableListOf<FileNode>()
+            localStorage.list(uri).collect { files.add(it) }
+            _state.value = _state.value.copy(isLoading = false, files = files)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.value = _state.value.copy(isLoading = false, error = e.message ?: "エラーが発生しました")
+        }
+    }
+
+    private fun destUriFor(dir: FileUri, name: String): FileUri? = when (dir) {
+        is FileUri.Local -> FileUri.Local("${dir.absolutePath}/$name")
+        is FileUri.Saf -> null // SAF destination not supported in P3
+        else -> null
+    }
+
+    private fun newUriForRename(uri: FileUri, newName: String): FileUri = when (uri) {
+        is FileUri.Local -> FileUri.Local("${File(uri.absolutePath).parent}/$newName")
+        is FileUri.Saf -> FileUri.Saf(newName) // SAF: documentUri carries new display name by convention
+        else -> uri
+    }
+
+    private fun emit(event: SnackbarEvent) {
+        _snackbar.trySend(event)
+    }
+
     companion object {
         private const val KEY_SAF_ROOT = "saf_root_uri"
+        private const val KEY_FAVORITES = "favorite_uris"
     }
 }
