@@ -19,8 +19,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -89,26 +90,155 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
             }
         }
 
-    // Write operations are implemented in P3
     override suspend fun openOutput(uri: FileUri, mode: WriteMode): Result<OutputStream, StorageError> =
-        Result.Failure(StorageError.IoError("Write not supported in P2"))
+        withContext(Dispatchers.IO) {
+            runCatching(uri) {
+                when (uri) {
+                    is FileUri.Local -> {
+                        val file = File(uri.absolutePath)
+                        if (mode == WriteMode.CREATE_NEW && file.exists())
+                            return@withContext Result.Failure(StorageError.AlreadyExists(uri))
+                        Result.Success(FileOutputStream(file, mode == WriteMode.APPEND))
+                    }
+                    is FileUri.Saf -> {
+                        val modeStr = when (mode) {
+                            WriteMode.CREATE_NEW, WriteMode.OVERWRITE -> "wt"
+                            WriteMode.APPEND -> "wa"
+                        }
+                        val stream = context.contentResolver.openOutputStream(Uri.parse(uri.documentUri), modeStr)
+                            ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                        Result.Success(stream)
+                    }
+                    is FileUri.Remote -> Result.Failure(StorageError.IoError("Remote not supported"))
+                }
+            }
+        }
 
     override suspend fun mkdir(uri: FileUri, recursive: Boolean): Result<Unit, StorageError> =
-        Result.Failure(StorageError.IoError("mkdir not supported in P2"))
+        withContext(Dispatchers.IO) {
+            runCatching(uri) {
+                when (uri) {
+                    is FileUri.Local -> {
+                        val file = File(uri.absolutePath)
+                        val ok = if (recursive) file.mkdirs() else file.mkdir()
+                        if (ok || file.isDirectory) Result.Success(Unit)
+                        else Result.Failure(StorageError.IoError("mkdir failed: ${uri.absolutePath}"))
+                    }
+                    else -> Result.Failure(StorageError.IoError("SAF mkdir not supported"))
+                }
+            }
+        }
 
     override suspend fun delete(uri: FileUri, recursive: Boolean): Result<Unit, StorageError> =
-        Result.Failure(StorageError.IoError("delete not supported in P2"))
+        withContext(Dispatchers.IO) {
+            runCatching(uri) {
+                when (uri) {
+                    is FileUri.Local -> {
+                        val file = File(uri.absolutePath)
+                        if (!file.exists()) return@withContext Result.Failure(StorageError.NotFound(uri))
+                        val ok = if (recursive) file.deleteRecursively() else file.delete()
+                        if (ok) Result.Success(Unit)
+                        else Result.Failure(StorageError.IoError("delete failed: ${uri.absolutePath}"))
+                    }
+                    is FileUri.Saf -> {
+                        val doc = DocumentFile.fromSingleUri(context, Uri.parse(uri.documentUri))
+                            ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                        if (doc.delete()) Result.Success(Unit)
+                        else Result.Failure(StorageError.IoError("SAF delete failed"))
+                    }
+                    is FileUri.Remote -> Result.Failure(StorageError.IoError("Remote not supported"))
+                }
+            }
+        }
 
     override suspend fun rename(from: FileUri, to: FileUri): Result<Unit, StorageError> =
-        Result.Failure(StorageError.IoError("rename not supported in P2"))
+        withContext(Dispatchers.IO) {
+            runCatching(from) {
+                when {
+                    from is FileUri.Local && to is FileUri.Local -> {
+                        val src = File(from.absolutePath)
+                        val dst = File(to.absolutePath)
+                        if (!src.exists()) return@withContext Result.Failure(StorageError.NotFound(from))
+                        if (dst.exists()) return@withContext Result.Failure(StorageError.AlreadyExists(to))
+                        if (src.renameTo(dst)) Result.Success(Unit)
+                        else Result.Failure(StorageError.IoError("rename failed"))
+                    }
+                    from is FileUri.Saf -> {
+                        // `to.documentUri` carries the new display name by convention for SAF
+                        val newName = (to as? FileUri.Saf)?.documentUri
+                            ?: return@withContext Result.Failure(StorageError.IoError("Invalid SAF rename target"))
+                        val doc = DocumentFile.fromSingleUri(context, Uri.parse(from.documentUri))
+                            ?: return@withContext Result.Failure(StorageError.NotFound(from))
+                        if (doc.renameTo(newName)) Result.Success(Unit)
+                        else Result.Failure(StorageError.IoError("SAF rename failed"))
+                    }
+                    else -> Result.Failure(StorageError.IoError("Cross-type rename not supported"))
+                }
+            }
+        }
 
     override suspend fun copyWithin(from: FileUri, to: FileUri, observer: ProgressObserver?): Result<Unit, StorageError> =
-        Result.Failure(StorageError.IoError("copy not supported in P2"))
+        withContext(Dispatchers.IO) {
+            runCatching(from) {
+                when {
+                    from is FileUri.Local && to is FileUri.Local -> {
+                        val src = File(from.absolutePath)
+                        val dst = File(to.absolutePath)
+                        if (!src.exists()) return@withContext Result.Failure(StorageError.NotFound(from))
+                        if (dst.exists()) return@withContext Result.Failure(StorageError.AlreadyExists(to))
+                        copyFileOrDir(src, dst, observer)
+                        Result.Success(Unit)
+                    }
+                    else -> Result.Failure(StorageError.IoError("Cross-type copy not supported"))
+                }
+            }
+        }
 
     override suspend fun moveWithin(from: FileUri, to: FileUri, observer: ProgressObserver?): Result<Unit, StorageError> =
-        Result.Failure(StorageError.IoError("move not supported in P2"))
+        withContext(Dispatchers.IO) {
+            runCatching(from) {
+                when {
+                    from is FileUri.Local && to is FileUri.Local -> {
+                        val src = File(from.absolutePath)
+                        val dst = File(to.absolutePath)
+                        if (!src.exists()) return@withContext Result.Failure(StorageError.NotFound(from))
+                        if (dst.exists()) return@withContext Result.Failure(StorageError.AlreadyExists(to))
+                        // Try atomic rename first (same filesystem)
+                        if (src.renameTo(dst)) return@withContext Result.Success(Unit)
+                        // Fallback: copy then delete
+                        copyFileOrDir(src, dst, observer)
+                        src.deleteRecursively()
+                        Result.Success(Unit)
+                    }
+                    else -> Result.Failure(StorageError.IoError("Cross-type move not supported"))
+                }
+            }
+        }
 
     // --- helpers ---
+
+    private fun copyFileOrDir(src: File, dst: File, observer: ProgressObserver?) {
+        if (src.isDirectory) {
+            dst.mkdirs()
+            for (child in src.listFiles() ?: return) {
+                copyFileOrDir(child, File(dst, child.name), observer)
+            }
+        } else {
+            val total = src.length()
+            src.inputStream().use { input ->
+                dst.outputStream().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var transferred = 0L
+                    var read: Int
+                    while (input.read(buffer).also { read = it } >= 0) {
+                        output.write(buffer, 0, read)
+                        transferred += read
+                        observer?.onProgress(transferred, total)
+                    }
+                }
+            }
+        }
+    }
 
     private fun statLocal(uri: FileUri.Local): Result<FileNode, StorageError> {
         val file = File(uri.absolutePath)
@@ -168,7 +298,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     )
 
     private fun localComparator(options: ListOptions): Comparator<File> {
-        val nameOrder = compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+        val nameOrder: Comparator<File> = Comparator { a, b -> String.CASE_INSENSITIVE_ORDER.compare(a.name, b.name) }
         val base: Comparator<File> = when (options.sortBy) {
             SortBy.NAME -> nameOrder
             SortBy.SIZE -> compareBy<File> { it.length() }.then(nameOrder)
