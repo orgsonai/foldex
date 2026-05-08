@@ -7,3 +7,11 @@ plugins {
     alias(libs.plugins.hilt)                apply false
     alias(libs.plugins.compose.compiler)    apply false
 }
+
+subprojects {
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions {
+            freeCompilerArgs.addAll("-opt-in=kotlin.time.ExperimentalTime")
+        }
+    }
+}

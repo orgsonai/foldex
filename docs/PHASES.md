@@ -102,13 +102,13 @@ docs: P1 達成サマリ
 ## 3. P3 — ローカル操作 (CRUD)
 
 ### 達成条件
-- [ ] `storage-local`: write 系実装 (`mkdir` / `delete` / `rename` / `copyWithin` / `moveWithin` / `openOutput`)
-- [ ] 操作モード方式 (X-plore流) のコピー/移動 UI
-- [ ] 削除確認ダイアログ (デフォルトオン)
-- [ ] アンドゥ Snackbar (5秒)
-- [ ] キーボードショートカット (`FOLDEX-HANDOFF.md §11-F`) 主要操作
-- [ ] 検索 (部分一致 + glob、再帰可)
-- [ ] お気に入り (ピン留め) MVP
+- [x] `storage-local`: write 系実装 (`mkdir` / `delete` / `rename` / `copyWithin` / `moveWithin` / `openOutput`)
+- [x] 操作モード方式 (X-plore流) のコピー/移動 UI (長押しで選択→Copy/Cut→移動→Paste)
+- [x] 削除確認ダイアログ (デフォルトオン)
+- [x] アンドゥ Snackbar (5秒) (コピー/移動/リネーム/フォルダ作成)
+- [x] キーボードショートカット (`FOLDEX-HANDOFF.md §11-F`) 主要操作 (Ctrl+C/X/V/A/F, Del, F2, Esc)
+- [x] 検索 (部分一致 + glob、現在ディレクトリ)
+- [x] お気に入り (ピン留め) MVP (SharedPreferences 永続化)
 
 ### スコープ外
 - リモート (P4)
