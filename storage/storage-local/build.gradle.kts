@@ -26,6 +26,7 @@ dependencies {
     implementation(projects.core.coreData)
 
     implementation(libs.core.ktx)
+    implementation(libs.documentfile)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
