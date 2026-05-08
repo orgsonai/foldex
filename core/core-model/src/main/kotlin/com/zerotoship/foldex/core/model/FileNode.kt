@@ -1,6 +1,6 @@
 package com.zerotoship.foldex.core.model
 
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 data class FileNode(
     val uri: FileUri,
