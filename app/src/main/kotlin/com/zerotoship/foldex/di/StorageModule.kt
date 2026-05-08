@@ -18,3 +18,5 @@ object StorageModule {
     fun provideLocalStorageProvider(@ApplicationContext context: Context): LocalStorageProvider =
         LocalStorageProvider(context)
 }
+
+// SmbStorageProvider と StorageProviderRouter は @Inject constructor のため Hilt が自動生成。
