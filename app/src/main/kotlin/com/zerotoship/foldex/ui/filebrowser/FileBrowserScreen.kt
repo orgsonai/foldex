@@ -502,7 +502,11 @@ private fun FileListContent(
 ) {
     when (viewMode) {
         ViewMode.LIST -> LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(files, key = { it.uri.toStorageString() }) { node ->
+            items(
+                items = files,
+                key = { it.uri.toStorageString() },
+                contentType = { "file-list" },
+            ) { node ->
                 val selected = node.uri.toStorageString() in selectedUris
                 FileListItem(
                     node = node,
@@ -514,7 +518,11 @@ private fun FileListContent(
             }
         }
         ViewMode.DETAILED -> LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(files, key = { it.uri.toStorageString() }) { node ->
+            items(
+                items = files,
+                key = { it.uri.toStorageString() },
+                contentType = { "file-detailed" },
+            ) { node ->
                 val selected = node.uri.toStorageString() in selectedUris
                 FileDetailedItem(
                     node = node,
@@ -531,7 +539,11 @@ private fun FileListContent(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(files, key = { it.uri.toStorageString() }) { node ->
+            items(
+                items = files,
+                key = { it.uri.toStorageString() },
+                contentType = { "file-grid" },
+            ) { node ->
                 val selected = node.uri.toStorageString() in selectedUris
                 GridFileItem(
                     node = node,
@@ -553,6 +565,13 @@ private fun GridFileItem(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val isDir = node.type == NodeType.DIRECTORY
+    val iconTint = when {
+        selected -> colors.primary
+        isDir -> colors.primary.copy(alpha = 0.7f)
+        else -> colors.onSurfaceVariant
+    }
     Column(
         modifier = modifier
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -561,19 +580,17 @@ private fun GridFileItem(
     ) {
         Box {
             Icon(
-                imageVector = if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
+                imageVector = if (isDir) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
-                tint = if (selected) MaterialTheme.colorScheme.primary
-                else if (node.type == NodeType.DIRECTORY) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = iconTint,
             )
             if (selected) {
                 Icon(
                     Icons.Default.CheckBox,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp).align(Alignment.TopEnd),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = colors.primary,
                 )
             }
         }

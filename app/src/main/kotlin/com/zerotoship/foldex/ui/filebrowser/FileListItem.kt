@@ -7,18 +7,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,26 +36,34 @@ fun FileListItem(
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val isDir = node.type == NodeType.DIRECTORY
+    val backgroundColor = if (selected) colors.secondaryContainer else colors.surface
+    val iconTint = when {
+        selected -> colors.primary
+        isDir -> colors.primary
+        else -> colors.onSurfaceVariant
+    }
+    val icon = when {
+        selected -> Icons.Default.CheckBox
+        isDir -> Icons.Outlined.Folder
+        else -> Icons.Outlined.InsertDriveFile
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .height(56.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .background(backgroundColor)
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (selected) {
-            Icon(Icons.Default.CheckBox, contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.primary)
-        } else {
-            Icon(
-                imageVector = if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
-                contentDescription = null,
-                tint = if (node.type == NodeType.DIRECTORY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(24.dp),
+        )
         Spacer(Modifier.width(16.dp))
         Text(
             text = node.name,
@@ -75,26 +84,43 @@ fun FileDetailedItem(
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val isDir = node.type == NodeType.DIRECTORY
+    val backgroundColor = if (selected) colors.secondaryContainer else colors.surface
+    val iconTint = when {
+        selected -> colors.primary
+        isDir -> colors.primary
+        else -> colors.onSurfaceVariant
+    }
+    val icon = when {
+        selected -> Icons.Default.CheckBox
+        isDir -> Icons.Outlined.Folder
+        else -> Icons.Outlined.InsertDriveFile
+    }
+    val subtitle = remember(node.size, node.lastModified) {
+        buildString {
+            if (node.size >= 0) append(formatSize(node.size))
+            node.lastModified?.let {
+                if (isNotEmpty()) append("  ")
+                append(it.toString().take(10))
+            }
+        }
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .height(64.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .background(backgroundColor)
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (selected) {
-            Icon(Icons.Default.CheckBox, contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.primary)
-        } else {
-            Icon(
-                imageVector = if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
-                contentDescription = null,
-                tint = if (node.type == NodeType.DIRECTORY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(24.dp),
+        )
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -103,18 +129,11 @@ fun FileDetailedItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val subtitle = buildString {
-                if (node.size >= 0) append(formatSize(node.size))
-                node.lastModified?.let {
-                    if (isNotEmpty()) append("  ")
-                    append(it.toString().take(10))
-                }
-            }
             if (subtitle.isNotEmpty()) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colors.onSurfaceVariant,
                 )
             }
         }
