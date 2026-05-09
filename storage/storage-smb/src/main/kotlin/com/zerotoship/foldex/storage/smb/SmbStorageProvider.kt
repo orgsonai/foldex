@@ -339,7 +339,7 @@ class SmbStorageProvider @Inject internal constructor(
             com.hierynomus.mserref.NtStatus.STATUS_LOGON_FAILURE,
             com.hierynomus.mserref.NtStatus.STATUS_PASSWORD_EXPIRED,
             com.hierynomus.mserref.NtStatus.STATUS_ACCOUNT_DISABLED,
-            com.hierynomus.mserref.NtStatus.STATUS_ACCOUNT_LOCKED_OUT ->
+            com.hierynomus.mserref.NtStatus.STATUS_LOGON_TYPE_NOT_GRANTED ->
                 StorageError.AuthenticationFailed("SMB authentication failed (0x$name)", e)
             else ->
                 StorageError.ProtocolError(Protocol.SMB, "SMB error ${e.status}: ${e.message}", e)
@@ -381,6 +381,8 @@ class SmbStorageProvider @Inject internal constructor(
             isHidden = isHidden,
         )
     }
+
+    private fun FileAttributes.isSet(value: Long): Boolean = (value and this.value) != 0L
 
     private fun smbComparator(options: ListOptions): Comparator<FileIdBothDirectoryInformation> {
         val nameOrder = Comparator<FileIdBothDirectoryInformation> { a, b ->
