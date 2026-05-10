@@ -83,7 +83,7 @@ class ServerService : Service() {
     private fun stopServer(configId: String) {
         scope.launch {
             sftpManager.stop(configId)
-            if (sftpManager.runningIds().isEmpty()) stopSelf() else refreshNotification()
+            if (sftpManager.runningIds.value.isEmpty()) stopSelf() else refreshNotification()
         }
     }
 
@@ -95,7 +95,7 @@ class ServerService : Service() {
     }
 
     private suspend fun refreshNotification() {
-        val ids = sftpManager.runningIds()
+        val ids = sftpManager.runningIds.value
         val running = ids.mapNotNull { id ->
             val cfg = repository.findById(id) ?: return@mapNotNull null
             val host = networkResolver.resolve(cfg.bindAddress) ?: cfg.bindAddress

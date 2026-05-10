@@ -11,6 +11,10 @@ import com.zerotoship.foldex.server.NetworkBindingResolver
 import com.zerotoship.foldex.server.log.ServerLogger
 import com.zerotoship.foldex.server.security.Argon2idHasher
 import com.zerotoship.foldex.server.security.HostKeyManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
@@ -39,12 +43,12 @@ class SftpServerManager @Inject constructor(
 ) {
     private val mutex = Mutex()
     private val running: MutableMap<String, SshServer> = mutableMapOf()
+    private val _runningIds = MutableStateFlow<Set<String>>(emptySet())
 
-    /** 起動中の設定 ID 集合 (UI 表示用)。 */
-    fun runningIds(): Set<String> = synchronized(running) { running.keys.toSet() }
+    /** 起動中の設定 ID を UI から observe するための StateFlow。 */
+    val runningIds: StateFlow<Set<String>> = _runningIds.asStateFlow()
 
-    fun isRunning(configId: String): Boolean =
-        synchronized(running) { running.containsKey(configId) }
+    fun isRunning(configId: String): Boolean = configId in _runningIds.value
 
     suspend fun start(configId: String): Result<ServerConfig, StorageError> = mutex.withLock {
         if (running.containsKey(configId)) {
@@ -82,6 +86,7 @@ class SftpServerManager @Inject constructor(
             )
         }
         running[configId] = server
+        _runningIds.update { it + configId }
         repository.touchLastStarted(configId)
         logger.record(
             configId = configId,
@@ -95,6 +100,7 @@ class SftpServerManager @Inject constructor(
     suspend fun stop(configId: String) = mutex.withLock {
         running.remove(configId)?.let { server ->
             runCatching { server.stop(true) }
+            _runningIds.update { it - configId }
             logger.record(
                 configId = configId,
                 event = ServerLogEvent.SERVER_STOPPED,
@@ -108,6 +114,7 @@ class SftpServerManager @Inject constructor(
         val ids = running.keys.toList()
         running.values.forEach { runCatching { it.stop(true) } }
         running.clear()
+        _runningIds.value = emptySet()
         ids.forEach { configId ->
             logger.record(
                 configId = configId,
