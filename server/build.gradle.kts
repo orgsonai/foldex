@@ -43,6 +43,7 @@ dependencies {
 
     implementation(libs.sshd.core)
     implementation(libs.sshd.sftp)
+    implementation(libs.ftpserver.core)
     implementation(libs.bouncycastle.bcprov)
     implementation(libs.slf4j.android)
 
