@@ -6,6 +6,7 @@ import com.zerotoship.foldex.core.model.ServerAuthMode
 import com.zerotoship.foldex.core.model.ServerConfig
 import com.zerotoship.foldex.core.model.ServerType
 import com.zerotoship.foldex.core.model.StorageError
+import com.zerotoship.foldex.server.NetworkBindingResolver
 import com.zerotoship.foldex.server.security.Argon2idHasher
 import com.zerotoship.foldex.server.security.HostKeyManager
 import kotlinx.coroutines.sync.Mutex
@@ -13,7 +14,6 @@ import kotlinx.coroutines.sync.withLock
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.sftp.server.SftpSubsystemFactory
-import java.net.InetAddress
 import java.nio.file.Path
 import java.nio.file.Paths
 import javax.inject.Inject
@@ -32,6 +32,7 @@ class SftpServerManager @Inject constructor(
     private val repository: ServerConfigRepository,
     private val hostKeyManager: HostKeyManager,
     private val hasher: Argon2idHasher,
+    private val networkResolver: NetworkBindingResolver,
 ) {
     private val mutex = Mutex()
     private val running: MutableMap<String, SshServer> = mutableMapOf()
@@ -59,7 +60,16 @@ class SftpServerManager @Inject constructor(
             ?: return@withLock Result.Failure(
                 StorageError.IoError("rootUri must be a local path for now: ${config.rootUri}"),
             )
-        val server = buildServer(config, rootPath)
+        val resolvedHost = networkResolver.resolve(config.bindAddress)
+            ?: return@withLock Result.Failure(
+                StorageError.IoError(
+                    when (config.bindAddress) {
+                        ServerConfig.BIND_WIFI_ONLY -> "Wi-Fi に接続されていないため起動できません"
+                        else -> "bindAddress を解決できませんでした: ${config.bindAddress}"
+                    },
+                ),
+            )
+        val server = buildServer(config, rootPath, resolvedHost)
         try {
             server.start()
         } catch (t: Throwable) {
@@ -84,10 +94,10 @@ class SftpServerManager @Inject constructor(
         running.clear()
     }
 
-    private fun buildServer(config: ServerConfig, rootPath: Path): SshServer {
+    private fun buildServer(config: ServerConfig, rootPath: Path, host: String): SshServer {
         val server = SshServer.setUpDefaultServer()
         server.port = config.port
-        server.host = resolveHost(config.bindAddress)
+        server.host = host
 
         server.keyPairProvider = SftpKeyPairProvider(config.id, hostKeyManager)
         server.subsystemFactories = listOf(SftpSubsystemFactory())
@@ -103,19 +113,6 @@ class SftpServerManager @Inject constructor(
                 SftpPublickeyAuthenticator(config.id, repository)
         }
         return server
-    }
-
-    /**
-     * `bindAddress` の値からバインド先 IP を決める。
-     * - "wifi_only" — 後続コミットで Wi-Fi IP を解決する。本コミットでは loopback 扱い。
-     * - "0.0.0.0" — 全インターフェース。
-     * - 特定 IP — そのまま。
-     */
-    private fun resolveHost(bindAddress: String): String = when (bindAddress) {
-        ServerConfig.BIND_WIFI_ONLY -> "127.0.0.1"
-        ServerConfig.BIND_ALL_INTERFACES -> "0.0.0.0"
-        else -> runCatching { InetAddress.getByName(bindAddress).hostAddress }
-            .getOrDefault("0.0.0.0") ?: "0.0.0.0"
     }
 
     private fun resolveLocalRoot(rootUri: String): Path? {
