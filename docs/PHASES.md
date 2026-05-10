@@ -138,11 +138,11 @@ docs: P1 達成サマリ
 ## 5. P5 — SFTP / FTP / WebDAV
 
 ### 達成条件
-- [ ] `storage-sftp`: sshj 統合、ホスト鍵フィンガープリント検証
-- [ ] `storage-ftp`: Apache Commons Net 統合、FTP/FTPS 両対応、平文警告UI
-- [ ] `storage-webdav`: Sardine-Android 統合 (代替検討含む)
-- [ ] 各プロトコルの接続設定 UI
-- [ ] 文字コード判定 (juniversalchardet) — FTP の SJIS 対応など
+- [x] `storage-sftp`: sshj 統合、ホスト鍵フィンガープリント検証
+- [x] `storage-ftp`: Apache Commons Net 統合、FTP/FTPS 両対応、平文警告UI
+- [x] `storage-webdav`: OkHttp 直叩きで実装 (Sardine-Android は Maven Central 非配布のため代替)
+- [x] 各プロトコルの接続設定 UI
+- [x] 文字コード判定 (juniversalchardet) — `core-data` に CharsetDetector を用意
 
 ### スコープ外
 - 自機サーバー (P6)
