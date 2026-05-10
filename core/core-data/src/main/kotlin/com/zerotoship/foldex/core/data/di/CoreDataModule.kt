@@ -5,6 +5,8 @@ import androidx.room.Room
 import com.zerotoship.foldex.core.data.db.ConnectionDao
 import com.zerotoship.foldex.core.data.db.EncryptedCredentialDao
 import com.zerotoship.foldex.core.data.db.FoldexDatabase
+import com.zerotoship.foldex.core.data.db.ServerConfigDao
+import com.zerotoship.foldex.core.data.db.ServerLogDao
 import com.zerotoship.foldex.core.data.security.CredentialCipher
 import dagger.Module
 import dagger.Provides
@@ -20,7 +22,13 @@ object CoreDataModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): FoldexDatabase =
-        Room.databaseBuilder(context, FoldexDatabase::class.java, FoldexDatabase.DATABASE_NAME).build()
+        Room.databaseBuilder(context, FoldexDatabase::class.java, FoldexDatabase.DATABASE_NAME)
+            // P6 ではスキーマに server_configs / server_logs を追加する。
+            // 現状 0.x なのでスキーマ変更時は破壊的マイグレーションで十分
+            // (ユーザデータの永続保証は P8 から)。
+            .fallbackToDestructiveMigration(dropAllTables = true)
+            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+            .build()
 
     @Provides
     fun provideConnectionDao(database: FoldexDatabase): ConnectionDao = database.connectionDao()
@@ -28,6 +36,13 @@ object CoreDataModule {
     @Provides
     fun provideEncryptedCredentialDao(database: FoldexDatabase): EncryptedCredentialDao =
         database.encryptedCredentialDao()
+
+    @Provides
+    fun provideServerConfigDao(database: FoldexDatabase): ServerConfigDao =
+        database.serverConfigDao()
+
+    @Provides
+    fun provideServerLogDao(database: FoldexDatabase): ServerLogDao = database.serverLogDao()
 
     @Provides
     @Singleton
