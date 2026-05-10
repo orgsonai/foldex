@@ -120,17 +120,18 @@ docs: P1 達成サマリ
 ## 4. P4 — SMB 対応 (1プロトコルで実証)
 
 ### 達成条件
-- [ ] `core-model`: `Connection` sealed class 確定
-- [ ] `core-data`: Room スキーマ (`connections` + `encrypted_credentials`)
-- [ ] `core-data`: AES-GCM + AndroidKeyStore で認証情報暗号化
-- [ ] `storage-smb`: smbj 統合、`StorageProvider` 実装
-- [ ] 接続設定 UI (追加・編集・削除)
-- [ ] SMB 経由の閲覧・コピー・移動・削除が動く
-- [ ] 接続失敗時のエラーハンドリング
+- [x] `core-model`: `Connection` sealed class 確定 (Smb / Sftp / Ftp / WebDav)
+- [x] `core-data`: Room スキーマ (`connections` + `encrypted_credentials`)
+- [x] `core-data`: AES-GCM + AndroidKeyStore で認証情報暗号化
+- [x] `storage-smb`: smbj 統合、`StorageProvider` 実装
+- [x] 接続設定 UI (追加・編集・削除)
+- [x] SMB 経由の閲覧・コピー・移動・削除 (実装済み、実機検証は別途)
+- [x] 接続失敗時のエラーハンドリング (SMBApiException → StorageError マッピング)
 
 ### スコープ外
 - 他プロトコル (P5)
 - 同期 (P6)
+- APPEND モードの SMB 書き込み (P5/P7 で再検討)
 
 ---
 

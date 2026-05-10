@@ -10,7 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
-import com.zerotoship.foldex.storage.local.LocalStorageProvider
+import com.zerotoship.foldex.core.model.Protocol
+import com.zerotoship.foldex.storage.StorageProviderRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
@@ -25,7 +26,7 @@ import javax.inject.Inject
 @HiltViewModel
 class FileBrowserViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val localStorage: LocalStorageProvider,
+    private val storage: StorageProviderRouter,
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("foldex_browser", Context.MODE_PRIVATE)
@@ -80,6 +81,19 @@ class FileBrowserViewModel @Inject constructor(
         prefs.edit().putString(KEY_SAF_ROOT, treeUri.toString()).apply()
         _state.value = _state.value.copy(hasSafRoot = true, breadcrumbs = emptyList())
         navigateTo(FileUri.Saf(treeUri.toString()), displayName = "ストレージ")
+    }
+
+    fun openSmbConnection(connectionId: String, displayName: String) {
+        _state.value = _state.value.copy(breadcrumbs = emptyList(), selectedUris = emptySet())
+        navigateTo(FileUri.Remote(Protocol.SMB, connectionId, "/"), displayName = displayName)
+    }
+
+    fun openLocalRoot() {
+        _state.value = _state.value.copy(breadcrumbs = emptyList(), selectedUris = emptySet())
+        navigateTo(
+            FileUri.Local(Environment.getExternalStorageDirectory().absolutePath),
+            displayName = "内部ストレージ",
+        )
     }
 
     fun navigateTo(uri: FileUri, displayName: String) {
@@ -161,16 +175,16 @@ class FileBrowserViewModel @Inject constructor(
             for (node in nodes) {
                 val destUri = destUriFor(destDir, node.name) ?: continue
                 val result = when (clipboard) {
-                    is ClipboardOperation.Copy -> localStorage.copyWithin(node.uri, destUri)
-                    is ClipboardOperation.Cut -> localStorage.moveWithin(node.uri, destUri)
+                    is ClipboardOperation.Copy -> storage.copyWithin(node.uri, destUri)
+                    is ClipboardOperation.Cut -> storage.moveWithin(node.uri, destUri)
                 }
                 when (result) {
                     is Result.Success -> {
                         when (clipboard) {
                             is ClipboardOperation.Copy ->
-                                undoActions.add { localStorage.delete(destUri, recursive = true) }
+                                undoActions.add { storage.delete(destUri, recursive = true) }
                             is ClipboardOperation.Cut ->
-                                undoActions.add { localStorage.moveWithin(destUri, node.uri) }
+                                undoActions.add { storage.moveWithin(destUri, node.uri) }
                         }
                     }
                     is Result.Failure -> lastError = result.error.message
@@ -220,7 +234,7 @@ class FileBrowserViewModel @Inject constructor(
         viewModelScope.launch {
             var lastError: String? = null
             for (node in nodes) {
-                when (val r = localStorage.delete(node.uri, recursive = true)) {
+                when (val r = storage.delete(node.uri, recursive = true)) {
                     is Result.Success -> Unit
                     is Result.Failure -> lastError = r.error.message
                 }
@@ -256,13 +270,13 @@ class FileBrowserViewModel @Inject constructor(
         viewModelScope.launch {
             val to = newUriForRename(node.uri, newName)
             val oldName = node.name
-            when (val r = localStorage.rename(node.uri, to)) {
+            when (val r = storage.rename(node.uri, to)) {
                 is Result.Success -> {
                     val currentUri = _state.value.currentUri
                     _state.value = _state.value.copy(isLoading = false)
                     if (currentUri != null) loadFilesSync(currentUri)
                     val undo: suspend () -> Unit = {
-                        localStorage.rename(to, node.uri)
+                        storage.rename(to, node.uri)
                         _state.value.currentUri?.let { loadFilesSync(it) }
                     }
                     emit(SnackbarEvent("「$oldName」→「$newName」に変更", "元に戻す", undo))
@@ -291,12 +305,12 @@ class FileBrowserViewModel @Inject constructor(
         val newUri = destUriFor(currentUri, name) ?: return
         _state.value = _state.value.copy(showCreateFolderDialog = false, isLoading = true)
         viewModelScope.launch {
-            when (val r = localStorage.mkdir(newUri, false)) {
+            when (val r = storage.mkdir(newUri, false)) {
                 is Result.Success -> {
                     loadFilesSync(currentUri)
                     _state.value = _state.value.copy(isLoading = false)
                     val undo: suspend () -> Unit = {
-                        localStorage.delete(newUri, recursive = false)
+                        storage.delete(newUri, recursive = false)
                         loadFilesSync(currentUri)
                     }
                     emit(SnackbarEvent("「$name」を作成しました", "元に戻す", undo))
@@ -343,7 +357,7 @@ class FileBrowserViewModel @Inject constructor(
             _state.value = _state.value.copy(isLoading = true, error = null)
             try {
                 val files = mutableListOf<FileNode>()
-                localStorage.list(uri).collect { files.add(it) }
+                storage.list(uri).collect { files.add(it) }
                 _state.value = _state.value.copy(isLoading = false, files = files)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -356,7 +370,7 @@ class FileBrowserViewModel @Inject constructor(
     private suspend fun loadFilesSync(uri: FileUri) {
         try {
             val files = mutableListOf<FileNode>()
-            localStorage.list(uri).collect { files.add(it) }
+            storage.list(uri).collect { files.add(it) }
             _state.value = _state.value.copy(isLoading = false, files = files)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -368,13 +382,21 @@ class FileBrowserViewModel @Inject constructor(
     private fun destUriFor(dir: FileUri, name: String): FileUri? = when (dir) {
         is FileUri.Local -> FileUri.Local("${dir.absolutePath}/$name")
         is FileUri.Saf -> null // SAF destination not supported in P3
-        else -> null
+        is FileUri.Remote -> FileUri.Remote(
+            protocol = dir.protocol,
+            connectionId = dir.connectionId,
+            path = if (dir.path.endsWith("/")) "${dir.path}$name" else "${dir.path}/$name",
+        )
     }
 
     private fun newUriForRename(uri: FileUri, newName: String): FileUri = when (uri) {
         is FileUri.Local -> FileUri.Local("${File(uri.absolutePath).parent}/$newName")
         is FileUri.Saf -> FileUri.Saf(newName) // SAF: documentUri carries new display name by convention
-        else -> uri
+        is FileUri.Remote -> {
+            val parent = uri.path.trimEnd('/').substringBeforeLast('/', missingDelimiterValue = "")
+            val newPath = if (parent.isEmpty()) "/$newName" else "$parent/$newName"
+            FileUri.Remote(uri.protocol, uri.connectionId, newPath)
+        }
     }
 
     private fun emit(event: SnackbarEvent) {

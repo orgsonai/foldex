@@ -17,6 +17,8 @@ kotlinx-coroutines  = "1.10.2"
 junit               = "4.13.2"
 test-ext-junit      = "1.2.1"
 espresso-core       = "3.6.1"
+smbj                = "0.14.0"
+slf4j               = "2.0.13"
 
 [libraries]
 # AndroidX Core
@@ -65,6 +67,10 @@ kotlinx-coroutines-test     = { group = "org.jetbrains.kotlinx",   name = "kotli
 junit                       = { group = "junit",                   name = "junit",                  version.ref = "junit" }
 test-ext-junit              = { group = "androidx.test.ext",       name = "junit",                  version.ref = "test-ext-junit" }
 espresso-core               = { group = "androidx.test.espresso",  name = "espresso-core",          version.ref = "espresso-core" }
+
+# SMB (P4)
+smbj                        = { group = "com.hierynomus",          name = "smbj",                   version.ref = "smbj" }
+slf4j-android               = { group = "org.slf4j",               name = "slf4j-android",          version = "1.7.36" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }

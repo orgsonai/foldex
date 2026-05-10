@@ -30,6 +30,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
@@ -50,6 +54,11 @@ import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -70,6 +79,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -83,15 +93,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.FileNode
+import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
+import com.zerotoship.foldex.ui.connections.ConnectionsViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun FileBrowserScreen(viewModel: FileBrowserViewModel = hiltViewModel()) {
+fun FileBrowserScreen(
+    onOpenConnections: () -> Unit,
+    viewModel: FileBrowserViewModel = hiltViewModel(),
+    connectionsViewModel: ConnectionsViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val connections by connectionsViewModel.connections.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
 
     // Snackbar events from ViewModel
     LaunchedEffect(Unit) {
@@ -153,6 +174,67 @@ fun FileBrowserScreen(viewModel: FileBrowserViewModel = hiltViewModel()) {
         }
     }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Foldex",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                )
+                HorizontalDivider()
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.PhoneAndroid, contentDescription = null) },
+                    label = { Text("ローカル") },
+                    selected = state.currentUri is FileUri.Local
+                        || state.currentUri is FileUri.Saf,
+                    onClick = {
+                        drawerScope.launch { drawerState.close() }
+                        viewModel.openLocalRoot()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                if (connections.isNotEmpty()) {
+                    Text(
+                        text = "リモート接続",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    )
+                    connections.forEach { connection ->
+                        val selected = (state.currentUri as? FileUri.Remote)
+                            ?.connectionId == connection.id
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.Storage, contentDescription = null) },
+                            label = { Text(connection.name) },
+                            selected = selected,
+                            onClick = {
+                                drawerScope.launch { drawerState.close() }
+                                if (connection is Connection.Smb) {
+                                    viewModel.openSmbConnection(connection.id, connection.name)
+                                }
+                            },
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("接続を管理") },
+                    selected = false,
+                    onClick = {
+                        drawerScope.launch { drawerState.close() }
+                        onOpenConnections()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
+        },
+    ) {
     Scaffold(
         modifier = keyModifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -205,6 +287,12 @@ fun FileBrowserScreen(viewModel: FileBrowserViewModel = hiltViewModel()) {
                         } else if (state.canGoUp) {
                             IconButton(onClick = { viewModel.navigateUp() }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上へ")
+                            }
+                        } else {
+                            IconButton(onClick = {
+                                drawerScope.launch { drawerState.open() }
+                            }) {
+                                Icon(Icons.Default.Menu, contentDescription = "メニュー")
                             }
                         }
                     },
@@ -365,6 +453,7 @@ fun FileBrowserScreen(viewModel: FileBrowserViewModel = hiltViewModel()) {
             onDismiss = { viewModel.dismissCreateFolderDialog() },
         )
     }
+    } // end ModalNavigationDrawer content
 }
 
 @Composable
@@ -413,7 +502,11 @@ private fun FileListContent(
 ) {
     when (viewMode) {
         ViewMode.LIST -> LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(files, key = { it.uri.toStorageString() }) { node ->
+            items(
+                items = files,
+                key = { it.uri.toStorageString() },
+                contentType = { "file-list" },
+            ) { node ->
                 val selected = node.uri.toStorageString() in selectedUris
                 FileListItem(
                     node = node,
@@ -425,7 +518,11 @@ private fun FileListContent(
             }
         }
         ViewMode.DETAILED -> LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(files, key = { it.uri.toStorageString() }) { node ->
+            items(
+                items = files,
+                key = { it.uri.toStorageString() },
+                contentType = { "file-detailed" },
+            ) { node ->
                 val selected = node.uri.toStorageString() in selectedUris
                 FileDetailedItem(
                     node = node,
@@ -442,7 +539,11 @@ private fun FileListContent(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(files, key = { it.uri.toStorageString() }) { node ->
+            items(
+                items = files,
+                key = { it.uri.toStorageString() },
+                contentType = { "file-grid" },
+            ) { node ->
                 val selected = node.uri.toStorageString() in selectedUris
                 GridFileItem(
                     node = node,
@@ -464,6 +565,13 @@ private fun GridFileItem(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val isDir = node.type == NodeType.DIRECTORY
+    val iconTint = when {
+        selected -> colors.primary
+        isDir -> colors.primary.copy(alpha = 0.7f)
+        else -> colors.onSurfaceVariant
+    }
     Column(
         modifier = modifier
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -472,19 +580,17 @@ private fun GridFileItem(
     ) {
         Box {
             Icon(
-                imageVector = if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
+                imageVector = if (isDir) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
-                tint = if (selected) MaterialTheme.colorScheme.primary
-                else if (node.type == NodeType.DIRECTORY) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = iconTint,
             )
             if (selected) {
                 Icon(
                     Icons.Default.CheckBox,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp).align(Alignment.TopEnd),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = colors.primary,
                 )
             }
         }
