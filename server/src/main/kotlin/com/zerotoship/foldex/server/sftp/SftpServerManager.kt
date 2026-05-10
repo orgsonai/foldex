@@ -4,6 +4,7 @@ import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.ServerConfigRepository
 import com.zerotoship.foldex.core.model.ServerAuthMode
 import com.zerotoship.foldex.core.model.ServerConfig
+import com.zerotoship.foldex.core.model.ServerLogEvent
 import com.zerotoship.foldex.core.model.ServerType
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.server.NetworkBindingResolver
@@ -82,18 +83,39 @@ class SftpServerManager @Inject constructor(
         }
         running[configId] = server
         repository.touchLastStarted(configId)
+        logger.record(
+            configId = configId,
+            event = ServerLogEvent.SERVER_STARTED,
+            clientAddress = "$resolvedHost:${config.port}",
+            details = "type=SFTP,authMode=${config.authMode.name}",
+        )
         Result.Success(config)
     }
 
     suspend fun stop(configId: String) = mutex.withLock {
         running.remove(configId)?.let { server ->
             runCatching { server.stop(true) }
+            logger.record(
+                configId = configId,
+                event = ServerLogEvent.SERVER_STOPPED,
+                clientAddress = "self",
+                details = "type=SFTP",
+            )
         }
     }
 
     suspend fun stopAll() = mutex.withLock {
+        val ids = running.keys.toList()
         running.values.forEach { runCatching { it.stop(true) } }
         running.clear()
+        ids.forEach { configId ->
+            logger.record(
+                configId = configId,
+                event = ServerLogEvent.SERVER_STOPPED,
+                clientAddress = "self",
+                details = "type=SFTP,reason=stopAll",
+            )
+        }
     }
 
     private fun buildServer(config: ServerConfig, rootPath: Path, host: String): SshServer {
