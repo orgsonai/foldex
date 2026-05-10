@@ -118,6 +118,13 @@ fun ConnectionsScreen(
                             viewModel.startCreate(Protocol.FTP)
                         },
                     )
+                    DropdownMenuItem(
+                        text = { Text("WebDAV を追加") },
+                        onClick = {
+                            protocolMenuOpen = false
+                            viewModel.startCreate(Protocol.WEBDAV)
+                        },
+                    )
                 }
             }
         },
@@ -228,7 +235,11 @@ private fun Connection.summary(): String = when (this) {
         val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
         "ftp://$host:$port  ($tls / $mode / $auth)"
     }
-    else -> "${protocol.scheme}://$host:$port"
+    is Connection.WebDav -> {
+        val scheme = if (useHttps) "https" else "http"
+        val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
+        "$scheme://$host:$port$basePath  ($auth)"
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -244,7 +255,7 @@ private fun ConnectionEditDialog(
         Protocol.SMB -> if (state.isNew) "SMB 接続を追加" else "SMB 接続を編集"
         Protocol.SFTP -> if (state.isNew) "SFTP 接続を追加" else "SFTP 接続を編集"
         Protocol.FTP -> if (state.isNew) "FTP 接続を追加" else "FTP 接続を編集"
-        else -> "接続"
+        Protocol.WEBDAV -> if (state.isNew) "WebDAV 接続を追加" else "WebDAV 接続を編集"
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -267,6 +278,11 @@ private fun ConnectionEditDialog(
                             selected = state.protocol == Protocol.FTP,
                             onClick = { onProtocolChange(Protocol.FTP) },
                             label = { Text("FTP") },
+                        )
+                        FilterChip(
+                            selected = state.protocol == Protocol.WEBDAV,
+                            onClick = { onProtocolChange(Protocol.WEBDAV) },
+                            label = { Text("WebDAV") },
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -304,7 +320,7 @@ private fun ConnectionEditDialog(
                     Protocol.SMB -> SmbExtraFields(state, onUpdate)
                     Protocol.SFTP -> SftpExtraFields(state, onUpdate)
                     Protocol.FTP -> FtpExtraFields(state, onUpdate)
-                    else -> Unit
+                    Protocol.WEBDAV -> WebDavExtraFields(state, onUpdate)
                 }
             }
         },
@@ -411,6 +427,51 @@ private fun FtpExtraFields(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+@Composable
+private fun WebDavExtraFields(
+    state: ConnectionsViewModel.EditingState,
+    onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.useHttps,
+            onCheckedChange = { v ->
+                onUpdate {
+                    val newPort = if (v) 443 else 80
+                    it.copy(useHttps = v, port = newPort)
+                }
+            },
+        )
+        Text("HTTPS を使用")
+    }
+    if (!state.useHttps) {
+        Text(
+            "⚠ 平文通信です。Basic 認証パスワードが暗号化されません。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.basePath,
+        onValueChange = { v -> onUpdate { it.copy(basePath = v) } },
+        label = { Text("ベースパス (例: /remote.php/dav/files/USER)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.anonymous,
+            onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
+        )
+        Text("匿名アクセス")
+    }
+    if (!state.anonymous) {
+        UserPasswordFields(state, onUpdate)
+    }
 }
 
 @Composable

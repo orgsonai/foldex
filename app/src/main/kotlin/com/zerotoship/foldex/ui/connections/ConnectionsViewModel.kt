@@ -34,13 +34,14 @@ class ConnectionsViewModel @Inject constructor(
     val events = _events.receiveAsFlow()
 
     fun startCreate(protocol: Protocol = Protocol.SMB) {
+        val defaultPort = if (protocol == Protocol.WEBDAV) 443 else protocol.defaultPort
         _editing.value = EditingState(
             id = UUID.randomUUID().toString(),
             isNew = true,
             protocol = protocol,
             name = "",
             host = "",
-            port = protocol.defaultPort,
+            port = defaultPort,
             username = "",
             password = "",
             share = "",
@@ -50,6 +51,8 @@ class ConnectionsViewModel @Inject constructor(
             useTls = false,
             passiveMode = true,
             charset = "UTF-8",
+            basePath = "/",
+            useHttps = true,
         )
     }
 
@@ -71,6 +74,8 @@ class ConnectionsViewModel @Inject constructor(
                 useTls = false,
                 passiveMode = true,
                 charset = connection.charset,
+                basePath = "/",
+                useHttps = true,
             )
             is Connection.Sftp -> EditingState(
                 id = connection.id,
@@ -88,6 +93,8 @@ class ConnectionsViewModel @Inject constructor(
                 useTls = false,
                 passiveMode = true,
                 charset = connection.charset,
+                basePath = "/",
+                useHttps = true,
             )
             is Connection.Ftp -> EditingState(
                 id = connection.id,
@@ -105,11 +112,28 @@ class ConnectionsViewModel @Inject constructor(
                 useTls = connection.useTls,
                 passiveMode = connection.passiveMode,
                 charset = connection.charset,
+                basePath = "/",
+                useHttps = true,
             )
-            else -> {
-                sendEvent(ConnectionEvent.Message("${connection.protocol.scheme.uppercase()} 編集は P5 以降"))
-                return
-            }
+            is Connection.WebDav -> EditingState(
+                id = connection.id,
+                isNew = false,
+                protocol = Protocol.WEBDAV,
+                name = connection.name,
+                host = connection.host,
+                port = connection.port,
+                username = connection.username.orEmpty(),
+                password = "",
+                share = "",
+                domain = "",
+                anonymous = connection.authMethod == AuthMethod.ANONYMOUS,
+                hostKeyFingerprint = "",
+                useTls = false,
+                passiveMode = true,
+                charset = connection.charset,
+                basePath = connection.basePath,
+                useHttps = connection.useHttps,
+            )
         }
     }
 
@@ -128,9 +152,13 @@ class ConnectionsViewModel @Inject constructor(
     fun changeProtocol(protocol: Protocol) {
         val current = _editing.value ?: return
         if (current.protocol == protocol) return
+        val newPort = when (protocol) {
+            Protocol.WEBDAV -> if (current.useHttps) 443 else 80
+            else -> protocol.defaultPort
+        }
         _editing.value = current.copy(
             protocol = protocol,
-            port = protocol.defaultPort,
+            port = newPort,
             anonymous = if (protocol == Protocol.SFTP) false else current.anonymous,
             useTls = if (protocol == Protocol.FTP) current.useTls else false,
             passiveMode = if (protocol == Protocol.FTP) current.passiveMode else true,
@@ -147,7 +175,33 @@ class ConnectionsViewModel @Inject constructor(
             Protocol.SMB -> saveSmb(draft)
             Protocol.SFTP -> saveSftp(draft)
             Protocol.FTP -> saveFtp(draft)
-            else -> sendEvent(ConnectionEvent.Message("${draft.protocol.scheme.uppercase()} はまだサポートしていません"))
+            Protocol.WEBDAV -> saveWebDav(draft)
+        }
+    }
+
+    private fun saveWebDav(draft: EditingState) {
+        viewModelScope.launch {
+            val authMethod = if (draft.anonymous) AuthMethod.ANONYMOUS else AuthMethod.PASSWORD
+            val basePath = draft.basePath.trim().ifBlank { "/" }
+                .let { if (it.startsWith("/")) it else "/$it" }
+            val connection = Connection.WebDav(
+                id = draft.id,
+                name = draft.name.trim(),
+                host = draft.host.trim(),
+                port = draft.port,
+                username = draft.username.trim().ifBlank { null },
+                authMethod = authMethod,
+                basePath = basePath,
+                useHttps = draft.useHttps,
+                charset = draft.charset.trim().ifBlank { "UTF-8" },
+            )
+            val credential: Credential? = when {
+                draft.anonymous -> Credential.Anonymous
+                draft.password.isNotEmpty() -> Credential.Password(draft.password.toByteArray(Charsets.UTF_8))
+                draft.isNew -> Credential.Anonymous
+                else -> null
+            }
+            persist(connection, credential, draft.isNew)
         }
     }
 
@@ -270,6 +324,8 @@ class ConnectionsViewModel @Inject constructor(
         val useTls: Boolean,
         val passiveMode: Boolean,
         val charset: String,
+        val basePath: String,
+        val useHttps: Boolean,
     )
 
     sealed class ConnectionEvent {
