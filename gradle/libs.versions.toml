@@ -20,6 +20,7 @@ espresso-core       = "3.6.1"
 smbj                = "0.14.0"
 slf4j               = "2.0.13"
 sshj                = "0.39.0"
+commons-net         = "3.11.1"
 
 [libraries]
 # AndroidX Core
@@ -75,6 +76,9 @@ slf4j-android               = { group = "org.slf4j",               name = "slf4j
 
 # SFTP (P5)
 sshj                        = { group = "com.hierynomus",          name = "sshj",                   version.ref = "sshj" }
+
+# FTP (P5)
+commons-net                 = { group = "commons-net",             name = "commons-net",            version.ref = "commons-net" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }
