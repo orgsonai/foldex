@@ -23,6 +23,8 @@ sshj                = "0.39.0"
 commons-net         = "3.11.1"
 okhttp              = "4.12.0"
 juniversalchardet   = "2.4.0"
+sshd                = "2.13.2"
+bouncycastle        = "1.78.1"
 
 [libraries]
 # AndroidX Core
@@ -87,6 +89,14 @@ okhttp                      = { group = "com.squareup.okhttp3",    name = "okhtt
 
 # 文字コード判定 (P5) — メンテ継続中の albfernandez フォーク
 juniversalchardet           = { group = "com.github.albfernandez", name = "juniversalchardet",      version.ref = "juniversalchardet" }
+
+# SFTP サーバー (P6) — Apache MINA SSHD
+sshd-core                   = { group = "org.apache.sshd",         name = "sshd-core",              version.ref = "sshd" }
+sshd-sftp                   = { group = "org.apache.sshd",         name = "sshd-sftp",              version.ref = "sshd" }
+
+# 暗号 (P6) — Argon2id / Ed25519 のために BouncyCastle を明示。
+# sshj が transitively に持つが、サーバー側でも使うので明示固定する。
+bouncycastle-bcprov         = { group = "org.bouncycastle",        name = "bcprov-jdk18on",         version.ref = "bouncycastle" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }
