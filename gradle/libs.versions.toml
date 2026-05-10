@@ -19,6 +19,7 @@ test-ext-junit      = "1.2.1"
 espresso-core       = "3.6.1"
 smbj                = "0.14.0"
 slf4j               = "2.0.13"
+sshj                = "0.39.0"
 
 [libraries]
 # AndroidX Core
@@ -71,6 +72,9 @@ espresso-core               = { group = "androidx.test.espresso",  name = "espre
 # SMB (P4)
 smbj                        = { group = "com.hierynomus",          name = "smbj",                   version.ref = "smbj" }
 slf4j-android               = { group = "org.slf4j",               name = "slf4j-android",          version = "1.7.36" }
+
+# SFTP (P5)
+sshj                        = { group = "com.hierynomus",          name = "sshj",                   version.ref = "sshj" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }
