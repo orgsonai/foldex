@@ -33,38 +33,58 @@ class ConnectionsViewModel @Inject constructor(
     private val _events = Channel<ConnectionEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
-    fun startCreate() {
+    fun startCreate(protocol: Protocol = Protocol.SMB) {
         _editing.value = EditingState(
             id = UUID.randomUUID().toString(),
             isNew = true,
+            protocol = protocol,
             name = "",
             host = "",
-            port = Protocol.SMB.defaultPort,
+            port = protocol.defaultPort,
             username = "",
             password = "",
             share = "",
             domain = "",
             anonymous = false,
+            hostKeyFingerprint = "",
         )
     }
 
     fun startEdit(connection: Connection) {
-        if (connection !is Connection.Smb) {
-            sendEvent(ConnectionEvent.Message("SMB 以外の編集は P5 以降"))
-            return
+        _editing.value = when (connection) {
+            is Connection.Smb -> EditingState(
+                id = connection.id,
+                isNew = false,
+                protocol = Protocol.SMB,
+                name = connection.name,
+                host = connection.host,
+                port = connection.port,
+                username = connection.username.orEmpty(),
+                password = "",
+                share = connection.share,
+                domain = connection.domain.orEmpty(),
+                anonymous = connection.authMethod == AuthMethod.ANONYMOUS,
+                hostKeyFingerprint = "",
+            )
+            is Connection.Sftp -> EditingState(
+                id = connection.id,
+                isNew = false,
+                protocol = Protocol.SFTP,
+                name = connection.name,
+                host = connection.host,
+                port = connection.port,
+                username = connection.username.orEmpty(),
+                password = "",
+                share = "",
+                domain = "",
+                anonymous = false,
+                hostKeyFingerprint = connection.hostKeyFingerprint.orEmpty(),
+            )
+            else -> {
+                sendEvent(ConnectionEvent.Message("${connection.protocol.scheme.uppercase()} 編集は P5 以降"))
+                return
+            }
         }
-        _editing.value = EditingState(
-            id = connection.id,
-            isNew = false,
-            name = connection.name,
-            host = connection.host,
-            port = connection.port,
-            username = connection.username.orEmpty(),
-            password = "",
-            share = connection.share,
-            domain = connection.domain.orEmpty(),
-            anonymous = connection.authMethod == AuthMethod.ANONYMOUS,
-        )
     }
 
     fun cancelEdit() {
@@ -76,10 +96,35 @@ class ConnectionsViewModel @Inject constructor(
         _editing.value = transform(current)
     }
 
+    /**
+     * プロトコル切替: ポートのデフォルトを連動させ、別プロトコル固有のフィールドはクリア。
+     */
+    fun changeProtocol(protocol: Protocol) {
+        val current = _editing.value ?: return
+        if (current.protocol == protocol) return
+        _editing.value = current.copy(
+            protocol = protocol,
+            port = protocol.defaultPort,
+            anonymous = if (protocol == Protocol.SFTP) false else current.anonymous,
+        )
+    }
+
     fun save() {
         val draft = _editing.value ?: return
-        if (draft.name.isBlank() || draft.host.isBlank() || draft.share.isBlank()) {
-            sendEvent(ConnectionEvent.Message("名前 / ホスト / 共有名は必須"))
+        if (draft.name.isBlank() || draft.host.isBlank()) {
+            sendEvent(ConnectionEvent.Message("名前 / ホストは必須"))
+            return
+        }
+        when (draft.protocol) {
+            Protocol.SMB -> saveSmb(draft)
+            Protocol.SFTP -> saveSftp(draft)
+            else -> sendEvent(ConnectionEvent.Message("${draft.protocol.scheme.uppercase()} はまだサポートしていません"))
+        }
+    }
+
+    private fun saveSmb(draft: EditingState) {
+        if (draft.share.isBlank()) {
+            sendEvent(ConnectionEvent.Message("共有名は必須"))
             return
         }
         viewModelScope.launch {
@@ -98,15 +143,46 @@ class ConnectionsViewModel @Inject constructor(
                 draft.anonymous -> Credential.Anonymous
                 draft.password.isNotEmpty() -> Credential.Password(draft.password.toByteArray(Charsets.UTF_8))
                 draft.isNew -> Credential.Anonymous
-                else -> null // 既存編集でパスワード未入力 → 既存の credentialRef を維持
+                else -> null
             }
-            try {
-                repository.save(connection, credential)
-                _editing.value = null
-                sendEvent(ConnectionEvent.Message(if (draft.isNew) "接続を追加しました" else "接続を更新しました"))
-            } catch (t: Throwable) {
-                sendEvent(ConnectionEvent.Message("保存エラー: ${t.message}"))
+            persist(connection, credential, draft.isNew)
+        }
+    }
+
+    private fun saveSftp(draft: EditingState) {
+        if (draft.username.isBlank()) {
+            sendEvent(ConnectionEvent.Message("SFTP はユーザー名が必須"))
+            return
+        }
+        if (draft.isNew && draft.password.isBlank()) {
+            sendEvent(ConnectionEvent.Message("初回はパスワードが必要"))
+            return
+        }
+        viewModelScope.launch {
+            val connection = Connection.Sftp(
+                id = draft.id,
+                name = draft.name.trim(),
+                host = draft.host.trim(),
+                port = draft.port,
+                username = draft.username.trim(),
+                authMethod = AuthMethod.PASSWORD,
+                hostKeyFingerprint = draft.hostKeyFingerprint.trim().ifBlank { null },
+            )
+            val credential: Credential? = when {
+                draft.password.isNotEmpty() -> Credential.Password(draft.password.toByteArray(Charsets.UTF_8))
+                else -> null
             }
+            persist(connection, credential, draft.isNew)
+        }
+    }
+
+    private suspend fun persist(connection: Connection, credential: Credential?, isNew: Boolean) {
+        try {
+            repository.save(connection, credential)
+            _editing.value = null
+            sendEvent(ConnectionEvent.Message(if (isNew) "接続を追加しました" else "接続を更新しました"))
+        } catch (t: Throwable) {
+            sendEvent(ConnectionEvent.Message("保存エラー: ${t.message}"))
         }
     }
 
@@ -128,6 +204,7 @@ class ConnectionsViewModel @Inject constructor(
     data class EditingState(
         val id: String,
         val isNew: Boolean,
+        val protocol: Protocol,
         val name: String,
         val host: String,
         val port: Int,
@@ -136,6 +213,7 @@ class ConnectionsViewModel @Inject constructor(
         val share: String,
         val domain: String,
         val anonymous: Boolean,
+        val hostKeyFingerprint: String,
     )
 
     sealed class ConnectionEvent {

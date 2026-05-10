@@ -9,6 +9,7 @@ import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.core.model.StorageProvider
 import com.zerotoship.foldex.core.model.WriteMode
 import com.zerotoship.foldex.storage.local.LocalStorageProvider
+import com.zerotoship.foldex.storage.sftp.SftpStorageProvider
 import com.zerotoship.foldex.storage.smb.SmbStorageProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -25,12 +26,14 @@ import javax.inject.Singleton
 class StorageProviderRouter @Inject constructor(
     private val local: LocalStorageProvider,
     private val smb: SmbStorageProvider,
+    private val sftp: SftpStorageProvider,
 ) : StorageProvider {
 
     private fun pick(uri: FileUri): StorageProvider = when (uri) {
         is FileUri.Local, is FileUri.Saf -> local
         is FileUri.Remote -> when (uri.protocol) {
             com.zerotoship.foldex.core.model.Protocol.SMB -> smb
+            com.zerotoship.foldex.core.model.Protocol.SFTP -> sftp
             else -> error("No StorageProvider for ${uri.protocol} (P5+)")
         }
     }
@@ -42,6 +45,7 @@ class StorageProviderRouter @Inject constructor(
     override suspend fun disconnect() {
         local.disconnect()
         smb.disconnect()
+        sftp.disconnect()
     }
 
     override suspend fun stat(uri: FileUri): Result<FileNode, StorageError> = pick(uri).stat(uri)
