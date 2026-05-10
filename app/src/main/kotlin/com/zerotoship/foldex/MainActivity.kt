@@ -11,6 +11,7 @@ import com.zerotoship.foldex.ui.connections.ConnectionsScreen
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserScreen
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import com.zerotoship.foldex.ui.servers.ServerEditScreen
+import com.zerotoship.foldex.ui.servers.ServerLogScreen
 import com.zerotoship.foldex.ui.servers.ServersScreen
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -53,8 +54,14 @@ class MainActivity : ComponentActivity() {
                             onBack = { navController.popBackStack() },
                             onAdd = { navController.navigate("servers/new") },
                             onEdit = { config -> navController.navigate("servers/edit/${config.id}") },
-                            onOpenLogs = { /* TODO(P6): ログ画面を後続コミットで配線 */ },
+                            onOpenLogs = { config -> navController.navigate("servers/log/${config.id}") },
                         )
+                    }
+                    composable(
+                        route = "servers/log/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) {
+                        ServerLogScreen(onBack = { navController.popBackStack() })
                     }
                     composable("servers/new") {
                         ServerEditScreen(
