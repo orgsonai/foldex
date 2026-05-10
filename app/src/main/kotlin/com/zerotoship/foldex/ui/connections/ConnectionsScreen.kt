@@ -111,6 +111,13 @@ fun ConnectionsScreen(
                             viewModel.startCreate(Protocol.SFTP)
                         },
                     )
+                    DropdownMenuItem(
+                        text = { Text("FTP を追加") },
+                        onClick = {
+                            protocolMenuOpen = false
+                            viewModel.startCreate(Protocol.FTP)
+                        },
+                    )
                 }
             }
         },
@@ -215,6 +222,12 @@ private fun Connection.summary(): String = when (this) {
         val fp = if (hostKeyFingerprint.isNullOrBlank()) "未検証" else "鍵OK"
         "sftp://${username ?: "?"}@$host:$port  ($fp)"
     }
+    is Connection.Ftp -> {
+        val tls = if (useTls) "FTPS" else "平文"
+        val mode = if (passiveMode) "PASV" else "ACTV"
+        val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
+        "ftp://$host:$port  ($tls / $mode / $auth)"
+    }
     else -> "${protocol.scheme}://$host:$port"
 }
 
@@ -230,6 +243,7 @@ private fun ConnectionEditDialog(
     val title = when (state.protocol) {
         Protocol.SMB -> if (state.isNew) "SMB 接続を追加" else "SMB 接続を編集"
         Protocol.SFTP -> if (state.isNew) "SFTP 接続を追加" else "SFTP 接続を編集"
+        Protocol.FTP -> if (state.isNew) "FTP 接続を追加" else "FTP 接続を編集"
         else -> "接続"
     }
     AlertDialog(
@@ -248,6 +262,11 @@ private fun ConnectionEditDialog(
                             selected = state.protocol == Protocol.SFTP,
                             onClick = { onProtocolChange(Protocol.SFTP) },
                             label = { Text("SFTP") },
+                        )
+                        FilterChip(
+                            selected = state.protocol == Protocol.FTP,
+                            onClick = { onProtocolChange(Protocol.FTP) },
+                            label = { Text("FTP") },
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -284,6 +303,7 @@ private fun ConnectionEditDialog(
                 when (state.protocol) {
                     Protocol.SMB -> SmbExtraFields(state, onUpdate)
                     Protocol.SFTP -> SftpExtraFields(state, onUpdate)
+                    Protocol.FTP -> FtpExtraFields(state, onUpdate)
                     else -> Unit
                 }
             }
@@ -341,6 +361,53 @@ private fun SftpExtraFields(
         value = state.hostKeyFingerprint,
         onValueChange = { v -> onUpdate { it.copy(hostKeyFingerprint = v) } },
         label = { Text("ホスト鍵 SHA-256 (任意/初回は空でOK)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun FtpExtraFields(
+    state: ConnectionsViewModel.EditingState,
+    onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.anonymous,
+            onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
+        )
+        Text("匿名アクセス")
+    }
+    if (!state.anonymous) {
+        UserPasswordFields(state, onUpdate)
+    }
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.useTls,
+            onCheckedChange = { v -> onUpdate { it.copy(useTls = v) } },
+        )
+        Text("FTPS (TLS) を使用")
+    }
+    if (!state.useTls) {
+        Text(
+            "⚠ 平文通信です。パスワードとファイル内容が暗号化されません。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.passiveMode,
+            onCheckedChange = { v -> onUpdate { it.copy(passiveMode = v) } },
+        )
+        Text("パッシブモード (PASV)")
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.charset,
+        onValueChange = { v -> onUpdate { it.copy(charset = v) } },
+        label = { Text("文字コード (UTF-8 / Shift_JIS / EUC-JP など)") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )

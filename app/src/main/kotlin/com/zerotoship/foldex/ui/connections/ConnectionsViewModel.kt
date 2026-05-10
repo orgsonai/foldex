@@ -47,6 +47,9 @@ class ConnectionsViewModel @Inject constructor(
             domain = "",
             anonymous = false,
             hostKeyFingerprint = "",
+            useTls = false,
+            passiveMode = true,
+            charset = "UTF-8",
         )
     }
 
@@ -65,6 +68,9 @@ class ConnectionsViewModel @Inject constructor(
                 domain = connection.domain.orEmpty(),
                 anonymous = connection.authMethod == AuthMethod.ANONYMOUS,
                 hostKeyFingerprint = "",
+                useTls = false,
+                passiveMode = true,
+                charset = connection.charset,
             )
             is Connection.Sftp -> EditingState(
                 id = connection.id,
@@ -79,6 +85,26 @@ class ConnectionsViewModel @Inject constructor(
                 domain = "",
                 anonymous = false,
                 hostKeyFingerprint = connection.hostKeyFingerprint.orEmpty(),
+                useTls = false,
+                passiveMode = true,
+                charset = connection.charset,
+            )
+            is Connection.Ftp -> EditingState(
+                id = connection.id,
+                isNew = false,
+                protocol = Protocol.FTP,
+                name = connection.name,
+                host = connection.host,
+                port = connection.port,
+                username = connection.username.orEmpty(),
+                password = "",
+                share = "",
+                domain = "",
+                anonymous = connection.authMethod == AuthMethod.ANONYMOUS,
+                hostKeyFingerprint = "",
+                useTls = connection.useTls,
+                passiveMode = connection.passiveMode,
+                charset = connection.charset,
             )
             else -> {
                 sendEvent(ConnectionEvent.Message("${connection.protocol.scheme.uppercase()} 編集は P5 以降"))
@@ -106,6 +132,8 @@ class ConnectionsViewModel @Inject constructor(
             protocol = protocol,
             port = protocol.defaultPort,
             anonymous = if (protocol == Protocol.SFTP) false else current.anonymous,
+            useTls = if (protocol == Protocol.FTP) current.useTls else false,
+            passiveMode = if (protocol == Protocol.FTP) current.passiveMode else true,
         )
     }
 
@@ -118,6 +146,7 @@ class ConnectionsViewModel @Inject constructor(
         when (draft.protocol) {
             Protocol.SMB -> saveSmb(draft)
             Protocol.SFTP -> saveSftp(draft)
+            Protocol.FTP -> saveFtp(draft)
             else -> sendEvent(ConnectionEvent.Message("${draft.protocol.scheme.uppercase()} はまだサポートしていません"))
         }
     }
@@ -138,6 +167,30 @@ class ConnectionsViewModel @Inject constructor(
                 authMethod = authMethod,
                 share = draft.share.trim(),
                 domain = draft.domain.trim().ifBlank { null },
+            )
+            val credential: Credential? = when {
+                draft.anonymous -> Credential.Anonymous
+                draft.password.isNotEmpty() -> Credential.Password(draft.password.toByteArray(Charsets.UTF_8))
+                draft.isNew -> Credential.Anonymous
+                else -> null
+            }
+            persist(connection, credential, draft.isNew)
+        }
+    }
+
+    private fun saveFtp(draft: EditingState) {
+        viewModelScope.launch {
+            val authMethod = if (draft.anonymous) AuthMethod.ANONYMOUS else AuthMethod.PASSWORD
+            val connection = Connection.Ftp(
+                id = draft.id,
+                name = draft.name.trim(),
+                host = draft.host.trim(),
+                port = draft.port,
+                username = draft.username.trim().ifBlank { null },
+                authMethod = authMethod,
+                useTls = draft.useTls,
+                passiveMode = draft.passiveMode,
+                charset = draft.charset.trim().ifBlank { "UTF-8" },
             )
             val credential: Credential? = when {
                 draft.anonymous -> Credential.Anonymous
@@ -214,6 +267,9 @@ class ConnectionsViewModel @Inject constructor(
         val domain: String,
         val anonymous: Boolean,
         val hostKeyFingerprint: String,
+        val useTls: Boolean,
+        val passiveMode: Boolean,
+        val charset: String,
     )
 
     sealed class ConnectionEvent {
