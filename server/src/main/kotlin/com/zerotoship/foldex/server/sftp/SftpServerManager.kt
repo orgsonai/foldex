@@ -7,6 +7,7 @@ import com.zerotoship.foldex.core.model.ServerConfig
 import com.zerotoship.foldex.core.model.ServerType
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.server.NetworkBindingResolver
+import com.zerotoship.foldex.server.log.ServerLogger
 import com.zerotoship.foldex.server.security.Argon2idHasher
 import com.zerotoship.foldex.server.security.HostKeyManager
 import kotlinx.coroutines.sync.Mutex
@@ -33,6 +34,7 @@ class SftpServerManager @Inject constructor(
     private val hostKeyManager: HostKeyManager,
     private val hasher: Argon2idHasher,
     private val networkResolver: NetworkBindingResolver,
+    private val logger: ServerLogger,
 ) {
     private val mutex = Mutex()
     private val running: MutableMap<String, SshServer> = mutableMapOf()
@@ -106,11 +108,11 @@ class SftpServerManager @Inject constructor(
         val authMode = config.authMode
         if (authMode != ServerAuthMode.PUBLIC_KEY) {
             server.passwordAuthenticator =
-                SftpPasswordAuthenticator(config.id, repository, hasher)
+                SftpPasswordAuthenticator(config.id, repository, hasher, logger)
         }
         if (authMode != ServerAuthMode.PASSWORD) {
             server.publickeyAuthenticator =
-                SftpPublickeyAuthenticator(config.id, repository)
+                SftpPublickeyAuthenticator(config.id, repository, logger)
         }
         return server
     }
