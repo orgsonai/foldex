@@ -5,8 +5,9 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.ServerConfigRepository
+import com.zerotoship.foldex.core.model.ServerType
+import com.zerotoship.foldex.server.ftp.FtpServerManager
 import com.zerotoship.foldex.server.sftp.SftpServerManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -18,13 +19,14 @@ import javax.inject.Inject
 
 /**
  * 自機サーバーを保持する ForegroundService。設定 ID をインテントで受け取り
- * SftpServerManager を起動・停止する。Wi-Fi 切断 → 自動停止 や FTP 対応は
- * 後続コミットで増強する。
+ * 設定の type (SFTP / FTP) に応じて [SftpServerManager] か [FtpServerManager]
+ * に処理を振り分ける。
  */
 @AndroidEntryPoint
 class ServerService : Service() {
 
     @Inject lateinit var sftpManager: SftpServerManager
+    @Inject lateinit var ftpManager: FtpServerManager
     @Inject lateinit var notificationFactory: ServerNotificationFactory
     @Inject lateinit var networkResolver: NetworkBindingResolver
     @Inject lateinit var repository: ServerConfigRepository
@@ -36,7 +38,6 @@ class ServerService : Service() {
     override fun onCreate() {
         super.onCreate()
         notificationFactory.ensureChannel()
-        // 即座に foreground 化しないと ANR / Android 12+ では BackgroundServiceStartNotAllowed 例外
         startForegroundIfNeeded()
     }
 
@@ -71,31 +72,39 @@ class ServerService : Service() {
 
     private fun startServer(configId: String) {
         scope.launch {
-            val result = sftpManager.start(configId)
-            if (result is Result.Success) {
+            val config = repository.findById(configId) ?: run {
                 refreshNotification()
-            } else {
-                refreshNotification()
+                return@launch
             }
+            when (config.type) {
+                ServerType.SFTP -> sftpManager.start(configId)
+                ServerType.FTP -> ftpManager.start(configId)
+            }
+            refreshNotification()
         }
     }
 
     private fun stopServer(configId: String) {
         scope.launch {
             sftpManager.stop(configId)
-            if (sftpManager.runningIds.value.isEmpty()) stopSelf() else refreshNotification()
+            ftpManager.stop(configId)
+            if (allRunningIds().isEmpty()) stopSelf() else refreshNotification()
         }
     }
 
     private fun stopAll() {
         scope.launch {
             sftpManager.stopAll()
+            ftpManager.stopAll()
             stopSelf()
         }
     }
 
+    private fun allRunningIds(): Set<String> =
+        sftpManager.runningIds.value + ftpManager.runningIds.value
+
     private suspend fun refreshNotification() {
-        val ids = sftpManager.runningIds.value
+        val ids = allRunningIds()
         val running = ids.mapNotNull { id ->
             val cfg = repository.findById(id) ?: return@mapNotNull null
             val host = networkResolver.resolve(cfg.bindAddress) ?: cfg.bindAddress
