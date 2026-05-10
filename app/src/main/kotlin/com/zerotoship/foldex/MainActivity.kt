@@ -10,7 +10,10 @@ import androidx.navigation.compose.rememberNavController
 import com.zerotoship.foldex.ui.connections.ConnectionsScreen
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserScreen
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
+import com.zerotoship.foldex.ui.servers.ServerEditScreen
 import com.zerotoship.foldex.ui.servers.ServersScreen
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.zerotoship.foldex.core.model.Connection
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -48,9 +51,24 @@ class MainActivity : ComponentActivity() {
                     composable("servers") {
                         ServersScreen(
                             onBack = { navController.popBackStack() },
-                            onAdd = { /* TODO(P6): 追加画面を後続コミットで配線 */ },
-                            onEdit = { /* TODO(P6): 編集画面を後続コミットで配線 */ },
+                            onAdd = { navController.navigate("servers/new") },
+                            onEdit = { config -> navController.navigate("servers/edit/${config.id}") },
                             onOpenLogs = { /* TODO(P6): ログ画面を後続コミットで配線 */ },
+                        )
+                    }
+                    composable("servers/new") {
+                        ServerEditScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = { navController.popBackStack() },
+                        )
+                    }
+                    composable(
+                        route = "servers/edit/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) {
+                        ServerEditScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = { navController.popBackStack() },
                         )
                     }
                 }
