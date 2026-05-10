@@ -104,6 +104,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun FileBrowserScreen(
     onOpenConnections: () -> Unit,
+    onOpenServers: () -> Unit,
     viewModel: FileBrowserViewModel = hiltViewModel(),
     connectionsViewModel: ConnectionsViewModel = hiltViewModel(),
 ) {
@@ -229,6 +230,16 @@ fun FileBrowserScreen(
                     onClick = {
                         drawerScope.launch { drawerState.close() }
                         onOpenConnections()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.Storage, contentDescription = null) },
+                    label = { Text("自機サーバー") },
+                    selected = false,
+                    onClick = {
+                        drawerScope.launch { drawerState.close() }
+                        onOpenServers()
                     },
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
