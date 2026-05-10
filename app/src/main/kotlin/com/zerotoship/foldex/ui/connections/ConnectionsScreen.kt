@@ -22,7 +22,10 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -62,6 +65,7 @@ fun ConnectionsScreen(
     val editing by viewModel.editing.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<Connection?>(null) }
+    var protocolMenuOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -85,8 +89,43 @@ fun ConnectionsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { viewModel.startCreate() }) {
-                Icon(Icons.Default.Add, contentDescription = "接続を追加")
+            Box {
+                FloatingActionButton(onClick = { protocolMenuOpen = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "接続を追加")
+                }
+                DropdownMenu(
+                    expanded = protocolMenuOpen,
+                    onDismissRequest = { protocolMenuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("SMB を追加") },
+                        onClick = {
+                            protocolMenuOpen = false
+                            viewModel.startCreate(Protocol.SMB)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("SFTP を追加") },
+                        onClick = {
+                            protocolMenuOpen = false
+                            viewModel.startCreate(Protocol.SFTP)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("FTP を追加") },
+                        onClick = {
+                            protocolMenuOpen = false
+                            viewModel.startCreate(Protocol.FTP)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("WebDAV を追加") },
+                        onClick = {
+                            protocolMenuOpen = false
+                            viewModel.startCreate(Protocol.WEBDAV)
+                        },
+                    )
+                }
             }
         },
     ) { padding ->
@@ -155,6 +194,7 @@ fun ConnectionsScreen(
         ConnectionEditDialog(
             state = state,
             onUpdate = viewModel::updateField,
+            onProtocolChange = viewModel::changeProtocol,
             onSave = viewModel::save,
             onDismiss = viewModel::cancelEdit,
         )
@@ -185,7 +225,21 @@ private fun Connection.summary(): String = when (this) {
         val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
         "smb://$host:$port/$share  ($auth)"
     }
-    else -> "${protocol.scheme}://$host:$port"
+    is Connection.Sftp -> {
+        val fp = if (hostKeyFingerprint.isNullOrBlank()) "未検証" else "鍵OK"
+        "sftp://${username ?: "?"}@$host:$port  ($fp)"
+    }
+    is Connection.Ftp -> {
+        val tls = if (useTls) "FTPS" else "平文"
+        val mode = if (passiveMode) "PASV" else "ACTV"
+        val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
+        "ftp://$host:$port  ($tls / $mode / $auth)"
+    }
+    is Connection.WebDav -> {
+        val scheme = if (useHttps) "https" else "http"
+        val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
+        "$scheme://$host:$port$basePath  ($auth)"
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -193,14 +247,46 @@ private fun Connection.summary(): String = when (this) {
 private fun ConnectionEditDialog(
     state: ConnectionsViewModel.EditingState,
     onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+    onProtocolChange: (Protocol) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val title = when (state.protocol) {
+        Protocol.SMB -> if (state.isNew) "SMB 接続を追加" else "SMB 接続を編集"
+        Protocol.SFTP -> if (state.isNew) "SFTP 接続を追加" else "SFTP 接続を編集"
+        Protocol.FTP -> if (state.isNew) "FTP 接続を追加" else "FTP 接続を編集"
+        Protocol.WEBDAV -> if (state.isNew) "WebDAV 接続を追加" else "WebDAV 接続を編集"
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (state.isNew) "SMB 接続を追加" else "SMB 接続を編集") },
+        title = { Text(title) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
+                if (state.isNew) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = state.protocol == Protocol.SMB,
+                            onClick = { onProtocolChange(Protocol.SMB) },
+                            label = { Text("SMB") },
+                        )
+                        FilterChip(
+                            selected = state.protocol == Protocol.SFTP,
+                            onClick = { onProtocolChange(Protocol.SFTP) },
+                            label = { Text("SFTP") },
+                        )
+                        FilterChip(
+                            selected = state.protocol == Protocol.FTP,
+                            onClick = { onProtocolChange(Protocol.FTP) },
+                            label = { Text("FTP") },
+                        )
+                        FilterChip(
+                            selected = state.protocol == Protocol.WEBDAV,
+                            onClick = { onProtocolChange(Protocol.WEBDAV) },
+                            label = { Text("WebDAV") },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
                 OutlinedTextField(
                     value = state.name,
                     onValueChange = { v -> onUpdate { it.copy(name = v) } },
@@ -222,7 +308,7 @@ private fun ConnectionEditDialog(
                         value = state.port.toString(),
                         onValueChange = { v ->
                             v.toIntOrNull()?.let { p -> onUpdate { st -> st.copy(port = p) } }
-                                ?: if (v.isEmpty()) onUpdate { st -> st.copy(port = Protocol.SMB.defaultPort) } else Unit
+                                ?: if (v.isEmpty()) onUpdate { st -> st.copy(port = state.protocol.defaultPort) } else Unit
                         },
                         label = { Text("ポート") },
                         singleLine = true,
@@ -230,48 +316,11 @@ private fun ConnectionEditDialog(
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = state.share,
-                    onValueChange = { v -> onUpdate { it.copy(share = v) } },
-                    label = { Text("共有名") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = state.domain,
-                    onValueChange = { v -> onUpdate { it.copy(domain = v) } },
-                    label = { Text("ドメイン (任意)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = state.anonymous,
-                        onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
-                    )
-                    Text("匿名アクセス")
-                }
-                if (!state.anonymous) {
-                    OutlinedTextField(
-                        value = state.username,
-                        onValueChange = { v -> onUpdate { it.copy(username = v) } },
-                        label = { Text("ユーザー名") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = state.password,
-                        onValueChange = { v -> onUpdate { it.copy(password = v) } },
-                        label = {
-                            Text(if (state.isNew) "パスワード" else "パスワード (変更時のみ)")
-                        },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                when (state.protocol) {
+                    Protocol.SMB -> SmbExtraFields(state, onUpdate)
+                    Protocol.SFTP -> SftpExtraFields(state, onUpdate)
+                    Protocol.FTP -> FtpExtraFields(state, onUpdate)
+                    Protocol.WEBDAV -> WebDavExtraFields(state, onUpdate)
                 }
             }
         },
@@ -284,3 +333,168 @@ private fun ConnectionEditDialog(
     )
 }
 
+@Composable
+private fun SmbExtraFields(
+    state: ConnectionsViewModel.EditingState,
+    onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+) {
+    OutlinedTextField(
+        value = state.share,
+        onValueChange = { v -> onUpdate { it.copy(share = v) } },
+        label = { Text("共有名") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.domain,
+        onValueChange = { v -> onUpdate { it.copy(domain = v) } },
+        label = { Text("ドメイン (任意)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.anonymous,
+            onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
+        )
+        Text("匿名アクセス")
+    }
+    if (!state.anonymous) {
+        UserPasswordFields(state, onUpdate)
+    }
+}
+
+@Composable
+private fun SftpExtraFields(
+    state: ConnectionsViewModel.EditingState,
+    onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+) {
+    UserPasswordFields(state, onUpdate)
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.hostKeyFingerprint,
+        onValueChange = { v -> onUpdate { it.copy(hostKeyFingerprint = v) } },
+        label = { Text("ホスト鍵 SHA-256 (任意/初回は空でOK)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun FtpExtraFields(
+    state: ConnectionsViewModel.EditingState,
+    onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.anonymous,
+            onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
+        )
+        Text("匿名アクセス")
+    }
+    if (!state.anonymous) {
+        UserPasswordFields(state, onUpdate)
+    }
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.useTls,
+            onCheckedChange = { v -> onUpdate { it.copy(useTls = v) } },
+        )
+        Text("FTPS (TLS) を使用")
+    }
+    if (!state.useTls) {
+        Text(
+            "⚠ 平文通信です。パスワードとファイル内容が暗号化されません。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.passiveMode,
+            onCheckedChange = { v -> onUpdate { it.copy(passiveMode = v) } },
+        )
+        Text("パッシブモード (PASV)")
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.charset,
+        onValueChange = { v -> onUpdate { it.copy(charset = v) } },
+        label = { Text("文字コード (UTF-8 / Shift_JIS / EUC-JP など)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun WebDavExtraFields(
+    state: ConnectionsViewModel.EditingState,
+    onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.useHttps,
+            onCheckedChange = { v ->
+                onUpdate {
+                    val newPort = if (v) 443 else 80
+                    it.copy(useHttps = v, port = newPort)
+                }
+            },
+        )
+        Text("HTTPS を使用")
+    }
+    if (!state.useHttps) {
+        Text(
+            "⚠ 平文通信です。Basic 認証パスワードが暗号化されません。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.basePath,
+        onValueChange = { v -> onUpdate { it.copy(basePath = v) } },
+        label = { Text("ベースパス (例: /remote.php/dav/files/USER)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.anonymous,
+            onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
+        )
+        Text("匿名アクセス")
+    }
+    if (!state.anonymous) {
+        UserPasswordFields(state, onUpdate)
+    }
+}
+
+@Composable
+private fun UserPasswordFields(
+    state: ConnectionsViewModel.EditingState,
+    onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+) {
+    OutlinedTextField(
+        value = state.username,
+        onValueChange = { v -> onUpdate { it.copy(username = v) } },
+        label = { Text("ユーザー名") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.password,
+        onValueChange = { v -> onUpdate { it.copy(password = v) } },
+        label = {
+            Text(if (state.isNew) "パスワード" else "パスワード (変更時のみ)")
+        },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}

@@ -19,6 +19,10 @@ test-ext-junit      = "1.2.1"
 espresso-core       = "3.6.1"
 smbj                = "0.14.0"
 slf4j               = "2.0.13"
+sshj                = "0.39.0"
+commons-net         = "3.11.1"
+okhttp              = "4.12.0"
+juniversalchardet   = "2.4.0"
 
 [libraries]
 # AndroidX Core
@@ -71,6 +75,18 @@ espresso-core               = { group = "androidx.test.espresso",  name = "espre
 # SMB (P4)
 smbj                        = { group = "com.hierynomus",          name = "smbj",                   version.ref = "smbj" }
 slf4j-android               = { group = "org.slf4j",               name = "slf4j-android",          version = "1.7.36" }
+
+# SFTP (P5)
+sshj                        = { group = "com.hierynomus",          name = "sshj",                   version.ref = "sshj" }
+
+# FTP (P5)
+commons-net                 = { group = "commons-net",             name = "commons-net",            version.ref = "commons-net" }
+
+# WebDAV (P5) — Sardine-Android は Maven Central 非配布のため OkHttp 直叩きで実装
+okhttp                      = { group = "com.squareup.okhttp3",    name = "okhttp",                 version.ref = "okhttp" }
+
+# 文字コード判定 (P5) — メンテ継続中の albfernandez フォーク
+juniversalchardet           = { group = "com.github.albfernandez", name = "juniversalchardet",      version.ref = "juniversalchardet" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }

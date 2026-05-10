@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -18,6 +19,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    packaging {
+        resources {
+            excludes += listOf(
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/INDEX.LIST",
+                "META-INF/io.netty.versions.properties",
+                "META-INF/DEPENDENCIES",
+            )
+        }
+    }
 }
 
 dependencies {
@@ -28,7 +40,11 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
-    // sshj は P5 で追加: com.hierynomus:sshj:0.39.0
+    implementation(libs.sshj)
+    implementation(libs.slf4j.android)
+
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.test.ext.junit)
