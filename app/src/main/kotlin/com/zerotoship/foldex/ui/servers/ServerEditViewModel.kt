@@ -58,6 +58,26 @@ class ServerEditViewModel @Inject constructor(
         _state.update { it.copy(authMode = mode) }
     }
 
+    fun changeType(type: ServerType) {
+        _state.update { current ->
+            if (current.type == type) return@update current
+            val newPort = type.defaultPort
+            current.copy(
+                type = type,
+                port = newPort,
+                // FTP は公開鍵認証を持たないので、FTP 切替時は PASSWORD に寄せる。
+                authMode = if (type == ServerType.FTP &&
+                    (current.authMode == ServerAuthMode.PUBLIC_KEY ||
+                        current.authMode == ServerAuthMode.PASSWORD_OR_PUBLIC_KEY)
+                ) {
+                    ServerAuthMode.PASSWORD
+                } else {
+                    current.authMode
+                },
+            )
+        }
+    }
+
     fun save() {
         val draft = _state.value
         val error = draft.validate()

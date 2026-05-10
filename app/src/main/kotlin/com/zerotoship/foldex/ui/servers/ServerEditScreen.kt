@@ -42,7 +42,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import com.zerotoship.foldex.core.model.ServerAuthMode
+import com.zerotoship.foldex.core.model.ServerType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,13 +102,41 @@ fun ServerEditScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            ServerTypeDropdown(
+                selected = state.type,
+                onSelected = viewModel::changeType,
+            )
+            if (state.type == ServerType.FTP) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            "FTP は通信を平文で行います",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Text(
+                            "ID / パスワードや転送内容が同一ネットワーク内で盗聴される可能性があります。古い NAS 等との互換性のために残されています。Explicit FTPS は今後のアップデートで対応予定です。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
             OutlinedTextField(
                 value = state.port.toString(),
                 onValueChange = { v ->
                     val parsed = v.toIntOrNull()
                     if (parsed != null) viewModel.update { it.copy(port = parsed) }
                 },
-                label = { Text("ポート (SFTP 既定: 2022)") },
+                label = {
+                    val defaultLabel = if (state.type == ServerType.FTP) "FTP 既定: 2121" else "SFTP 既定: 2022"
+                    Text("ポート ($defaultLabel)")
+                },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -203,6 +234,45 @@ private fun ToggleRow(
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
+}
+
+@Composable
+private fun ServerTypeDropdown(
+    selected: ServerType,
+    onSelected: (ServerType) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = serverTypeLabel(selected),
+            onValueChange = {},
+            readOnly = true,
+            enabled = false,
+            label = { Text("プロトコル") },
+            trailingIcon = {
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "プロトコルを選ぶ")
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            ServerType.entries.forEach { type ->
+                DropdownMenuItem(
+                    text = { Text(serverTypeLabel(type)) },
+                    onClick = {
+                        onSelected(type)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun serverTypeLabel(type: ServerType): String = when (type) {
+    ServerType.SFTP -> "SFTP (推奨)"
+    ServerType.FTP -> "FTP (平文)"
 }
 
 @Composable
