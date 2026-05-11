@@ -15,9 +15,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.apache.ftpserver.DataConnectionConfigurationFactory
 import org.apache.ftpserver.FtpServer
 import org.apache.ftpserver.FtpServerFactory
 import org.apache.ftpserver.listener.ListenerFactory
+import org.apache.ftpserver.ssl.SslConfiguration
+import org.apache.ftpserver.ssl.SslConfigurationFactory
 import java.nio.file.Path
 import java.nio.file.Paths
 import javax.inject.Inject
@@ -27,9 +30,9 @@ import javax.inject.Singleton
  * 設定毎に Apache FtpServer の [FtpServer] を起動・停止するマネージャ。
  *
  * SFTP 側 (`SftpServerManager`) と同じ責務を FTP プロトコルで提供する。
- * 平文 FTP は仕様書 §9-I に従い ── 削除はしないが UI 側で警告を出す ── 実装は
- * 残す。FTPS (Explicit TLS) は P6 後半でこのクラスに自己署名 PKCS12 を渡す
- * 経路を追加する想定で、まずは平文での起動経路に集中する。
+ * 平文 FTP は仕様書 §9-I に従い ── 削除はしないが UI 側で警告を出す ── 実装は残す。
+ * `config.ftpsEnabled` のときは [FtpsCertManager] から自己署名 PKCS12 を取得し、
+ * Explicit FTPS (AUTH TLS、制御・データチャネルとも) を有効にする。
  */
 @Singleton
 class FtpServerManager @Inject constructor(
@@ -37,6 +40,7 @@ class FtpServerManager @Inject constructor(
     private val hasher: Argon2idHasher,
     private val networkResolver: NetworkBindingResolver,
     private val logger: ServerLogger,
+    private val ftpsCertManager: FtpsCertManager,
 ) {
     private val mutex = Mutex()
     private val running: MutableMap<String, FtpServer> = mutableMapOf()
@@ -72,7 +76,18 @@ class FtpServerManager @Inject constructor(
                     },
                 ),
             )
-        val server = buildServer(config, rootPath, resolvedHost)
+        val sslConfig = if (config.ftpsEnabled) {
+            try {
+                buildSslConfiguration(ftpsCertManager.loadOrGenerate(config.id))
+            } catch (t: Throwable) {
+                return@withLock Result.Failure(
+                    StorageError.IoError("FTPS 証明書の準備に失敗しました: ${t.message}", t),
+                )
+            }
+        } else {
+            null
+        }
+        val server = buildServer(config, rootPath, resolvedHost, sslConfig)
         try {
             server.start()
         } catch (t: Throwable) {
@@ -121,11 +136,26 @@ class FtpServerManager @Inject constructor(
         }
     }
 
-    private fun buildServer(config: ServerConfig, rootPath: Path, host: String): FtpServer {
+    private fun buildServer(
+        config: ServerConfig,
+        rootPath: Path,
+        host: String,
+        sslConfig: SslConfiguration?,
+    ): FtpServer {
         val serverFactory = FtpServerFactory()
         val listenerFactory = ListenerFactory().apply {
             port = config.port
             serverAddress = host
+            if (sslConfig != null) {
+                setSslConfiguration(sslConfig)
+                // Explicit FTPS: 平文で接続して AUTH TLS でアップグレードする。
+                setImplicitSsl(false)
+                val dataConf = DataConnectionConfigurationFactory().apply {
+                    setImplicitSsl(false)
+                    setSslConfiguration(sslConfig)
+                }
+                setDataConnectionConfiguration(dataConf.createDataConnectionConfiguration())
+            }
         }
         serverFactory.addListener("default", listenerFactory.createListener())
         serverFactory.userManager = FoldexFtpUserManager(
@@ -137,6 +167,16 @@ class FtpServerManager @Inject constructor(
         )
         return serverFactory.createServer()
     }
+
+    private fun buildSslConfiguration(keystore: FtpsCertManager.Keystore): SslConfiguration =
+        SslConfigurationFactory().apply {
+            setKeystoreFile(keystore.file)
+            setKeystorePassword(keystore.password)
+            setKeyPassword(keystore.password)
+            setKeystoreType(keystore.type)
+            setKeyAlias(keystore.keyAlias)
+            setSslProtocol("TLS")
+        }.createSslConfiguration()
 
     private fun resolveLocalRoot(rootUri: String): Path? {
         val prefix = "local://"

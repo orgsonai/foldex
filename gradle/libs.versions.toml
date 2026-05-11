@@ -101,6 +101,7 @@ sshd-sftp                   = { group = "org.apache.sshd",         name = "sshd-
 # 暗号 (P6) — Argon2id / Ed25519 のために BouncyCastle を明示。
 # sshj が transitively に持つが、サーバー側でも使うので明示固定する。
 bouncycastle-bcprov         = { group = "org.bouncycastle",        name = "bcprov-jdk18on",         version.ref = "bouncycastle" }
+bouncycastle-bcpkix         = { group = "org.bouncycastle",        name = "bcpkix-jdk18on",         version.ref = "bouncycastle" }
 
 # FTP サーバー (P6) — Apache FtpServer (Explicit FTPS 込み)
 ftpserver-core              = { group = "org.apache.ftpserver",    name = "ftpserver-core",         version.ref = "ftpserver" }
