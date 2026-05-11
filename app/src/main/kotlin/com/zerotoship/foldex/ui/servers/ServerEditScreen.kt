@@ -107,23 +107,45 @@ fun ServerEditScreen(
                 onSelected = viewModel::changeType,
             )
             if (state.type == ServerType.FTP) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                ToggleRow(
+                    title = "FTPS (Explicit TLS)",
+                    description = "AUTH TLS で制御・データ通信を暗号化する。自己署名証明書を自動生成します",
+                    checked = state.ftpsEnabled,
+                    onCheckedChange = { v -> viewModel.update { it.copy(ftpsEnabled = v) } },
+                )
+                if (state.ftpsEnabled) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         Text(
-                            "FTP は通信を平文で行います",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                        Text(
-                            "ID / パスワードや転送内容が同一ネットワーク内で盗聴される可能性があります。古い NAS 等との互換性のために残されています。Explicit FTPS は今後のアップデートで対応予定です。",
+                            "自己署名証明書を使うため、クライアント側で証明書の警告が出ます (信頼して続行してください)。",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(12.dp),
                         )
+                    }
+                } else {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                "FTP は通信を平文で行います",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Text(
+                                "ID / パスワードや転送内容が同一ネットワーク内で盗聴される可能性があります。古い NAS 等との互換性のために残しています。上の FTPS を有効にすると暗号化されます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
                     }
                 }
             }

@@ -125,6 +125,8 @@ data class ServerEditState(
     val username: String,
     val password: String,
     val authorizedKeys: String,
+    /** FTP のみ有効: Explicit FTPS (AUTH TLS)。SFTP では無視される。 */
+    val ftpsEnabled: Boolean,
     val autoStartOnAppLaunch: Boolean,
     val autoStartOnBoot: Boolean,
 ) {
@@ -157,6 +159,7 @@ data class ServerEditState(
             readOnly = readOnly,
             authMode = authMode,
             username = username.trim().ifBlank { null },
+            ftpsEnabled = type == ServerType.FTP && ftpsEnabled,
             autoStartOnAppLaunch = autoStartOnAppLaunch,
             autoStartOnBoot = autoStartOnBoot,
             createdAt = now,
@@ -178,6 +181,7 @@ data class ServerEditState(
             username = "foldex",
             password = "",
             authorizedKeys = "",
+            ftpsEnabled = false,
             autoStartOnAppLaunch = false,
             autoStartOnBoot = false,
         )
@@ -195,6 +199,7 @@ data class ServerEditState(
             username = config.username.orEmpty(),
             password = "",
             authorizedKeys = "",
+            ftpsEnabled = config.ftpsEnabled,
             autoStartOnAppLaunch = config.autoStartOnAppLaunch,
             autoStartOnBoot = config.autoStartOnBoot,
         )
