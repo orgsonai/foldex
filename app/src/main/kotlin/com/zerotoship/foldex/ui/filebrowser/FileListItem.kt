@@ -27,6 +27,9 @@ import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.NodeType
 
+// 行アイテムはスクロール中に大量に compose/measure されるため、
+// 無駄な描画 (選択時以外の background 塗り = overdraw) や余計なアロケーションを避ける。
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FileListItem(
@@ -38,30 +41,23 @@ fun FileListItem(
 ) {
     val colors = MaterialTheme.colorScheme
     val isDir = node.type == NodeType.DIRECTORY
-    val backgroundColor = if (selected) colors.secondaryContainer else colors.surface
-    val iconTint = when {
-        selected -> colors.primary
-        isDir -> colors.primary
-        else -> colors.onSurfaceVariant
-    }
-    val icon = when {
-        selected -> Icons.Default.CheckBox
-        isDir -> Icons.Outlined.Folder
-        else -> Icons.Outlined.InsertDriveFile
-    }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(56.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .background(backgroundColor)
+            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = icon,
+            imageVector = when {
+                selected -> Icons.Default.CheckBox
+                isDir -> Icons.Outlined.Folder
+                else -> Icons.Outlined.InsertDriveFile
+            },
             contentDescription = null,
-            tint = iconTint,
+            tint = if (selected || isDir) colors.primary else colors.onSurfaceVariant,
             modifier = Modifier.size(24.dp),
         )
         Spacer(Modifier.width(16.dp))
@@ -86,17 +82,6 @@ fun FileDetailedItem(
 ) {
     val colors = MaterialTheme.colorScheme
     val isDir = node.type == NodeType.DIRECTORY
-    val backgroundColor = if (selected) colors.secondaryContainer else colors.surface
-    val iconTint = when {
-        selected -> colors.primary
-        isDir -> colors.primary
-        else -> colors.onSurfaceVariant
-    }
-    val icon = when {
-        selected -> Icons.Default.CheckBox
-        isDir -> Icons.Outlined.Folder
-        else -> Icons.Outlined.InsertDriveFile
-    }
     val subtitle = remember(node.size, node.lastModified) {
         buildString {
             if (node.size >= 0) append(formatSize(node.size))
@@ -111,14 +96,18 @@ fun FileDetailedItem(
             .fillMaxWidth()
             .height(64.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .background(backgroundColor)
+            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = icon,
+            imageVector = when {
+                selected -> Icons.Default.CheckBox
+                isDir -> Icons.Outlined.Folder
+                else -> Icons.Outlined.InsertDriveFile
+            },
             contentDescription = null,
-            tint = iconTint,
+            tint = if (selected || isDir) colors.primary else colors.onSurfaceVariant,
             modifier = Modifier.size(24.dp),
         )
         Spacer(Modifier.width(16.dp))

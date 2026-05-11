@@ -14,12 +14,14 @@ import com.zerotoship.foldex.core.model.Protocol
 import com.zerotoship.foldex.storage.StorageProviderRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
@@ -356,9 +358,7 @@ class FileBrowserViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null)
             try {
-                val files = mutableListOf<FileNode>()
-                storage.list(uri).collect { files.add(it) }
-                _state.value = _state.value.copy(isLoading = false, files = files)
+                _state.value = _state.value.copy(isLoading = false, files = collectFiles(uri))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -369,15 +369,22 @@ class FileBrowserViewModel @Inject constructor(
 
     private suspend fun loadFilesSync(uri: FileUri) {
         try {
-            val files = mutableListOf<FileNode>()
-            storage.list(uri).collect { files.add(it) }
-            _state.value = _state.value.copy(isLoading = false, files = files)
+            _state.value = _state.value.copy(isLoading = false, files = collectFiles(uri))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             _state.value = _state.value.copy(isLoading = false, error = e.message ?: "エラーが発生しました")
         }
     }
+
+    // list() の terminal collect が Main で走ると大量ディレクトリで Main を塞ぐため、
+    // 収集自体をバックグラウンドで行い、UI 更新だけ呼び出し元に戻す。
+    private suspend fun collectFiles(uri: FileUri): List<FileNode> =
+        withContext(Dispatchers.Default) {
+            val files = ArrayList<FileNode>()
+            storage.list(uri).collect { files.add(it) }
+            files
+        }
 
     private fun destUriFor(dir: FileUri, name: String): FileUri? = when (dir) {
         is FileUri.Local -> FileUri.Local("${dir.absolutePath}/$name")

@@ -523,6 +523,8 @@ private fun FileListContent(
     onFileLongClick: (FileNode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 選択が空のときは行ごとの toStorageString() アロケーションを避ける (スクロール最適化)
+    val hasSelection = selectedUris.isNotEmpty()
     when (viewMode) {
         ViewMode.LIST -> LazyColumn(modifier = modifier.fillMaxSize()) {
             items(
@@ -530,7 +532,7 @@ private fun FileListContent(
                 key = { it.uri.toStorageString() },
                 contentType = { "file-list" },
             ) { node ->
-                val selected = node.uri.toStorageString() in selectedUris
+                val selected = hasSelection && node.uri.toStorageString() in selectedUris
                 FileListItem(
                     node = node,
                     selected = selected,
@@ -546,7 +548,7 @@ private fun FileListContent(
                 key = { it.uri.toStorageString() },
                 contentType = { "file-detailed" },
             ) { node ->
-                val selected = node.uri.toStorageString() in selectedUris
+                val selected = hasSelection && node.uri.toStorageString() in selectedUris
                 FileDetailedItem(
                     node = node,
                     selected = selected,
@@ -567,7 +569,7 @@ private fun FileListContent(
                 key = { it.uri.toStorageString() },
                 contentType = { "file-grid" },
             ) { node ->
-                val selected = node.uri.toStorageString() in selectedUris
+                val selected = hasSelection && node.uri.toStorageString() in selectedUris
                 GridFileItem(
                     node = node,
                     selected = selected,
