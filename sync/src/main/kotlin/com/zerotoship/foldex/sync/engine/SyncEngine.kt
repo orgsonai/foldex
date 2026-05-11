@@ -11,6 +11,8 @@ import com.zerotoship.foldex.sync.model.SyncAction
 import com.zerotoship.foldex.sync.model.SyncProgress
 import com.zerotoship.foldex.sync.model.SyncResult
 import kotlinx.coroutines.CancellationException
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * 片方向同期の実行ファサード。UI / Worker からはこのクラスの [run] だけを呼べばよい。
@@ -20,7 +22,8 @@ import kotlinx.coroutines.CancellationException
  * [storage] には URI 種別で実装を振り分ける [StorageProvider] (app の StorageProviderRouter 等) を渡す。
  * 接続/切断のライフサイクルは呼び出し側に委ねる (共有プロバイダを勝手に切断しないため)。
  */
-class SyncEngine(
+@Singleton
+class SyncEngine @Inject constructor(
     private val jobRepository: SyncJobRepository,
     private val stateRepository: SyncStateRepository,
 ) {

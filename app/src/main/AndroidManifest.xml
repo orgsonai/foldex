@@ -40,6 +40,19 @@
             </intent-filter>
         </activity>
 
+        <!-- WorkManager は FoldexApplication (Configuration.Provider) で初期化するため、
+             androidx.startup による既定の自動初期化を無効化する。 -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
     </application>
 
 </manifest>
