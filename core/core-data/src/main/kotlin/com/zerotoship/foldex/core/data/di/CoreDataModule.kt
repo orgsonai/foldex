@@ -7,6 +7,8 @@ import com.zerotoship.foldex.core.data.db.EncryptedCredentialDao
 import com.zerotoship.foldex.core.data.db.FoldexDatabase
 import com.zerotoship.foldex.core.data.db.ServerConfigDao
 import com.zerotoship.foldex.core.data.db.ServerLogDao
+import com.zerotoship.foldex.core.data.db.SyncJobDao
+import com.zerotoship.foldex.core.data.db.SyncStateDao
 import com.zerotoship.foldex.core.data.security.CredentialCipher
 import dagger.Module
 import dagger.Provides
@@ -43,6 +45,12 @@ object CoreDataModule {
 
     @Provides
     fun provideServerLogDao(database: FoldexDatabase): ServerLogDao = database.serverLogDao()
+
+    @Provides
+    fun provideSyncJobDao(database: FoldexDatabase): SyncJobDao = database.syncJobDao()
+
+    @Provides
+    fun provideSyncStateDao(database: FoldexDatabase): SyncStateDao = database.syncStateDao()
 
     @Provides
     @Singleton

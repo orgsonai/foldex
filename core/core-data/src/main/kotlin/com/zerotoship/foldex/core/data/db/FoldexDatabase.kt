@@ -9,8 +9,10 @@ import androidx.room.RoomDatabase
         EncryptedCredentialEntity::class,
         ServerConfigEntity::class,
         ServerLogEntity::class,
+        SyncJobEntity::class,
+        SyncStateEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class FoldexDatabase : RoomDatabase() {
@@ -18,6 +20,8 @@ abstract class FoldexDatabase : RoomDatabase() {
     abstract fun encryptedCredentialDao(): EncryptedCredentialDao
     abstract fun serverConfigDao(): ServerConfigDao
     abstract fun serverLogDao(): ServerLogDao
+    abstract fun syncJobDao(): SyncJobDao
+    abstract fun syncStateDao(): SyncStateDao
 
     companion object {
         const val DATABASE_NAME = "foldex.db"
