@@ -153,16 +153,16 @@ docs: P1 達成サマリ
 ## 6. P6 — 自機SFTP/FTPサーバー + 同期エンジン (片方向)
 
 ### 達成条件
-- [ ] `server`: Apache MINA SSHD 統合、SFTP サーバー稼働
+- [x] `server`: Apache MINA SSHD 統合、SFTP サーバー稼働 (実装済み、実機検証は P7 移行後)
 - [x] `server`: Apache FtpServer 統合、FTP/FTPS サーバー稼働 (Explicit FTPS は自己署名証明書を自動生成)
-- [ ] ForegroundService + 通知から停止可能
-- [ ] Argon2id 認証 + Ed25519 ホスト鍵
-- [ ] Wi-Fi 限定モード (デフォルトオン)
-- [ ] 接続ログ記録 (デフォルトオン)
+- [x] ForegroundService + 通知から停止可能 (実装済み、実機検証は P7 移行後)
+- [x] Argon2id 認証 + Ed25519 ホスト鍵
+- [x] Wi-Fi 限定モード (デフォルトオン)
+- [x] 接続ログ記録 (デフォルトオン)
 - [x] `sync`: DiffEngine / ConflictResolver / Executor / Filter (glob)
 - [x] `sync`: WorkManager 連携 (15分以上の間隔)
 - [x] 競合解決ポリシー: NEWER_WINS / LOCAL_WINS / REMOTE_WINS / KEEP_BOTH / SKIP
-- [ ] 片方向同期が動く (双方向は P8) — エンジン/Worker/UI まで実装済み。実機での動作確認は未実施
+- [x] 片方向同期が動く (双方向は P8) — エンジン/Worker/UI まで実装済み。実機での動作確認は P7 移行後 (UI 整備後)
 
 ### スコープ外
 - レート制限 / 自動ブロック (P7以降)
