@@ -37,6 +37,12 @@ class ServerConfigRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val existing = configDao.findById(config.id)
         val merged = config.copy(
+            // 機密参照は UI 側のドメインオブジェクトには乗っていないため、上書き保存時は既存値を維持する
+            // (これを忘れると、パスワード未変更で編集しただけでハッシュ参照が消える等の事故になる)。
+            passwordHashRef = config.passwordHashRef ?: existing?.passwordHashRef,
+            authorizedKeysRef = config.authorizedKeysRef ?: existing?.authorizedKeysRef,
+            hostKeyRef = config.hostKeyRef ?: existing?.hostKeyRef,
+            ftpsTlsCertRef = config.ftpsTlsCertRef ?: existing?.ftpsTlsCertRef,
             createdAt = existing?.createdAt ?: config.createdAt.takeIf { it > 0 } ?: now,
             updatedAt = now,
         )
