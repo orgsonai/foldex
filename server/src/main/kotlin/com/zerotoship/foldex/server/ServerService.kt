@@ -72,15 +72,15 @@ class ServerService : Service() {
 
     private fun startServer(configId: String) {
         scope.launch {
-            val config = repository.findById(configId) ?: run {
-                refreshNotification()
-                return@launch
+            val config = repository.findById(configId)
+            if (config != null) {
+                when (config.type) {
+                    ServerType.SFTP -> sftpManager.start(configId)
+                    ServerType.FTP -> ftpManager.start(configId)
+                }
             }
-            when (config.type) {
-                ServerType.SFTP -> sftpManager.start(configId)
-                ServerType.FTP -> ftpManager.start(configId)
-            }
-            refreshNotification()
+            // 起動失敗等でどのサーバーも動いていない場合は、空の常駐通知を残さず自分を止める。
+            if (allRunningIds().isEmpty()) stopSelf() else refreshNotification()
         }
     }
 

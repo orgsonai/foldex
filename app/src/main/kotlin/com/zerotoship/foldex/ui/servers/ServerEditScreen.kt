@@ -229,7 +229,7 @@ fun ServerEditScreen(
             )
             ToggleRow(
                 title = "端末再起動後に自動起動",
-                description = "BOOT_COMPLETED 受信時に起動する (P6 後半で実装予定)",
+                description = "BOOT_COMPLETED 受信時に起動する (Wi-Fi 限定の場合は接続後に手動起動が必要なことがあります)",
                 checked = state.autoStartOnBoot,
                 onCheckedChange = { v -> viewModel.update { it.copy(autoStartOnBoot = v) } },
             )
