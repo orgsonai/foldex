@@ -4,23 +4,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import com.zerotoship.foldex.ui.connections.ConnectionsScreen
-import com.zerotoship.foldex.ui.filebrowser.FileBrowserScreen
-import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
-import com.zerotoship.foldex.ui.servers.ServerEditScreen
-import com.zerotoship.foldex.ui.servers.ServerLogScreen
-import com.zerotoship.foldex.ui.servers.ServersScreen
-import com.zerotoship.foldex.ui.sync.SyncJobEditScreen
-import com.zerotoship.foldex.ui.sync.SyncJobsScreen
-import androidx.navigation.NavType
-import androidx.navigation.navArgument
-import com.zerotoship.foldex.core.model.Connection
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
-import dagger.hilt.android.AndroidEntryPoint
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
+import com.zerotoship.foldex.ui.main.MainScreen
+import com.zerotoship.foldex.ui.settings.SettingsViewModel
 import com.zerotoship.foldex.ui.theme.FoldexTheme
+import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -28,82 +21,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            FoldexTheme {
-                val navController = rememberNavController()
-                // Activity スコープの ViewModel — browser/connections の両ルートで共有する
-                val browserViewModel: FileBrowserViewModel = hiltViewModel(this@MainActivity)
-                NavHost(navController = navController, startDestination = "browser") {
-                    composable("browser") {
-                        FileBrowserScreen(
-                            onOpenConnections = { navController.navigate("connections") },
-                            onOpenServers = { navController.navigate("servers") },
-                            onOpenSync = { navController.navigate("sync") },
-                            viewModel = browserViewModel,
-                        )
-                    }
-                    composable("connections") {
-                        ConnectionsScreen(
-                            onBack = { navController.popBackStack() },
-                            onOpen = { connection ->
-                                if (connection is Connection.Smb) {
-                                    browserViewModel.openSmbConnection(connection.id, connection.name)
-                                    navController.popBackStack()
-                                }
-                            },
-                        )
-                    }
-                    composable("servers") {
-                        ServersScreen(
-                            onBack = { navController.popBackStack() },
-                            onAdd = { navController.navigate("servers/new") },
-                            onEdit = { config -> navController.navigate("servers/edit/${config.id}") },
-                            onOpenLogs = { config -> navController.navigate("servers/log/${config.id}") },
-                        )
-                    }
-                    composable(
-                        route = "servers/log/{id}",
-                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
-                    ) {
-                        ServerLogScreen(onBack = { navController.popBackStack() })
-                    }
-                    composable("servers/new") {
-                        ServerEditScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() },
-                        )
-                    }
-                    composable(
-                        route = "servers/edit/{id}",
-                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
-                    ) {
-                        ServerEditScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() },
-                        )
-                    }
-                    composable("sync") {
-                        SyncJobsScreen(
-                            onBack = { navController.popBackStack() },
-                            onAdd = { navController.navigate("sync/new") },
-                            onEdit = { job -> navController.navigate("sync/edit/${job.id}") },
-                        )
-                    }
-                    composable("sync/new") {
-                        SyncJobEditScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() },
-                        )
-                    }
-                    composable(
-                        route = "sync/edit/{id}",
-                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
-                    ) {
-                        SyncJobEditScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() },
-                        )
-                    }
-                }
+            // Activity スコープ — ファイルタブと「接続」タブからの接続オープンで共有する
+            val browserViewModel: FileBrowserViewModel = hiltViewModel(this@MainActivity)
+            val settingsViewModel: SettingsViewModel = hiltViewModel(this@MainActivity)
+            val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+            val darkTheme = when (settings.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            FoldexTheme(darkTheme = darkTheme, dynamicColor = settings.dynamicColor) {
+                MainScreen(browserViewModel = browserViewModel)
             }
         }
     }

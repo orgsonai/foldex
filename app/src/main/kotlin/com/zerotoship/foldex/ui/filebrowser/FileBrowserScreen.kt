@@ -31,7 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.filled.CheckBox
@@ -45,7 +44,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GridView
@@ -104,9 +102,6 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FileBrowserScreen(
-    onOpenConnections: () -> Unit,
-    onOpenServers: () -> Unit,
-    onOpenSync: () -> Unit,
     viewModel: FileBrowserViewModel = hiltViewModel(),
     connectionsViewModel: ConnectionsViewModel = hiltViewModel(),
 ) {
@@ -224,37 +219,6 @@ fun FileBrowserScreen(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text("接続を管理") },
-                    selected = false,
-                    onClick = {
-                        drawerScope.launch { drawerState.close() }
-                        onOpenConnections()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.Storage, contentDescription = null) },
-                    label = { Text("自機サーバー") },
-                    selected = false,
-                    onClick = {
-                        drawerScope.launch { drawerState.close() }
-                        onOpenServers()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Default.Sync, contentDescription = null) },
-                    label = { Text("同期") },
-                    selected = false,
-                    onClick = {
-                        drawerScope.launch { drawerState.close() }
-                        onOpenSync()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
             }
         },
     ) {
