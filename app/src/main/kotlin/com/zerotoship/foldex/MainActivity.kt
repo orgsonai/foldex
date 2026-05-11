@@ -10,6 +10,13 @@ import androidx.navigation.compose.rememberNavController
 import com.zerotoship.foldex.ui.connections.ConnectionsScreen
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserScreen
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
+import com.zerotoship.foldex.ui.servers.ServerEditScreen
+import com.zerotoship.foldex.ui.servers.ServerLogScreen
+import com.zerotoship.foldex.ui.servers.ServersScreen
+import com.zerotoship.foldex.ui.sync.SyncJobEditScreen
+import com.zerotoship.foldex.ui.sync.SyncJobsScreen
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.zerotoship.foldex.core.model.Connection
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -29,6 +36,8 @@ class MainActivity : ComponentActivity() {
                     composable("browser") {
                         FileBrowserScreen(
                             onOpenConnections = { navController.navigate("connections") },
+                            onOpenServers = { navController.navigate("servers") },
+                            onOpenSync = { navController.navigate("sync") },
                             viewModel = browserViewModel,
                         )
                     }
@@ -41,6 +50,57 @@ class MainActivity : ComponentActivity() {
                                     navController.popBackStack()
                                 }
                             },
+                        )
+                    }
+                    composable("servers") {
+                        ServersScreen(
+                            onBack = { navController.popBackStack() },
+                            onAdd = { navController.navigate("servers/new") },
+                            onEdit = { config -> navController.navigate("servers/edit/${config.id}") },
+                            onOpenLogs = { config -> navController.navigate("servers/log/${config.id}") },
+                        )
+                    }
+                    composable(
+                        route = "servers/log/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) {
+                        ServerLogScreen(onBack = { navController.popBackStack() })
+                    }
+                    composable("servers/new") {
+                        ServerEditScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = { navController.popBackStack() },
+                        )
+                    }
+                    composable(
+                        route = "servers/edit/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) {
+                        ServerEditScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = { navController.popBackStack() },
+                        )
+                    }
+                    composable("sync") {
+                        SyncJobsScreen(
+                            onBack = { navController.popBackStack() },
+                            onAdd = { navController.navigate("sync/new") },
+                            onEdit = { job -> navController.navigate("sync/edit/${job.id}") },
+                        )
+                    }
+                    composable("sync/new") {
+                        SyncJobEditScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = { navController.popBackStack() },
+                        )
+                    }
+                    composable(
+                        route = "sync/edit/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) {
+                        SyncJobEditScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = { navController.popBackStack() },
                         )
                     }
                 }

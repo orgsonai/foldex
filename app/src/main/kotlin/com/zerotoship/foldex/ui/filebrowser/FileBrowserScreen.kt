@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GridView
@@ -104,6 +105,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun FileBrowserScreen(
     onOpenConnections: () -> Unit,
+    onOpenServers: () -> Unit,
+    onOpenSync: () -> Unit,
     viewModel: FileBrowserViewModel = hiltViewModel(),
     connectionsViewModel: ConnectionsViewModel = hiltViewModel(),
 ) {
@@ -229,6 +232,26 @@ fun FileBrowserScreen(
                     onClick = {
                         drawerScope.launch { drawerState.close() }
                         onOpenConnections()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.Storage, contentDescription = null) },
+                    label = { Text("自機サーバー") },
+                    selected = false,
+                    onClick = {
+                        drawerScope.launch { drawerState.close() }
+                        onOpenServers()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.Sync, contentDescription = null) },
+                    label = { Text("同期") },
+                    selected = false,
+                    onClick = {
+                        drawerScope.launch { drawerState.close() }
+                        onOpenSync()
                     },
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )

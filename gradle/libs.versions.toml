@@ -12,6 +12,7 @@ navigation-compose  = "2.9.0"
 room                = "2.7.1"
 datastore           = "1.1.2"
 work                = "2.10.1"
+androidx-hilt       = "1.2.0"
 kotlinx-datetime    = "0.7.0"
 kotlinx-coroutines  = "1.10.2"
 junit               = "4.13.2"
@@ -23,6 +24,9 @@ sshj                = "0.39.0"
 commons-net         = "3.11.1"
 okhttp              = "4.12.0"
 juniversalchardet   = "2.4.0"
+sshd                = "2.13.2"
+bouncycastle        = "1.78.1"
+ftpserver           = "1.2.0"
 
 [libraries]
 # AndroidX Core
@@ -48,7 +52,9 @@ compose-material-icons-extended = { group = "androidx.compose.material", name = 
 # Hilt
 hilt-android                = { group = "com.google.dagger",       name = "hilt-android",           version.ref = "hilt" }
 hilt-compiler               = { group = "com.google.dagger",       name = "hilt-android-compiler",  version.ref = "hilt" }
-hilt-navigation-compose     = { group = "androidx.hilt",           name = "hilt-navigation-compose", version = "1.2.0" }
+hilt-navigation-compose     = { group = "androidx.hilt",           name = "hilt-navigation-compose", version.ref = "androidx-hilt" }
+androidx-hilt-work          = { group = "androidx.hilt",           name = "hilt-work",              version.ref = "androidx-hilt" }
+androidx-hilt-compiler      = { group = "androidx.hilt",           name = "hilt-compiler",          version.ref = "androidx-hilt" }
 
 # Room
 room-runtime                = { group = "androidx.room",           name = "room-runtime",            version.ref = "room" }
@@ -87,6 +93,18 @@ okhttp                      = { group = "com.squareup.okhttp3",    name = "okhtt
 
 # 文字コード判定 (P5) — メンテ継続中の albfernandez フォーク
 juniversalchardet           = { group = "com.github.albfernandez", name = "juniversalchardet",      version.ref = "juniversalchardet" }
+
+# SFTP サーバー (P6) — Apache MINA SSHD
+sshd-core                   = { group = "org.apache.sshd",         name = "sshd-core",              version.ref = "sshd" }
+sshd-sftp                   = { group = "org.apache.sshd",         name = "sshd-sftp",              version.ref = "sshd" }
+
+# 暗号 (P6) — Argon2id / Ed25519 のために BouncyCastle を明示。
+# sshj が transitively に持つが、サーバー側でも使うので明示固定する。
+bouncycastle-bcprov         = { group = "org.bouncycastle",        name = "bcprov-jdk18on",         version.ref = "bouncycastle" }
+bouncycastle-bcpkix         = { group = "org.bouncycastle",        name = "bcpkix-jdk18on",         version.ref = "bouncycastle" }
+
+# FTP サーバー (P6) — Apache FtpServer (Explicit FTPS 込み)
+ftpserver-core              = { group = "org.apache.ftpserver",    name = "ftpserver-core",         version.ref = "ftpserver" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }

@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -18,6 +20,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    packaging {
+        resources {
+            excludes += listOf(
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/INDEX.LIST",
+                "META-INF/io.netty.versions.properties",
+                "META-INF/DEPENDENCIES",
+            )
+        }
+    }
 }
 
 dependencies {
@@ -28,10 +41,15 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
-    // P6 で追加予定:
-    // Apache MINA SSHD: org.apache.sshd:sshd-sftp:2.13.2
-    // Apache FtpServer: org.apache.ftpserver:ftpserver-core:1.2.0
-    // Argon2id: de.mkammerer:argon2-jvm:2.11
+    implementation(libs.sshd.core)
+    implementation(libs.sshd.sftp)
+    implementation(libs.ftpserver.core)
+    implementation(libs.bouncycastle.bcprov)
+    implementation(libs.bouncycastle.bcpkix)
+    implementation(libs.slf4j.android)
+
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.test.ext.junit)
