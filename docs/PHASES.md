@@ -159,10 +159,10 @@ docs: P1 達成サマリ
 - [ ] Argon2id 認証 + Ed25519 ホスト鍵
 - [ ] Wi-Fi 限定モード (デフォルトオン)
 - [ ] 接続ログ記録 (デフォルトオン)
-- [ ] `sync`: DiffEngine / ConflictResolver / Executor / Filter (glob)
-- [ ] `sync`: WorkManager 連携 (15分以上の間隔)
-- [ ] 競合解決ポリシー: NEWER_WINS / LOCAL_WINS / REMOTE_WINS / KEEP_BOTH / SKIP
-- [ ] 片方向同期が動く (双方向は P8)
+- [x] `sync`: DiffEngine / ConflictResolver / Executor / Filter (glob)
+- [x] `sync`: WorkManager 連携 (15分以上の間隔)
+- [x] 競合解決ポリシー: NEWER_WINS / LOCAL_WINS / REMOTE_WINS / KEEP_BOTH / SKIP
+- [ ] 片方向同期が動く (双方向は P8) — エンジン/Worker は実装済み。同期ジョブ作成 UI が未着手
 
 ### スコープ外
 - レート制限 / 自動ブロック (P7以降)
