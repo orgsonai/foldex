@@ -162,7 +162,7 @@ docs: P1 達成サマリ
 - [x] `sync`: DiffEngine / ConflictResolver / Executor / Filter (glob)
 - [x] `sync`: WorkManager 連携 (15分以上の間隔)
 - [x] 競合解決ポリシー: NEWER_WINS / LOCAL_WINS / REMOTE_WINS / KEEP_BOTH / SKIP
-- [ ] 片方向同期が動く (双方向は P8) — エンジン/Worker は実装済み。同期ジョブ作成 UI が未着手
+- [ ] 片方向同期が動く (双方向は P8) — エンジン/Worker/UI まで実装済み。実機での動作確認は未実施
 
 ### スコープ外
 - レート制限 / 自動ブロック (P7以降)
