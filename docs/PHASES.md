@@ -154,7 +154,7 @@ docs: P1 達成サマリ
 
 ### 達成条件
 - [ ] `server`: Apache MINA SSHD 統合、SFTP サーバー稼働
-- [ ] `server`: Apache FtpServer 統合、FTP/FTPS サーバー稼働
+- [x] `server`: Apache FtpServer 統合、FTP/FTPS サーバー稼働 (Explicit FTPS は自己署名証明書を自動生成)
 - [ ] ForegroundService + 通知から停止可能
 - [ ] Argon2id 認証 + Ed25519 ホスト鍵
 - [ ] Wi-Fi 限定モード (デフォルトオン)
