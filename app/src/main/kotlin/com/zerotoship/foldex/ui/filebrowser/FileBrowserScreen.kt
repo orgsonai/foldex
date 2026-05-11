@@ -27,11 +27,23 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.SdStorage
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
@@ -87,6 +99,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -172,53 +185,81 @@ fun FileBrowserScreen(
         }
     }
 
+    val quickAccess by viewModel.quickAccess.collectAsStateWithLifecycle()
+    val favorites = remember(state.favoriteUris) {
+        state.favoriteUris.mapNotNull { key -> FileUri.fromStorageStringOrNull(key)?.let { it to key } }
+    }
+    fun closeDrawerThen(action: () -> Unit) {
+        drawerScope.launch { drawerState.close() }
+        action()
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "Foldex",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                )
-                HorizontalDivider()
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.PhoneAndroid, contentDescription = null) },
-                    label = { Text("ローカル") },
-                    selected = state.currentUri is FileUri.Local
-                        || state.currentUri is FileUri.Saf,
-                    onClick = {
-                        drawerScope.launch { drawerState.close() }
-                        viewModel.openLocalRoot()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
-                if (connections.isNotEmpty()) {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Spacer(Modifier.height(16.dp))
                     Text(
-                        text = "リモート接続",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "Foldex",
+                        style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     )
-                    connections.forEach { connection ->
-                        val selected = (state.currentUri as? FileUri.Remote)
-                            ?.connectionId == connection.id
+                    HorizontalDivider()
+                    DrawerSectionLabel("クイックアクセス")
+                    quickAccess.forEach { entry ->
+                        val selected = (state.currentUri as? FileUri.Local)?.absolutePath ==
+                            (entry.uri as? FileUri.Local)?.absolutePath
                         NavigationDrawerItem(
-                            icon = { Icon(Icons.Outlined.Storage, contentDescription = null) },
-                            label = { Text(connection.name) },
+                            icon = { Icon(quickAccessIcon(entry.kind), contentDescription = null) },
+                            label = { Text(entry.label) },
                             selected = selected,
-                            onClick = {
-                                drawerScope.launch { drawerState.close() }
-                                if (connection is Connection.Smb) {
-                                    viewModel.openSmbConnection(connection.id, connection.name)
-                                }
-                            },
+                            onClick = { closeDrawerThen { viewModel.open(entry.uri, entry.label) } },
                             modifier = Modifier.padding(horizontal = 12.dp),
                         )
                     }
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
+                        label = { Text("別のフォルダを開く…") },
+                        selected = false,
+                        onClick = { closeDrawerThen { safLauncher.launch(null) } },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+
+                    if (favorites.isNotEmpty()) {
+                        DrawerSectionLabel("お気に入り")
+                        favorites.forEach { (uri, key) ->
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Outlined.Star, contentDescription = null) },
+                                label = { Text(favoriteLabel(uri), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                selected = state.currentUri?.toStorageString() == key,
+                                onClick = { closeDrawerThen { viewModel.open(uri, favoriteLabel(uri)) } },
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                            )
+                        }
+                    }
+
+                    if (connections.isNotEmpty()) {
+                        DrawerSectionLabel("リモート接続")
+                        connections.forEach { connection ->
+                            val selected = (state.currentUri as? FileUri.Remote)?.connectionId == connection.id
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Outlined.Storage, contentDescription = null) },
+                                label = { Text(connection.name) },
+                                selected = selected,
+                                onClick = {
+                                    closeDrawerThen {
+                                        if (connection is Connection.Smb) {
+                                            viewModel.openSmbConnection(connection.id, connection.name)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
                 }
-                Spacer(Modifier.height(8.dp))
             }
         },
     ) {
@@ -308,6 +349,18 @@ fun FileBrowserScreen(
                                     tint = MaterialTheme.colorScheme.error)
                             }
                         } else {
+                            val curUri = state.currentUri
+                            if (curUri != null) {
+                                val isFav = curUri.toStorageString() in state.favoriteUris
+                                IconButton(onClick = { viewModel.toggleFavorite(curUri) }) {
+                                    Icon(
+                                        imageVector = if (isFav) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                        contentDescription = if (isFav) "お気に入りから外す" else "お気に入りに追加",
+                                        tint = if (isFav) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                             IconButton(onClick = { viewModel.toggleSearch() }) {
                                 Icon(Icons.Default.Search, contentDescription = "検索")
                             }
@@ -637,4 +690,30 @@ private fun EmptyContent() {
         Text("このフォルダは空です", style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+@Composable
+private fun DrawerSectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 28.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
+}
+
+private fun quickAccessIcon(kind: QuickAccessKind): ImageVector = when (kind) {
+    QuickAccessKind.INTERNAL_STORAGE -> Icons.Outlined.PhoneAndroid
+    QuickAccessKind.DOWNLOAD -> Icons.Outlined.Download
+    QuickAccessKind.IMAGES -> Icons.Outlined.Image
+    QuickAccessKind.CAMERA -> Icons.Outlined.PhotoCamera
+    QuickAccessKind.VIDEO -> Icons.Outlined.Movie
+    QuickAccessKind.MUSIC -> Icons.Outlined.MusicNote
+    QuickAccessKind.DOCUMENTS -> Icons.Outlined.Description
+    QuickAccessKind.SD_CARD -> Icons.Outlined.SdStorage
+}
+
+private fun favoriteLabel(uri: FileUri): String {
+    val s = uri.toStorageString().trimEnd('/')
+    return s.substringAfterLast('/').ifEmpty { s }
 }

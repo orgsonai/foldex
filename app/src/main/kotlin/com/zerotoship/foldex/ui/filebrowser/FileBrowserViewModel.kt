@@ -39,6 +39,9 @@ class FileBrowserViewModel @Inject constructor(
     private val _snackbar = Channel<SnackbarEvent>(Channel.BUFFERED)
     val snackbarEvents = _snackbar.receiveAsFlow()
 
+    private val _quickAccess = MutableStateFlow<List<QuickAccessEntry>>(emptyList())
+    val quickAccess: StateFlow<List<QuickAccessEntry>> = _quickAccess.asStateFlow()
+
     init {
         val hasPerm = checkStoragePermission()
         val safRootUri = prefs.getString(KEY_SAF_ROOT, null)
@@ -54,6 +57,9 @@ class FileBrowserViewModel @Inject constructor(
                 displayName = "内部ストレージ",
             )
             safRootUri != null -> navigateTo(FileUri.Saf(safRootUri), displayName = "ストレージ")
+        }
+        if (hasPerm) {
+            viewModelScope.launch { _quickAccess.value = withContext(Dispatchers.IO) { computeQuickAccess() } }
         }
     }
 
@@ -73,6 +79,7 @@ class FileBrowserViewModel @Inject constructor(
             FileUri.Local(Environment.getExternalStorageDirectory().absolutePath),
             displayName = "内部ストレージ",
         )
+        viewModelScope.launch { _quickAccess.value = withContext(Dispatchers.IO) { computeQuickAccess() } }
     }
 
     fun onSafRootPicked(treeUri: Uri) {
@@ -96,6 +103,12 @@ class FileBrowserViewModel @Inject constructor(
             FileUri.Local(Environment.getExternalStorageDirectory().absolutePath),
             displayName = "内部ストレージ",
         )
+    }
+
+    /** クイックアクセス/お気に入りからの遷移。階層をリセットして指定 URI を開く。 */
+    fun open(uri: FileUri, displayName: String) {
+        _state.value = _state.value.copy(breadcrumbs = emptyList(), selectedUris = emptySet())
+        navigateTo(uri, displayName)
     }
 
     fun navigateTo(uri: FileUri, displayName: String) {
@@ -385,6 +398,35 @@ class FileBrowserViewModel @Inject constructor(
             storage.list(uri).collect { files.add(it) }
             files
         }
+
+    private fun computeQuickAccess(): List<QuickAccessEntry> {
+        val entries = mutableListOf<QuickAccessEntry>()
+        val root = runCatching { Environment.getExternalStorageDirectory() }.getOrNull()
+        if (root != null && root.isDirectory) {
+            entries += QuickAccessEntry(FileUri.Local(root.absolutePath), "内部ストレージ", QuickAccessKind.INTERNAL_STORAGE)
+            val standardDirs = listOf(
+                Triple("Download", "ダウンロード", QuickAccessKind.DOWNLOAD),
+                Triple("DCIM", "カメラ", QuickAccessKind.CAMERA),
+                Triple("Pictures", "画像", QuickAccessKind.IMAGES),
+                Triple("Movies", "動画", QuickAccessKind.VIDEO),
+                Triple("Music", "音楽", QuickAccessKind.MUSIC),
+                Triple("Documents", "ドキュメント", QuickAccessKind.DOCUMENTS),
+            )
+            for ((dirName, label, kind) in standardDirs) {
+                val dir = File(root, dirName)
+                if (dir.isDirectory) entries += QuickAccessEntry(FileUri.Local(dir.absolutePath), label, kind)
+            }
+        }
+        // 取り外し可能ストレージ (SD カード / USB) — /storage 直下の emulated 以外のボリューム
+        runCatching {
+            File("/storage").listFiles()?.forEach { vol ->
+                if (vol.name != "emulated" && vol.name != "self" && vol.isDirectory && vol.canRead()) {
+                    entries += QuickAccessEntry(FileUri.Local(vol.absolutePath), "SDカード", QuickAccessKind.SD_CARD)
+                }
+            }
+        }
+        return entries
+    }
 
     private fun destUriFor(dir: FileUri, name: String): FileUri? = when (dir) {
         is FileUri.Local -> FileUri.Local("${dir.absolutePath}/$name")
