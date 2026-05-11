@@ -13,6 +13,8 @@ import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import com.zerotoship.foldex.ui.servers.ServerEditScreen
 import com.zerotoship.foldex.ui.servers.ServerLogScreen
 import com.zerotoship.foldex.ui.servers.ServersScreen
+import com.zerotoship.foldex.ui.sync.SyncJobEditScreen
+import com.zerotoship.foldex.ui.sync.SyncJobsScreen
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.zerotoship.foldex.core.model.Connection
@@ -35,6 +37,7 @@ class MainActivity : ComponentActivity() {
                         FileBrowserScreen(
                             onOpenConnections = { navController.navigate("connections") },
                             onOpenServers = { navController.navigate("servers") },
+                            onOpenSync = { navController.navigate("sync") },
                             viewModel = browserViewModel,
                         )
                     }
@@ -74,6 +77,28 @@ class MainActivity : ComponentActivity() {
                         arguments = listOf(navArgument("id") { type = NavType.StringType }),
                     ) {
                         ServerEditScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = { navController.popBackStack() },
+                        )
+                    }
+                    composable("sync") {
+                        SyncJobsScreen(
+                            onBack = { navController.popBackStack() },
+                            onAdd = { navController.navigate("sync/new") },
+                            onEdit = { job -> navController.navigate("sync/edit/${job.id}") },
+                        )
+                    }
+                    composable("sync/new") {
+                        SyncJobEditScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = { navController.popBackStack() },
+                        )
+                    }
+                    composable(
+                        route = "sync/edit/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) {
+                        SyncJobEditScreen(
                             onBack = { navController.popBackStack() },
                             onSaved = { navController.popBackStack() },
                         )
