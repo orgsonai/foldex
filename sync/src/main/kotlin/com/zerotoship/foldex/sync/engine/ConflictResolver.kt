@@ -28,8 +28,10 @@ object ConflictResolver {
         direction: SyncDirection,
         nowMillis: Long = System.currentTimeMillis(),
     ): ConflictResolution {
+        // 競合の「敗者側」= リネームされる側 / 同 mtime 時に上書きされる側。
+        // 双方向ではどちらが敗者か固有には決まらないので、ローカルを優先 (= リモート側を敗者扱い) とする。
         val destinationSide = when (direction) {
-            SyncDirection.TO_REMOTE -> ConflictSide.REMOTE
+            SyncDirection.TO_REMOTE, SyncDirection.BIDIRECTIONAL -> ConflictSide.REMOTE
             SyncDirection.TO_LOCAL -> ConflictSide.LOCAL
         }
         return when (policy) {

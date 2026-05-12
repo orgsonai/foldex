@@ -10,11 +10,13 @@ import java.util.Locale
 internal fun directionLabel(direction: SyncDirection): String = when (direction) {
     SyncDirection.TO_REMOTE -> "ローカル → リモート (アップロード)"
     SyncDirection.TO_LOCAL -> "リモート → ローカル (ダウンロード)"
+    SyncDirection.BIDIRECTIONAL -> "ローカル ⇄ リモート (双方向)"
 }
 
 internal fun directionShortLabel(direction: SyncDirection): String = when (direction) {
     SyncDirection.TO_REMOTE -> "↑ アップロード"
     SyncDirection.TO_LOCAL -> "↓ ダウンロード"
+    SyncDirection.BIDIRECTIONAL -> "⇄ 双方向"
 }
 
 internal fun conflictPolicyLabel(policy: ConflictPolicy): String = when (policy) {

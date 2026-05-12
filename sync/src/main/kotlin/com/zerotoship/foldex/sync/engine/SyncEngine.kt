@@ -48,15 +48,16 @@ class SyncEngine @Inject constructor(
             val remoteRoot = FileUri.fromStorageString(job.remoteUri)
             val filter = Filter(job.filter)
             val toRemote = job.direction == SyncDirection.TO_REMOTE
+            val bidirectional = job.direction == SyncDirection.BIDIRECTIONAL
 
             val localTree = when (
-                val r = TreeWalker(storage, localRoot, filter, treatMissingRootAsEmpty = !toRemote).walk()
+                val r = TreeWalker(storage, localRoot, filter, treatMissingRootAsEmpty = !toRemote || bidirectional).walk()
             ) {
                 is Result.Success -> r.value
                 is Result.Failure -> return failed(job, startedAt, "ローカルの列挙に失敗: ${r.error.message}", tracker)
             }
             val remoteTree = when (
-                val r = TreeWalker(storage, remoteRoot, filter, treatMissingRootAsEmpty = toRemote).walk()
+                val r = TreeWalker(storage, remoteRoot, filter, treatMissingRootAsEmpty = toRemote || bidirectional).walk()
             ) {
                 is Result.Success -> r.value
                 is Result.Failure -> return failed(job, startedAt, "リモートの列挙に失敗: ${r.error.message}", tracker)
@@ -80,7 +81,8 @@ class SyncEngine @Inject constructor(
                     when (a) {
                         is SyncAction.Upload -> a.size
                         is SyncAction.Download -> a.size
-                        is SyncAction.Conflict -> if (toRemote) a.local.size else a.remote.size
+                        is SyncAction.Conflict -> if (bidirectional) maxOf(a.local.size, a.remote.size)
+                            else if (toRemote) a.local.size else a.remote.size
                         else -> 0L
                     }
                 },

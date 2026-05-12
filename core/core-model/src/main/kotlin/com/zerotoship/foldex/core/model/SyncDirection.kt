@@ -1,7 +1,8 @@
 package com.zerotoship.foldex.core.model
 
 /**
- * 同期方向。P6 では片方向のみで、双方向 (BIDIRECTIONAL) は P8 で追加予定。
+ * 同期方向。片方向 (TO_REMOTE / TO_LOCAL) と双方向 (BIDIRECTIONAL)。
+ * 双方向は前回同期状態 (state DB) を使い「片側のみ変化 = 伝播 / 両側変化 = 競合 / 片側消失 = 削除伝播」で判定する。
  */
 enum class SyncDirection(val wireName: String) {
     /** ローカル → リモート (アップロード/ミラー)。 */
@@ -9,6 +10,9 @@ enum class SyncDirection(val wireName: String) {
 
     /** リモート → ローカル (ダウンロード/ミラー)。 */
     TO_LOCAL("to_local"),
+
+    /** ローカル ⇄ リモート (双方向)。 */
+    BIDIRECTIONAL("bidirectional"),
     ;
 
     companion object {

@@ -175,11 +175,22 @@ internal class Executor(
         }
 
         is SyncAction.Conflict -> {
-            val toRemote = direction == SyncDirection.TO_REMOTE
+            // 片方向はジョブの方向、双方向は解決結果 (勝者) で「どちらをソースにするか」が決まる。
+            val takeLocal = when (direction) {
+                SyncDirection.TO_REMOTE -> true
+                SyncDirection.TO_LOCAL -> false
+                SyncDirection.BIDIRECTIONAL -> when (val res = action.resolution) {
+                    ConflictResolution.TakeLocal -> true
+                    ConflictResolution.TakeRemote -> false
+                    // KeepBoth は敗者側をリネームする。renameSide=REMOTE なら local が勝者。
+                    is ConflictResolution.KeepBoth -> res.renameSide == ConflictSide.REMOTE
+                    ConflictResolution.Skip -> error("Skip resolution should not reach Executor")
+                }
+            }
             (action.resolution as? ConflictResolution.KeepBoth)?.let { keepBoth ->
                 renameLosingSide(keepBoth, action.path)
             }
-            val bytes = if (toRemote) {
+            val bytes = if (takeLocal) {
                 transferAndRecord(
                     path = action.path,
                     source = localProvider, sourceRoot = localRoot, sourceEntry = action.local,
