@@ -18,7 +18,9 @@
   - ✅ B-3 ジョブ追加 UI の整理 (`2f3b281`): セクション見出し・説明文・例・glob 凡例・スケジュールのプリセットチップ。
   - ✅ B-2 スケジュール拡張 (`6b2c48b`): ScheduleType + SyncSchedule、SyncJobEntity スキーマ拡張 (DB v3→4)、Scheduler を OneTimeWork の自己再スケジュール方式へ、編集画面に時刻/曜日/日/日時のピッカー。
   - ✅ B-4 delete 同期の削除前バックアップ (`912c9d0`): SyncBackupRepository、設定 (世代数/しきい値/超過時の扱い)、SyncEngine→Executor で削除前に退避。バックアップ一覧/復元の UI は後続。
-  - ⬜ B-1 双方向同期 (`SyncDirection.BIDIRECTIONAL`): DiffEngine/Executor/ConflictResolver と各 `when(direction)` の拡張、state DB を使った「片側変化=伝播 / 両側変化=競合 / 片側消失=削除伝播」判定。**未着手**。
+  - ✅ B-1 双方向同期 (`ae5ec6b`): SyncDirection.BIDIRECTIONAL、DiffEngine の双方向判定 (SAME/NEW/MODIFIED/DELETED/NEVER 分類)、ConflictResolver/Executor が勝者で転送方向を決定、SyncEngine は双方向で片側ルート欠如を許容。
+
+**A〜E のすべて (双方向同期含む) 完了。** 残る小ポリッシュ: 音声アルバムアートのサムネ、削除前バックアップの一覧/復元 UI。
 
 ### 確定した方針 (2026-05-12 ヒアリング)
 - B-1 双方向同期: **P7 で実装**。HANDOFF §8-B / PHASES P8 を更新する。
