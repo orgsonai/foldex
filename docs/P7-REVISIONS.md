@@ -16,9 +16,9 @@
 - 🟡 B/E:
   - ✅ E ゴミ箱システム (`39e76ca`): DeleteBehavior(TRASH/PERMANENT/ASK) + TrashRepository + 設定 + TrashScreen + 削除フロー差し替え + 自動削除。
   - ✅ B-3 ジョブ追加 UI の整理 (`2f3b281`): セクション見出し・説明文・例・glob 凡例・スケジュールのプリセットチップ。
-  - ⬜ B-1 双方向同期 (`SyncDirection.BIDIRECTIONAL`): DiffEngine/Executor/ConflictResolver と各 `when(direction)` の拡張、state DB を使った「片側変化=伝播 / 両側変化=競合 / 片側消失=削除伝播」判定が必要。**未着手** (sync エンジン本体 + テストに触れるため、まとまった時間で実施推奨)。
-  - ⬜ B-2 スケジュール拡張 (毎日/毎週/毎月/日時指定): `SyncJobEntity` スキーマ拡張 + Room マイグレーション + Scheduler を OneTimeWork の自己再スケジュール方式へ。**未着手**。
+  - ✅ B-2 スケジュール拡張 (`6b2c48b`): ScheduleType + SyncSchedule、SyncJobEntity スキーマ拡張 (DB v3→4)、Scheduler を OneTimeWork の自己再スケジュール方式へ、編集画面に時刻/曜日/日/日時のピッカー。
   - ⬜ B-4 delete 同期の 3 世代バックアップ + 容量しきい値設定 (グローバル): Executor の DeleteLocal/DeleteRemote 直前にバックアップ領域へ退避、世代繰り上げ、設定 (しきい値 × ASK/BACKUP/SKIP)。**未着手** (TrashRepository と退避ロジックを共通化できる)。
+  - ⬜ B-1 双方向同期 (`SyncDirection.BIDIRECTIONAL`): DiffEngine/Executor/ConflictResolver と各 `when(direction)` の拡張、state DB を使った「片側変化=伝播 / 両側変化=競合 / 片側消失=削除伝播」判定。**未着手**。
 
 ### 確定した方針 (2026-05-12 ヒアリング)
 - B-1 双方向同期: **P7 で実装**。HANDOFF §8-B / PHASES P8 を更新する。
