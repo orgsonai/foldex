@@ -90,13 +90,13 @@ fun tintFor(node: FileNode, selected: Boolean): Color {
 fun ExtensionBadge(node: FileNode, modifier: Modifier = Modifier) {
     if (node.type != NodeType.FILE) return
     val ext = node.name.substringAfterLast('.', "").takeIf { it.isNotEmpty() && it.length <= 5 } ?: return
+    // background(color, shape) は描画だけで済む。clip(shape) はレイヤーを作るので使わない。
     Text(
         text = ext.uppercase(),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
 }
