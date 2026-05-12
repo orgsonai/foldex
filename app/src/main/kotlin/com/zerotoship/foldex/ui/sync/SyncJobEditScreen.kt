@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -99,14 +100,18 @@ fun SyncJobEditScreen(
                 value = state.name,
                 onValueChange = { v -> viewModel.update { it.copy(name = v) } },
                 label = { Text("名前") },
+                supportingText = { Text("一覧に表示される名前 (例: カメラ写真をNASへ)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            SectionHeader("対象フォルダ")
             DirectionDropdown(state.direction) { d -> viewModel.update { it.copy(direction = d) } }
             OutlinedTextField(
                 value = state.localPath,
                 onValueChange = { v -> viewModel.update { it.copy(localPath = v) } },
-                label = { Text("ローカルのフォルダ (例: /storage/emulated/0/DCIM)") },
+                label = { Text("ローカルのフォルダ") },
+                supportingText = { Text("端末内のフォルダの絶対パス (例: /storage/emulated/0/DCIM)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -125,23 +130,35 @@ fun SyncJobEditScreen(
             OutlinedTextField(
                 value = state.remotePath,
                 onValueChange = { v -> viewModel.update { it.copy(remotePath = v) } },
-                label = { Text("リモートのフォルダ (接続のルートからの相対パス、空欄でルート)") },
+                label = { Text("リモートのフォルダ") },
+                supportingText = { Text("接続のルートからの相対パス。空欄ならルート (例: backup/photos)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            HorizontalDivider()
-            ConflictPolicyDropdown(state.conflictPolicy) { p -> viewModel.update { it.copy(conflictPolicy = p) } }
+
+            SectionHeader("スケジュール")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                listOf(0 to "手動のみ", 15 to "15分", 30 to "30分", 60 to "1時間", 180 to "3時間", 360 to "6時間", 720 to "12時間", 1440 to "1日").forEach { (m, label) ->
+                    androidx.compose.material3.FilterChip(
+                        selected = state.intervalMinutes == m,
+                        onClick = { viewModel.update { it.copy(intervalMinutes = m) } },
+                        label = { Text(label) },
+                    )
+                }
+            }
             OutlinedTextField(
                 value = if (state.intervalMinutes == 0) "" else state.intervalMinutes.toString(),
                 onValueChange = { v ->
                     val parsed = v.trim().toIntOrNull() ?: 0
                     viewModel.update { it.copy(intervalMinutes = parsed.coerceAtLeast(0)) }
                 },
-                label = { Text("実行間隔 (分) — 空欄/0 で手動のみ、15 以上で定期実行") },
+                label = { Text("実行間隔 (分) — 細かく指定する場合") },
+                supportingText = { Text("空欄/0 で手動のみ。Android の制約により定期実行は最短 15 分間隔です。") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
             )
+
             ToggleRow(
                 title = "Wi-Fi のみ",
                 description = "従量制でない接続 (Wi-Fi 等) のときだけ実行する",
@@ -160,7 +177,9 @@ fun SyncJobEditScreen(
                 checked = state.requiresBatteryNotLow,
                 onCheckedChange = { v -> viewModel.update { it.copy(requiresBatteryNotLow = v) } },
             )
-            HorizontalDivider()
+
+            SectionHeader("競合と削除")
+            ConflictPolicyDropdown(state.conflictPolicy) { p -> viewModel.update { it.copy(conflictPolicy = p) } }
             ToggleRow(
                 title = "削除も同期する",
                 description = "同期元から消えたファイルを同期先からも削除する",
@@ -180,29 +199,42 @@ fun SyncJobEditScreen(
                     )
                 }
             }
-            HorizontalDivider()
+
+            SectionHeader("フィルタ (省略可)")
             OutlinedTextField(
                 value = state.includePatternsText,
                 onValueChange = { v -> viewModel.update { it.copy(includePatternsText = v) } },
-                label = { Text("含めるパターン (glob、1行1パターン、空欄で全て)") },
+                label = { Text("含めるファイル") },
+                placeholder = { Text("*.jpg\n*.png") },
+                supportingText = { Text("glob パターンを 1 行 1 つ。空欄ならすべてのファイルが対象。") },
                 minLines = 2,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = state.excludePatternsText,
                 onValueChange = { v -> viewModel.update { it.copy(excludePatternsText = v) } },
-                label = { Text("除外するパターン (glob、例: **/.git/**, *.tmp)") },
+                label = { Text("除外するファイル") },
+                placeholder = { Text("**/.git/**\n*.tmp") },
+                supportingText = { Text("ここに一致するファイル/フォルダは同期しません。") },
                 minLines = 2,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = state.maxFileSizeMb,
                 onValueChange = { v -> viewModel.update { it.copy(maxFileSizeMb = v.filter(Char::isDigit)) } },
-                label = { Text("最大ファイルサイズ (MB、空欄で無制限)") },
+                label = { Text("これより大きいファイルは同期しない (MB)") },
+                supportingText = { Text("空欄なら無制限。例: 100 と入れると 100MB 超のファイルを除外。") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
             )
+            Text(
+                "glob の例: * は任意の文字列、? は任意の 1 文字、** は任意の階層。" +
+                    " 例) *.jpg = 拡張子 jpg のファイル、**/cache/** = どこかの cache フォルダ以下すべて。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
             HorizontalDivider()
             ToggleRow(
                 title = "有効",
@@ -217,6 +249,16 @@ fun SyncJobEditScreen(
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 8.dp),
+    )
 }
 
 @Composable
