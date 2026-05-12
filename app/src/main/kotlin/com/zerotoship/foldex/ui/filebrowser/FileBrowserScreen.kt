@@ -155,7 +155,7 @@ fun FileBrowserScreen(
         viewModel.openRequests.collect { req ->
             val intent = when (req) {
                 is OpenRequest.Builtin ->
-                    ViewerActivity.intent(context, req.localPath, req.name, req.category)
+                    ViewerActivity.intent(context, req.localPath, req.name, req.category, req.editable)
                 is OpenRequest.External -> {
                     val view = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(req.uri, req.mime)

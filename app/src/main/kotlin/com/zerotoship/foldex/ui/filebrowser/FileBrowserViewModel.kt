@@ -187,7 +187,8 @@ class FileBrowserViewModel @Inject constructor(
                 mode == OpenWithMode.EXTERNAL -> external(chooser = false)
                 mode == OpenWithMode.ASK -> external(chooser = true)
                 // DEFAULT / BUILTIN: 内蔵対応があれば内蔵、なければ外部アプリ選択
-                category.hasBuiltInViewer -> OpenRequest.Builtin(localFile.absolutePath, node.name, category)
+                category.hasBuiltInViewer ->
+                    OpenRequest.Builtin(localFile.absolutePath, node.name, category, editable = node.uri is FileUri.Local)
                 else -> external(chooser = true)
             }
             _openRequests.send(request)

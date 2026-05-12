@@ -44,6 +44,7 @@ class ViewerActivity : ComponentActivity() {
         val name = intent.getStringExtra(EXTRA_NAME) ?: file.name
         val category = runCatching { Category.valueOf(intent.getStringExtra(EXTRA_CATEGORY) ?: "") }
             .getOrDefault(FileTypeRegistry.categorize(name))
+        val editable = intent.getBooleanExtra(EXTRA_EDITABLE, false)
 
         enableEdgeToEdge()
         setContent {
@@ -52,6 +53,7 @@ class ViewerActivity : ComponentActivity() {
                     file = file,
                     name = name,
                     category = category,
+                    editable = editable,
                     onBack = { finish() },
                     onOpenExternally = { openExternally(file, name) },
                 )
@@ -73,12 +75,20 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_PATH = "foldex.viewer.path"
         private const val EXTRA_NAME = "foldex.viewer.name"
         private const val EXTRA_CATEGORY = "foldex.viewer.category"
+        private const val EXTRA_EDITABLE = "foldex.viewer.editable"
 
-        fun intent(context: Context, localPath: String, name: String, category: Category): Intent =
+        fun intent(
+            context: Context,
+            localPath: String,
+            name: String,
+            category: Category,
+            editable: Boolean = false,
+        ): Intent =
             Intent(context, ViewerActivity::class.java)
                 .putExtra(EXTRA_PATH, localPath)
                 .putExtra(EXTRA_NAME, name)
                 .putExtra(EXTRA_CATEGORY, category.name)
+                .putExtra(EXTRA_EDITABLE, editable)
     }
 }
 
@@ -88,6 +98,7 @@ private fun ViewerScreen(
     file: File,
     name: String,
     category: Category,
+    editable: Boolean,
     onBack: () -> Unit,
     onOpenExternally: () -> Unit,
 ) {
@@ -113,7 +124,7 @@ private fun ViewerScreen(
                 Category.IMAGE -> ImageViewer(file, Modifier.fillMaxSize())
                 Category.MARKDOWN -> MarkdownViewer(file, Modifier.fillMaxSize())
                 Category.HTML -> HtmlViewer(file, Modifier.fillMaxSize())
-                Category.TEXT -> TextViewer(file, Modifier.fillMaxSize())
+                Category.TEXT -> TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
                 Category.AUDIO -> AudioPlayer(file, name, Modifier.fillMaxSize())
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(

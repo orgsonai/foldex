@@ -5,8 +5,11 @@ import com.zerotoship.foldex.core.model.filetype.Category
 
 /** ファイルブラウザがファイルを「開く」際に画面側へ依頼する操作。Activity 起動が必要なものを表す。 */
 sealed interface OpenRequest {
-    /** 内蔵ビューア (ViewerActivity) で開く。[localPath] はローカルの実体 (リモートはキャッシュ済み)。 */
-    data class Builtin(val localPath: String, val name: String, val category: Category) : OpenRequest
+    /**
+     * 内蔵ビューア (ViewerActivity) で開く。[localPath] はローカルの実体 (リモートはキャッシュ済み)。
+     * [editable] が true なら編集→保存が元ファイルに反映される (= ローカルファイルの場合のみ)。
+     */
+    data class Builtin(val localPath: String, val name: String, val category: Category, val editable: Boolean) : OpenRequest
 
     /** 外部アプリで ACTION_VIEW する。[chooser] が true ならアプリ選択ダイアログを毎回出す。 */
     data class External(val uri: Uri, val mime: String, val name: String, val chooser: Boolean) : OpenRequest

@@ -37,7 +37,7 @@ fun MarkdownViewer(file: File, modifier: Modifier = Modifier) {
     when (val md = source) {
         null -> {
             // 読み込み中 or 大きすぎ → プレーンテキストビューアにフォールバック (こちらが大小判定も表示する)
-            if (file.length() > MAX_BYTES) TextViewer(file, modifier)
+            if (file.length() > MAX_BYTES) TextViewer(file, modifier = modifier)
             else Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         }
         else -> {
