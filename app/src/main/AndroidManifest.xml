@@ -16,10 +16,25 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
-    <!-- SAF ドキュメントツリーピッカーのクエリ宣言 -->
+    <!-- APK のインストール起動 (P7) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- 他アプリ起動可否の判定用クエリ宣言 (Android 11+) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.EDIT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
         </intent>
     </queries>
 
@@ -39,6 +54,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 内蔵ビューア (画像/テキスト/Markdown/HTML/音声) -->
+        <activity
+            android:name=".ui.viewer.ViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
+        <!-- 外部アプリへファイルを渡すための FileProvider -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- WorkManager は FoldexApplication (Configuration.Provider) で初期化するため、
              androidx.startup による既定の自動初期化を無効化する。 -->

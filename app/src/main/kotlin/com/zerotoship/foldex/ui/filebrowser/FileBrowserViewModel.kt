@@ -5,12 +5,16 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.Protocol
+import com.zerotoship.foldex.core.model.filetype.Category
+import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
 import com.zerotoship.foldex.storage.StorageProviderRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -39,6 +43,9 @@ class FileBrowserViewModel @Inject constructor(
 
     private val _snackbar = Channel<SnackbarEvent>(Channel.BUFFERED)
     val snackbarEvents = _snackbar.receiveAsFlow()
+
+    private val _openRequests = Channel<OpenRequest>(Channel.BUFFERED)
+    val openRequests = _openRequests.receiveAsFlow()
 
     private val _quickAccess = MutableStateFlow<List<QuickAccessEntry>>(emptyList())
     val quickAccess: StateFlow<List<QuickAccessEntry>> = _quickAccess.asStateFlow()
@@ -141,6 +148,59 @@ class FileBrowserViewModel @Inject constructor(
         val uri = _state.value.currentUri ?: return
         loadFiles(uri)
     }
+
+    // --- Open file (tap) ---
+
+    /**
+     * ファイルをタップしたときの「開く」処理。
+     * - APK: インストール起動
+     * - 内蔵ビューア対応 (画像/テキスト/Markdown/HTML/音声): ViewerActivity
+     * - それ以外: 外部アプリで ACTION_VIEW
+     * リモートファイルは一旦キャッシュへダウンロードしてからローカル実体として扱う。
+     */
+    fun openFile(node: FileNode) {
+        if (node.type != NodeType.FILE) return
+        val category = FileTypeRegistry.categorize(node.name)
+        viewModelScope.launch {
+            val localFile = resolveLocalFile(node) ?: return@launch
+            val request = when {
+                category == Category.APK -> OpenRequest.InstallApk(fileProviderUri(localFile))
+                category.hasBuiltInViewer -> OpenRequest.Builtin(localFile.absolutePath, node.name, category)
+                else -> OpenRequest.External(
+                    uri = fileProviderUri(localFile),
+                    mime = FileTypeRegistry.mimeTypeFor(node.name) ?: "*/*",
+                    name = node.name,
+                )
+            }
+            _openRequests.send(request)
+        }
+    }
+
+    /** ローカルの実体ファイルを返す。リモートはキャッシュへDLする。失敗時は snackbar を出して null。 */
+    private suspend fun resolveLocalFile(node: FileNode): File? = when (val u = node.uri) {
+        is FileUri.Local -> File(u.absolutePath)
+        is FileUri.Saf -> { emit(SnackbarEvent("この場所のファイルを開く処理は未対応です")); null }
+        is FileUri.Remote -> downloadToCache(node)
+    }
+
+    private suspend fun downloadToCache(node: FileNode): File? {
+        emit(SnackbarEvent("ダウンロード中…"))
+        val dir = File(context.cacheDir, "opened").apply { mkdirs() }
+        val safeName = node.name.replace(Regex("[^A-Za-z0-9._\\-]"), "_").ifEmpty { "file" }
+        val out = File(dir, "${node.uri.toStorageString().hashCode().toUInt()}_$safeName")
+        return when (val r = storage.openInput(node.uri)) {
+            is Result.Success -> withContext(Dispatchers.IO) {
+                runCatching {
+                    r.value.use { input -> out.outputStream().use { input.copyTo(it) } }
+                    out
+                }.getOrElse { emit(SnackbarEvent("ダウンロード失敗: ${it.message}")); null }
+            }
+            is Result.Failure -> { emit(SnackbarEvent("ダウンロード失敗: ${r.error.message}")); null }
+        }
+    }
+
+    private fun fileProviderUri(file: File): Uri =
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 
     // --- Selection ---
 

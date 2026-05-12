@@ -113,6 +113,7 @@ import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.ui.components.FastScrollbar
 import com.zerotoship.foldex.ui.connections.ConnectionsViewModel
+import com.zerotoship.foldex.ui.viewer.ViewerActivity
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -146,6 +147,30 @@ fun FileBrowserScreen(
     LaunchedEffect(Unit) {
         if (!state.hasStoragePermission && viewModel.checkStoragePermission()) {
             viewModel.onStoragePermissionGranted()
+        }
+    }
+
+    // 「ファイルを開く」要求 (内蔵ビューア / 外部アプリ / APK インストール) を処理
+    LaunchedEffect(Unit) {
+        viewModel.openRequests.collect { req ->
+            val intent = when (req) {
+                is OpenRequest.Builtin ->
+                    ViewerActivity.intent(context, req.localPath, req.name, req.category)
+                is OpenRequest.External -> Intent.createChooser(
+                    Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(req.uri, req.mime)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    },
+                    req.name,
+                )
+                is OpenRequest.InstallApk -> Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(req.uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            if (runCatching { context.startActivity(intent) }.isFailure) {
+                snackbarHostState.showSnackbar("開けるアプリが見つかりません")
+            }
         }
     }
 
@@ -463,10 +488,10 @@ fun FileBrowserScreen(
                     viewMode = state.viewMode,
                     selectedUris = state.selectedUris,
                     onFileClick = { node ->
-                        if (state.isSelectionMode) {
-                            viewModel.toggleSelection(node)
-                        } else if (node.type == NodeType.DIRECTORY) {
-                            viewModel.navigateTo(node.uri, node.name)
+                        when {
+                            state.isSelectionMode -> viewModel.toggleSelection(node)
+                            node.type == NodeType.DIRECTORY -> viewModel.navigateTo(node.uri, node.name)
+                            else -> viewModel.openFile(node)
                         }
                     },
                     onFileLongClick = { node -> viewModel.toggleSelection(node) },
