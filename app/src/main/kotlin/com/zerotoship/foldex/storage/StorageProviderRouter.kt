@@ -4,6 +4,7 @@ import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.ListOptions
+import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.ProgressObserver
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.core.model.StorageProvider
@@ -13,10 +14,14 @@ import com.zerotoship.foldex.storage.local.LocalStorageProvider
 import com.zerotoship.foldex.storage.sftp.SftpStorageProvider
 import com.zerotoship.foldex.storage.smb.SmbStorageProvider
 import com.zerotoship.foldex.storage.webdav.WebDavStorageProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.io.OutputStream
+import kotlin.coroutines.coroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -80,11 +85,127 @@ class StorageProviderRouter @Inject constructor(
         from: FileUri,
         to: FileUri,
         observer: ProgressObserver?,
-    ): Result<Unit, StorageError> = pick(from).copyWithin(from, to, observer)
+    ): Result<Unit, StorageError> {
+        // 同一プロバイダ内なら実装側の最適化に任せる。プロバイダを跨ぐ場合
+        // (例: SMB 上のファイルを端末ローカルへ) はストリームでブリッジコピーする。
+        val src = pick(from)
+        return if (src === pick(to)) {
+            src.copyWithin(from, to, observer)
+        } else {
+            crossCopy(from, to, observer)
+        }
+    }
 
     override suspend fun moveWithin(
         from: FileUri,
         to: FileUri,
         observer: ProgressObserver?,
-    ): Result<Unit, StorageError> = pick(from).moveWithin(from, to, observer)
+    ): Result<Unit, StorageError> {
+        val src = pick(from)
+        if (src === pick(to)) return src.moveWithin(from, to, observer)
+        // 跨プロバイダの移動 = コピーしてから元を削除。
+        return when (val copied = crossCopy(from, to, observer)) {
+            is Result.Success -> src.delete(from, recursive = true)
+            is Result.Failure -> copied
+        }
+    }
+
+    // --- 跨プロバイダ コピー ---
+
+    private suspend fun crossCopy(
+        from: FileUri,
+        to: FileUri,
+        observer: ProgressObserver?,
+    ): Result<Unit, StorageError> {
+        val node = when (val s = stat(from)) {
+            is Result.Success -> s.value
+            is Result.Failure -> return s
+        }
+        return if (node.type == NodeType.DIRECTORY) {
+            copyDirectory(from, to, observer)
+        } else {
+            copyFile(from, to, node.size, observer)
+        }
+    }
+
+    private suspend fun copyDirectory(
+        from: FileUri,
+        to: FileUri,
+        observer: ProgressObserver?,
+    ): Result<Unit, StorageError> {
+        // 行き先を用意 (既に同名ディレクトリがあれば許容する)。
+        when (val m = mkdir(to, recursive = true)) {
+            is Result.Success -> Unit
+            is Result.Failure -> {
+                val existing = stat(to)
+                if (!(existing is Result.Success && existing.value.type == NodeType.DIRECTORY)) {
+                    return m
+                }
+            }
+        }
+        var failure: StorageError? = null
+        list(from).collect { child ->
+            if (failure != null) return@collect
+            coroutineContext.ensureActive()
+            val childDest = childUri(to, child.name) ?: run {
+                failure = StorageError.IoError("コピー先のパスを解決できません: ${child.name}")
+                return@collect
+            }
+            when (val r = crossCopy(child.uri, childDest, observer)) {
+                is Result.Success -> Unit
+                is Result.Failure -> failure = r.error
+            }
+        }
+        return failure?.let { Result.Failure(it) } ?: Result.Success(Unit)
+    }
+
+    private suspend fun copyFile(
+        from: FileUri,
+        to: FileUri,
+        size: Long,
+        observer: ProgressObserver?,
+    ): Result<Unit, StorageError> {
+        val input = when (val i = openInput(from)) {
+            is Result.Success -> i.value
+            is Result.Failure -> return i
+        }
+        val output = when (val o = openOutput(to, WriteMode.OVERWRITE)) {
+            is Result.Success -> o.value
+            is Result.Failure -> { runCatching { input.close() }; return o }
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                input.use { ins ->
+                    output.use { outs ->
+                        val buf = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val n = ins.read(buf)
+                            if (n < 0) break
+                            outs.write(buf, 0, n)
+                            total += n
+                            observer?.onProgress(total, size)
+                        }
+                        outs.flush()
+                    }
+                }
+                Result.Success(Unit)
+            }.getOrElse { t ->
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                Result.Failure(StorageError.IoError("コピーに失敗しました: ${t.message}", t))
+            }
+        }
+    }
+
+    /** [parent] ディレクトリ配下に [name] という子要素を持つ URI を組み立てる。SAF は未対応。 */
+    private fun childUri(parent: FileUri, name: String): FileUri? = when (parent) {
+        is FileUri.Local -> FileUri.Local("${parent.absolutePath.trimEnd('/')}/$name")
+        is FileUri.Saf -> null
+        is FileUri.Remote -> FileUri.Remote(
+            protocol = parent.protocol,
+            connectionId = parent.connectionId,
+            path = "${parent.path.trimEnd('/')}/$name",
+        )
+    }
 }
