@@ -179,9 +179,14 @@ fun FileBrowserScreen(
         }
     }
 
-    // Back: clear selection > close search > navigate up
-    BackHandler(enabled = state.isSelectionMode || state.isSearchActive || state.canGoUp) {
+    // 端末の戻るボタン:
+    //   ドロワーが開いていれば閉じる > 選択解除 > 検索を閉じる > フォルダ階層を1つ上がる
+    //   どれも無い (＝ホーム階層で何も開いていない) ときは無効 → 既定の挙動 (アプリ終了) に任せる。
+    BackHandler(
+        enabled = drawerState.isOpen || state.isSelectionMode || state.isSearchActive || state.canGoUp,
+    ) {
         when {
+            drawerState.isOpen -> drawerScope.launch { drawerState.close() }
             state.isSelectionMode -> viewModel.clearSelection()
             state.isSearchActive -> viewModel.closeSearch()
             else -> viewModel.navigateUp()

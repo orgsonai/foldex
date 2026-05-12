@@ -48,6 +48,9 @@ import java.io.File
 fun iconFor(node: FileNode): ImageVector =
     if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else iconFor(FileTypeRegistry.categorize(node.name))
 
+private fun iconForCategory(node: FileNode, category: Category): ImageVector =
+    if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else iconFor(category)
+
 fun iconFor(category: Category): ImageVector = when (category) {
     Category.IMAGE -> Icons.Outlined.Image
     Category.VIDEO -> Icons.Outlined.Movie
@@ -66,11 +69,15 @@ fun iconFor(category: Category): ImageVector = when (category) {
 
 /** カテゴリ別のアイコン色 (`CLAUDE.md`/HANDOFF §11-D の方針: 種別ごとに控えめに色分け)。 */
 @Composable
-fun tintFor(node: FileNode, selected: Boolean): Color {
+fun tintFor(node: FileNode, selected: Boolean): Color =
+    tintForCategory(node, FileTypeRegistry.categorize(node.name), selected)
+
+@Composable
+private fun tintForCategory(node: FileNode, category: Category, selected: Boolean): Color {
     val colors = MaterialTheme.colorScheme
     if (selected) return colors.primary
     if (node.type == NodeType.DIRECTORY) return colors.primary.copy(alpha = 0.85f)
-    return when (FileTypeRegistry.categorize(node.name)) {
+    return when (category) {
         Category.IMAGE -> Color(0xFF43A047)        // green
         Category.VIDEO -> Color(0xFFE53935)        // red
         Category.AUDIO -> Color(0xFF8E24AA)        // purple
@@ -107,9 +114,8 @@ fun ExtensionBadge(node: FileNode, modifier: Modifier = Modifier) {
  * 一覧では **画像のみ** サムネ化する。動画/音声アートはメタデータ抽出が重く、
  * スクロールがもたつく原因になるため一覧ではアイコン表示に留める (ビューアでは出す)。
  */
-private fun thumbnailModelFor(node: FileNode): Any? {
-    if (node.type != NodeType.FILE) return null
-    if (FileTypeRegistry.categorize(node.name) != Category.IMAGE) return null
+private fun thumbnailModelFor(node: FileNode, category: Category): Any? {
+    if (node.type != NodeType.FILE || category != Category.IMAGE) return null
     // リモートサムネは帯域消費が大きいため当面アイコンのみ (HANDOFF §10-C: 後で部分DL検討)
     return when (val u = node.uri) {
         is FileUri.Local -> File(u.absolutePath)
@@ -136,17 +142,25 @@ fun FileLeadingIcon(
             modifier = modifier.size(size))
         return
     }
-    val model = remember(node.uri, node.lastModified) { thumbnailModelFor(node) }
+    // カテゴリ判定は 1 行につき 1 回だけ (アイコン・色・サムネ判定で使い回す)。
+    val category = remember(node.name) { FileTypeRegistry.categorize(node.name) }
+    val model = remember(node.uri, node.lastModified, category) { thumbnailModelFor(node, category) }
     if (model == null) {
-        Icon(iconFor(node), contentDescription = null, tint = tintFor(node, false), modifier = modifier.size(size))
+        Icon(
+            iconForCategory(node, category),
+            contentDescription = null,
+            tint = tintForCategory(node, category, false),
+            modifier = modifier.size(size),
+        )
         return
     }
     val context = LocalContext.current
-    // ImageRequest は再コンポーズのたびに作り直さない (作り直すと Coil が読み込みを再開してしまう)
+    // ImageRequest は再コンポーズのたびに作り直さない (作り直すと Coil が読み込みを再開してしまう)。
+    // 一覧のサムネは crossfade なし (フリング中のフレーム単位アニメーションを避ける)。
     val request = remember(model) {
-        ImageRequest.Builder(context).data(model).size(128).crossfade(true).build()
+        ImageRequest.Builder(context).data(model).size(128).crossfade(false).build()
     }
-    val fallback = rememberVectorPainter(iconFor(node))
+    val fallback = rememberVectorPainter(iconForCategory(node, category))
     AsyncImage(
         model = request,
         contentDescription = null,
