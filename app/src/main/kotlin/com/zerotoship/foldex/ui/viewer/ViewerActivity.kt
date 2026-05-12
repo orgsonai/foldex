@@ -111,7 +111,9 @@ private fun ViewerScreen(
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (category) {
                 Category.IMAGE -> ImageViewer(file, Modifier.fillMaxSize())
-                Category.TEXT, Category.MARKDOWN, Category.HTML -> TextViewer(file, Modifier.fillMaxSize())
+                Category.MARKDOWN -> MarkdownViewer(file, Modifier.fillMaxSize())
+                Category.HTML -> HtmlViewer(file, Modifier.fillMaxSize())
+                Category.TEXT -> TextViewer(file, Modifier.fillMaxSize())
                 Category.AUDIO -> AudioPlayer(file, name, Modifier.fillMaxSize())
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
