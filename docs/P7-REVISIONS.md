@@ -20,7 +20,7 @@
   - ✅ B-4 delete 同期の削除前バックアップ (`912c9d0`): SyncBackupRepository、設定 (世代数/しきい値/超過時の扱い)、SyncEngine→Executor で削除前に退避。バックアップ一覧/復元の UI は後続。
   - ✅ B-1 双方向同期 (`ae5ec6b`): SyncDirection.BIDIRECTIONAL、DiffEngine の双方向判定 (SAME/NEW/MODIFIED/DELETED/NEVER 分類)、ConflictResolver/Executor が勝者で転送方向を決定、SyncEngine は双方向で片側ルート欠如を許容。
 
-**A〜E のすべて (双方向同期含む) 完了。** 残る小ポリッシュ: 音声アルバムアートのサムネ、削除前バックアップの一覧/復元 UI。
+**A〜E のすべて (双方向同期含む) 完了。** 小ポリッシュ (音声アルバムアートのサムネ `9bc9683`、削除前バックアップの一覧/復元 UI `9bc9683`) も対応済み。残課題は P7 本来のチェックリスト (アクセシビリティ、エラーメッセージ日本語化、同期途中再開、PDF 内蔵ビューア、テスト配布 APK)。
 
 ### 確定した方針 (2026-05-12 ヒアリング)
 - B-1 双方向同期: **P7 で実装**。HANDOFF §8-B / PHASES P8 を更新する。
