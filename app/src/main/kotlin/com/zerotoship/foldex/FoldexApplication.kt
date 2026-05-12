@@ -21,6 +21,17 @@ class FoldexApplication : Application(), Configuration.Provider, SingletonImageL
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
+    override fun onCreate() {
+        super.onCreate()
+        // Android には "user.home" システムプロパティが無く、Apache MINA SSHD が
+        // SshServer.setUpDefaultServer() 内の静的初期化でこれを参照して
+        // IllegalArgumentException("No user home") を投げる。事前に書き込み可能な
+        // ディレクトリを入れておく (~/.ssh/authorized_keys は存在しなければ無視される)。
+        if (System.getProperty("user.home").isNullOrEmpty()) {
+            System.setProperty("user.home", filesDir.absolutePath)
+        }
+    }
+
     // WorkManager を Hilt の WorkerFactory で初期化する (@HiltWorker な SyncWorker を使うため)。
     // 既定の WorkManagerInitializer は AndroidManifest で無効化済み。
     override val workManagerConfiguration: Configuration
