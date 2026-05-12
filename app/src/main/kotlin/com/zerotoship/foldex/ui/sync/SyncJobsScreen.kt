@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,6 +52,7 @@ fun SyncJobsScreen(
     onBack: () -> Unit,
     onAdd: () -> Unit,
     onEdit: (SyncJob) -> Unit,
+    onOpenBackups: (SyncJob) -> Unit = {},
     viewModel: SyncJobsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -95,6 +97,7 @@ fun SyncJobsScreen(
                         onRunNow = { viewModel.runNow(job) },
                         onToggleEnabled = { enabled -> viewModel.setEnabled(job, enabled) },
                         onEdit = { onEdit(job) },
+                        onOpenBackups = { onOpenBackups(job) },
                         onDelete = { pendingDelete = job },
                     )
                     HorizontalDivider()
@@ -127,6 +130,7 @@ private fun SyncJobRow(
     onRunNow: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onEdit: () -> Unit,
+    onOpenBackups: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -147,6 +151,7 @@ private fun SyncJobRow(
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onRunNow) { Icon(Icons.Default.Sync, contentDescription = "今すぐ同期") }
             IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "編集") }
+            IconButton(onClick = onOpenBackups) { Icon(Icons.Default.History, contentDescription = "削除バックアップ") }
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "削除") }
         }

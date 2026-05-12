@@ -11,6 +11,7 @@ import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
 import coil3.video.VideoFrameDecoder
+import com.zerotoship.foldex.ui.viewer.AudioArtFetcher
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -30,7 +31,10 @@ class FoldexApplication : Application(), Configuration.Provider, SingletonImageL
     // Coil 3: サムネ用のメモリ + ディスク 2 層キャッシュ。動画フレームのデコーダも登録する。
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
-            .components { add(VideoFrameDecoder.Factory()) }
+            .components {
+                add(AudioArtFetcher.Factory())
+                add(VideoFrameDecoder.Factory())
+            }
             .memoryCache {
                 MemoryCache.Builder()
                     .maxSizePercent(context, 0.15)

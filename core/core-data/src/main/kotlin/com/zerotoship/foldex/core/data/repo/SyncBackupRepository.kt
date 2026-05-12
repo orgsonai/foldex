@@ -66,6 +66,41 @@ class SyncBackupRepository @Inject constructor(
         jobDir(jobId).walkTopDown().filter { it.isFile }.sumOf { it.length() }
     }
 
+    data class BackupFile(val side: String, val relativePath: String, val sizeBytes: Long)
+
+    /** ある世代に退避されているファイル一覧 (側 + 相対パス)。 */
+    suspend fun filesIn(jobId: String, generationId: String): List<BackupFile> = withContext(Dispatchers.IO) {
+        val genDir = File(jobDir(jobId), generationId)
+        listOf("local", "remote").flatMap { side ->
+            val base = File(genDir, side)
+            base.walkTopDown().filter { it.isFile }.map { f ->
+                BackupFile(side, f.relativeTo(base).path.replace(File.separatorChar, '/'), f.length())
+            }
+        }
+    }
+
+    /**
+     * ローカル側に退避したファイルを [targetRoot] 配下へ書き戻す。既に同名ファイルがあれば上書きしない。
+     * リモート側の復元は呼び出し側で StorageProvider を使う必要があるためここでは扱わない。
+     */
+    suspend fun restoreLocalFile(
+        jobId: String,
+        generationId: String,
+        relativePath: String,
+        targetRoot: File,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val source = File(File(File(jobDir(jobId), generationId), "local"), relativePath.trimStart('/'))
+        if (!source.isFile) return@withContext false
+        val target = File(targetRoot, relativePath.trimStart('/'))
+        if (target.exists()) return@withContext false
+        target.parentFile?.mkdirs()
+        runCatching { source.copyTo(target, overwrite = false) }.isSuccess
+    }
+
+    suspend fun deleteGeneration(jobId: String, generationId: String) = withContext(Dispatchers.IO) {
+        File(jobDir(jobId), generationId).deleteRecursively(); Unit
+    }
+
     suspend fun clear(jobId: String) = withContext(Dispatchers.IO) {
         jobDir(jobId).listFiles()?.forEach { it.deleteRecursively() }; Unit
     }

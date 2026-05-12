@@ -42,6 +42,7 @@ import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
+import com.zerotoship.foldex.ui.viewer.AudioArt
 import java.io.File
 
 /** ファイルノードのカテゴリ別アイコン。ディレクトリはフォルダ。 */
@@ -101,18 +102,18 @@ fun ExtensionBadge(node: FileNode, modifier: Modifier = Modifier) {
     )
 }
 
-/** サムネ取得対象なら Coil に渡せるモデル (File / Uri) を返す。対象外・リモートは null。 */
+/** サムネ取得対象なら Coil に渡せるモデルを返す。対象外・リモートは null。 */
 private fun thumbnailModelFor(node: FileNode): Any? {
     if (node.type != NodeType.FILE) return null
-    return when (FileTypeRegistry.categorize(node.name)) {
-        Category.IMAGE, Category.VIDEO -> when (val u = node.uri) {
-            is FileUri.Local -> File(u.absolutePath)
-            is FileUri.Saf -> Uri.parse(u.documentUri)
-            // リモートサムネは帯域消費が大きいため当面アイコンのみ (HANDOFF §10-C: 後で部分DL検討)
-            is FileUri.Remote -> null
-        }
-        else -> null
+    val cat = FileTypeRegistry.categorize(node.name)
+    if (cat != Category.IMAGE && cat != Category.VIDEO && cat != Category.AUDIO) return null
+    // リモートサムネは帯域消費が大きいため当面アイコンのみ (HANDOFF §10-C: 後で部分DL検討)
+    val source: Any = when (val u = node.uri) {
+        is FileUri.Local -> File(u.absolutePath)
+        is FileUri.Saf -> Uri.parse(u.documentUri)
+        is FileUri.Remote -> return null
     }
+    return if (cat == Category.AUDIO) AudioArt(source) else source
 }
 
 /**

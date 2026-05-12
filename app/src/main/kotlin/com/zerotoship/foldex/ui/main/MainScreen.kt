@@ -40,6 +40,7 @@ import com.zerotoship.foldex.ui.servers.ServersScreen
 import com.zerotoship.foldex.ui.settings.OpenWithSettingsScreen
 import com.zerotoship.foldex.ui.settings.SettingsScreen
 import com.zerotoship.foldex.ui.settings.TrashScreen
+import com.zerotoship.foldex.ui.sync.SyncBackupScreen
 import com.zerotoship.foldex.ui.sync.SyncJobEditScreen
 import com.zerotoship.foldex.ui.sync.SyncJobsScreen
 
@@ -140,7 +141,14 @@ fun MainScreen(browserViewModel: FileBrowserViewModel) {
                     onBack = { selectTab(TopTab.FILES) },
                     onAdd = { navController.navigate("sync/new") },
                     onEdit = { job -> navController.navigate("sync/edit/${job.id}") },
+                    onOpenBackups = { job -> navController.navigate("sync/backup/${job.id}") },
                 )
+            }
+            composable(
+                route = "sync/backup/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            ) {
+                SyncBackupScreen(onBack = { navController.popBackStack() })
             }
             composable("sync/new") {
                 SyncJobEditScreen(onBack = { navController.popBackStack() }, onSaved = { navController.popBackStack() })
