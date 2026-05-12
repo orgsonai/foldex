@@ -9,13 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.InsertDriveFile
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,7 +34,6 @@ fun FileListItem(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val isDir = node.type == NodeType.DIRECTORY
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -50,16 +43,7 @@ fun FileListItem(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = when {
-                selected -> Icons.Default.CheckBox
-                isDir -> Icons.Outlined.Folder
-                else -> Icons.Outlined.InsertDriveFile
-            },
-            contentDescription = null,
-            tint = if (selected || isDir) colors.primary else colors.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
+        FileLeadingIcon(node = node, selected = selected, size = 24.dp)
         Spacer(Modifier.width(16.dp))
         Text(
             text = node.name,
@@ -81,7 +65,6 @@ fun FileDetailedItem(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val isDir = node.type == NodeType.DIRECTORY
     val subtitle = remember(node.size, node.lastModified) {
         buildString {
             if (node.size >= 0) append(formatSize(node.size))
@@ -100,16 +83,7 @@ fun FileDetailedItem(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = when {
-                selected -> Icons.Default.CheckBox
-                isDir -> Icons.Outlined.Folder
-                else -> Icons.Outlined.InsertDriveFile
-            },
-            contentDescription = null,
-            tint = if (selected || isDir) colors.primary else colors.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
+        FileLeadingIcon(node = node, selected = selected, size = 24.dp)
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(

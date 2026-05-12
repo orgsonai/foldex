@@ -634,12 +634,6 @@ private fun GridFileItem(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val isDir = node.type == NodeType.DIRECTORY
-    val iconTint = when {
-        selected -> colors.primary
-        isDir -> colors.primary.copy(alpha = 0.7f)
-        else -> colors.onSurfaceVariant
-    }
     Column(
         modifier = modifier
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -647,12 +641,7 @@ private fun GridFileItem(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
-            Icon(
-                imageVector = if (isDir) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = iconTint,
-            )
+            FileLeadingIcon(node = node, selected = false, size = 48.dp)
             if (selected) {
                 Icon(
                     Icons.Default.CheckBox,

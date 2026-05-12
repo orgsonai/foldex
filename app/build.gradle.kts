@@ -88,6 +88,15 @@ dependencies {
     implementation(libs.work.runtime.ktx)
     implementation(libs.androidx.hilt.work)
 
+    // P7: サムネ/ビューア/音声プレーヤー/Markdown/文字コード判定
+    implementation(libs.coil.compose)
+    implementation(libs.coil.video)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+    implementation(libs.media3.session)
+    implementation(libs.markwon.core)
+    implementation(libs.juniversalchardet)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
