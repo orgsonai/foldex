@@ -605,7 +605,7 @@ private fun FileListContent(
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                     items(
                         items = files,
-                        key = { it.uri },
+                        key = { it.uri.toStorageString() },
                         contentType = { "file-list" },
                     ) { node ->
                         val selected = hasSelection && node.uri.toStorageString() in selectedUris
@@ -628,7 +628,7 @@ private fun FileListContent(
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                     items(
                         items = files,
-                        key = { it.uri },
+                        key = { it.uri.toStorageString() },
                         contentType = { "file-detailed" },
                     ) { node ->
                         val selected = hasSelection && node.uri.toStorageString() in selectedUris
@@ -657,7 +657,7 @@ private fun FileListContent(
                 ) {
                     items(
                         items = files,
-                        key = { it.uri },
+                        key = { it.uri.toStorageString() },
                         contentType = { "file-grid" },
                     ) { node ->
                         val selected = hasSelection && node.uri.toStorageString() in selectedUris
