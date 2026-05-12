@@ -15,6 +15,7 @@ import com.zerotoship.foldex.storage.StorageProviderRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -367,11 +368,15 @@ class FileBrowserViewModel @Inject constructor(
 
     // --- Internal helpers ---
 
+    private var loadJob: Job? = null
+
     private fun loadFiles(uri: FileUri) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true, error = null)
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            // 既存の一覧をすぐにクリアして「読み込み中」を出し、届いた分から順次表示する。
+            _state.value = _state.value.copy(isLoading = true, error = null, files = emptyList())
             try {
-                _state.value = _state.value.copy(isLoading = false, files = collectFiles(uri))
+                streamFiles(uri)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -382,7 +387,7 @@ class FileBrowserViewModel @Inject constructor(
 
     private suspend fun loadFilesSync(uri: FileUri) {
         try {
-            _state.value = _state.value.copy(isLoading = false, files = collectFiles(uri))
+            streamFiles(uri)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -390,14 +395,30 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
-    // list() の terminal collect が Main で走ると大量ディレクトリで Main を塞ぐため、
-    // 収集自体をバックグラウンドで行い、UI 更新だけ呼び出し元に戻す。
-    private suspend fun collectFiles(uri: FileUri): List<FileNode> =
-        withContext(Dispatchers.Default) {
-            val files = ArrayList<FileNode>()
-            storage.list(uri).collect { files.add(it) }
-            files
+    // 大量ファイルのフォルダで「全件そろうまで何も出ない」を避けるため、
+    // 列挙はバックグラウンドで行いつつ、一定間隔で部分結果を UI に反映する (届いた分から即描画)。
+    private suspend fun streamFiles(uri: FileUri) {
+        val acc = ArrayList<FileNode>()
+        var lastFlush = 0L
+        var posted = false
+        suspend fun flush(force: Boolean) {
+            val now = System.currentTimeMillis()
+            if (!force && posted && now - lastFlush < FLUSH_INTERVAL_MS) return
+            val snapshot = ArrayList(acc)
+            withContext(Dispatchers.Main.immediate) {
+                _state.value = _state.value.copy(isLoading = false, files = snapshot)
+            }
+            posted = true
+            lastFlush = now
         }
+        withContext(Dispatchers.Default) {
+            storage.list(uri).collect { node ->
+                acc.add(node)
+                flush(force = false) // 内部で時間しきい値によりスロットルされる
+            }
+        }
+        flush(force = true)
+    }
 
     private fun computeQuickAccess(): List<QuickAccessEntry> {
         val entries = mutableListOf<QuickAccessEntry>()
@@ -455,5 +476,8 @@ class FileBrowserViewModel @Inject constructor(
     companion object {
         private const val KEY_SAF_ROOT = "saf_root_uri"
         private const val KEY_FAVORITES = "favorite_uris"
+
+        // 列挙中の部分結果を UI へ反映する最小間隔 (ミリ秒)。これより短い間隔の更新はスキップする。
+        private const val FLUSH_INTERVAL_MS = 80L
     }
 }

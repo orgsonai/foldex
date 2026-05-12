@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -109,6 +111,7 @@ import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
+import com.zerotoship.foldex.ui.components.FastScrollbar
 import com.zerotoship.foldex.ui.connections.ConnectionsViewModel
 import kotlinx.coroutines.launch
 
@@ -542,57 +545,80 @@ private fun FileListContent(
 ) {
     // 選択が空のときは行ごとの toStorageString() アロケーションを避ける (スクロール最適化)
     val hasSelection = selectedUris.isNotEmpty()
+    // 先頭文字をファストスクローラのラベルに使う (五十音/アルファベット順スクラブで便利)
+    val labelProvider: (Int) -> String = remember(files) {
+        { idx -> files.getOrNull(idx)?.name?.firstOrNull()?.uppercase() ?: "" }
+    }
     when (viewMode) {
-        ViewMode.LIST -> LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(
-                items = files,
-                key = { it.uri.toStorageString() },
-                contentType = { "file-list" },
-            ) { node ->
-                val selected = hasSelection && node.uri.toStorageString() in selectedUris
-                FileListItem(
-                    node = node,
-                    selected = selected,
-                    onClick = { onFileClick(node) },
-                    onLongClick = { onFileLongClick(node) },
-                )
-                HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+        ViewMode.LIST -> {
+            val listState = rememberLazyListState()
+            Box(modifier = modifier.fillMaxSize()) {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                    items(
+                        items = files,
+                        key = { it.uri.toStorageString() },
+                        contentType = { "file-list" },
+                    ) { node ->
+                        val selected = hasSelection && node.uri.toStorageString() in selectedUris
+                        FileListItem(
+                            node = node,
+                            selected = selected,
+                            onClick = { onFileClick(node) },
+                            onLongClick = { onFileLongClick(node) },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+                    }
+                }
+                FastScrollbar(listState, files.size, Modifier.align(Alignment.CenterEnd), labelProvider)
             }
         }
-        ViewMode.DETAILED -> LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(
-                items = files,
-                key = { it.uri.toStorageString() },
-                contentType = { "file-detailed" },
-            ) { node ->
-                val selected = hasSelection && node.uri.toStorageString() in selectedUris
-                FileDetailedItem(
-                    node = node,
-                    selected = selected,
-                    onClick = { onFileClick(node) },
-                    onLongClick = { onFileLongClick(node) },
-                )
-                HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+        ViewMode.DETAILED -> {
+            val listState = rememberLazyListState()
+            Box(modifier = modifier.fillMaxSize()) {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                    items(
+                        items = files,
+                        key = { it.uri.toStorageString() },
+                        contentType = { "file-detailed" },
+                    ) { node ->
+                        val selected = hasSelection && node.uri.toStorageString() in selectedUris
+                        FileDetailedItem(
+                            node = node,
+                            selected = selected,
+                            onClick = { onFileClick(node) },
+                            onLongClick = { onFileLongClick(node) },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+                    }
+                }
+                FastScrollbar(listState, files.size, Modifier.align(Alignment.CenterEnd), labelProvider)
             }
         }
-        ViewMode.GRID -> LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 96.dp),
-            modifier = modifier.fillMaxSize().padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            items(
-                items = files,
-                key = { it.uri.toStorageString() },
-                contentType = { "file-grid" },
-            ) { node ->
-                val selected = hasSelection && node.uri.toStorageString() in selectedUris
-                GridFileItem(
-                    node = node,
-                    selected = selected,
-                    onClick = { onFileClick(node) },
-                    onLongClick = { onFileLongClick(node) },
-                )
+        ViewMode.GRID -> {
+            val gridState = rememberLazyGridState()
+            Box(modifier = modifier.fillMaxSize()) {
+                LazyVerticalGrid(
+                    state = gridState,
+                    columns = GridCells.Adaptive(minSize = 96.dp),
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(
+                        items = files,
+                        key = { it.uri.toStorageString() },
+                        contentType = { "file-grid" },
+                    ) { node ->
+                        val selected = hasSelection && node.uri.toStorageString() in selectedUris
+                        GridFileItem(
+                            node = node,
+                            selected = selected,
+                            onClick = { onFileClick(node) },
+                            onLongClick = { onFileLongClick(node) },
+                        )
+                    }
+                }
+                FastScrollbar(gridState, files.size, Modifier.align(Alignment.CenterEnd), labelProvider)
             }
         }
     }
