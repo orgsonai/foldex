@@ -1,16 +1,20 @@
 package com.zerotoship.foldex.sync.engine
 
 import com.zerotoship.foldex.core.common.Result
+import com.zerotoship.foldex.core.data.repo.SettingsRepository
+import com.zerotoship.foldex.core.data.repo.SyncBackupRepository
 import com.zerotoship.foldex.core.data.repo.SyncJobRepository
 import com.zerotoship.foldex.core.data.repo.SyncStateRepository
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.StorageProvider
+import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.SyncDirection
 import com.zerotoship.foldex.core.model.SyncJob
 import com.zerotoship.foldex.sync.model.SyncAction
 import com.zerotoship.foldex.sync.model.SyncProgress
 import com.zerotoship.foldex.sync.model.SyncResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,6 +30,8 @@ import javax.inject.Singleton
 class SyncEngine @Inject constructor(
     private val jobRepository: SyncJobRepository,
     private val stateRepository: SyncStateRepository,
+    private val settingsRepository: SettingsRepository,
+    private val backupRepository: SyncBackupRepository,
 ) {
 
     suspend fun run(
@@ -80,6 +86,23 @@ class SyncEngine @Inject constructor(
                 },
             )
 
+            // delete 同期が有効で実際に削除アクションがあるなら、削除前バックアップの世代を用意する。
+            val settings = runCatching { settingsRepository.settings.first() }.getOrNull()
+            val hasDeletes = job.deleteEnabled &&
+                actions.any { it is SyncAction.DeleteLocal || it is SyncAction.DeleteRemote }
+            val backupConfig = if (hasDeletes && settings != null && settings.syncDeleteBackup) {
+                val genDir = backupRepository.beginGeneration(job.id, settings.syncBackupGenerations)
+                Executor.BackupConfig(
+                    genDir = genDir,
+                    thresholdBytes = settings.syncBackupThresholdMb.toLong() * 1024L * 1024L,
+                    // バックグラウンド実行では ASK を確認できないので BACKUP に倒す。SKIP のみ「退避しない」。
+                    skipOverThreshold = settings.syncBackupPolicyOverThreshold == SyncBackupPolicy.SKIP,
+                    repo = backupRepository,
+                )
+            } else {
+                null
+            }
+
             val report = Executor(
                 direction = job.direction,
                 localProvider = storage,
@@ -90,7 +113,9 @@ class SyncEngine @Inject constructor(
                 stateRepo = stateRepository,
                 jobId = job.id,
                 tracker = tracker,
+                backup = backupConfig,
             ).execute(actions, localTree, remoteTree)
+            backupConfig?.let { runCatching { backupRepository.pruneEmpty(it.genDir) } }
 
             tracker.enterFinalizing()
             val finishedAt = System.currentTimeMillis()

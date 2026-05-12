@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +41,11 @@ class SettingsRepository @Inject constructor(
             deleteBehavior = p[KEY_DELETE_BEHAVIOR]?.let { runCatching { DeleteBehavior.valueOf(it) }.getOrNull() }
                 ?: DeleteBehavior.TRASH,
             trashRetentionDays = p[KEY_TRASH_RETENTION] ?: 30,
+            syncDeleteBackup = p[KEY_SYNC_BACKUP] ?: true,
+            syncBackupGenerations = p[KEY_SYNC_BACKUP_GENS] ?: 3,
+            syncBackupThresholdMb = p[KEY_SYNC_BACKUP_THRESHOLD] ?: 50,
+            syncBackupPolicyOverThreshold = p[KEY_SYNC_BACKUP_POLICY]
+                ?.let { runCatching { SyncBackupPolicy.valueOf(it) }.getOrNull() } ?: SyncBackupPolicy.ASK,
         )
     }
 
@@ -57,6 +63,15 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setTrashRetentionDays(days: Int) = edit { it[KEY_TRASH_RETENTION] = days }
 
+    suspend fun setSyncDeleteBackup(enabled: Boolean) = edit { it[KEY_SYNC_BACKUP] = enabled }
+
+    suspend fun setSyncBackupGenerations(n: Int) = edit { it[KEY_SYNC_BACKUP_GENS] = n }
+
+    suspend fun setSyncBackupThresholdMb(mb: Int) = edit { it[KEY_SYNC_BACKUP_THRESHOLD] = mb }
+
+    suspend fun setSyncBackupPolicyOverThreshold(policy: SyncBackupPolicy) =
+        edit { it[KEY_SYNC_BACKUP_POLICY] = policy.name }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         ds.edit(block)
     }
@@ -69,5 +84,9 @@ class SettingsRepository @Inject constructor(
         val KEY_UNDO_TIMEOUT = intPreferencesKey("undo_timeout_seconds")
         val KEY_DELETE_BEHAVIOR = stringPreferencesKey("delete_behavior")
         val KEY_TRASH_RETENTION = intPreferencesKey("trash_retention_days")
+        val KEY_SYNC_BACKUP = booleanPreferencesKey("sync_delete_backup")
+        val KEY_SYNC_BACKUP_GENS = intPreferencesKey("sync_backup_generations")
+        val KEY_SYNC_BACKUP_THRESHOLD = intPreferencesKey("sync_backup_threshold_mb")
+        val KEY_SYNC_BACKUP_POLICY = stringPreferencesKey("sync_backup_policy")
     }
 }

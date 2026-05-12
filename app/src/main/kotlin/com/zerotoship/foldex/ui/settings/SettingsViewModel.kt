@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
 import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,4 +29,8 @@ class SettingsViewModel @Inject constructor(
     fun setUndoTimeoutSeconds(seconds: Int) = viewModelScope.launch { repo.setUndoTimeoutSeconds(seconds) }
     fun setDeleteBehavior(behavior: DeleteBehavior) = viewModelScope.launch { repo.setDeleteBehavior(behavior) }
     fun setTrashRetentionDays(days: Int) = viewModelScope.launch { repo.setTrashRetentionDays(days) }
+    fun setSyncDeleteBackup(enabled: Boolean) = viewModelScope.launch { repo.setSyncDeleteBackup(enabled) }
+    fun setSyncBackupGenerations(n: Int) = viewModelScope.launch { repo.setSyncBackupGenerations(n) }
+    fun setSyncBackupThresholdMb(mb: Int) = viewModelScope.launch { repo.setSyncBackupThresholdMb(mb) }
+    fun setSyncBackupPolicyOverThreshold(p: SyncBackupPolicy) = viewModelScope.launch { repo.setSyncBackupPolicyOverThreshold(p) }
 }

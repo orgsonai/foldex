@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,6 +147,62 @@ fun SettingsScreen(
             )
 
             HorizontalDivider()
+            SettingsSectionHeader("同期")
+            SwitchRow(
+                title = "削除時にバックアップ",
+                subtitle = "delete 同期で消えるファイルをアプリ内に世代保存",
+                checked = settings.syncDeleteBackup,
+                onCheckedChange = viewModel::setSyncDeleteBackup,
+            )
+            if (settings.syncDeleteBackup) {
+                SettingRow(
+                    title = "保存する世代数",
+                    subtitle = "古い世代から自動で削除",
+                    control = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(1, 3, 5).forEach { n ->
+                                FilterChip(
+                                    selected = settings.syncBackupGenerations == n,
+                                    onClick = { viewModel.setSyncBackupGenerations(n) },
+                                    label = { Text("${n}世代") },
+                                )
+                            }
+                        }
+                    },
+                )
+                SettingRow(
+                    title = "確認なしでバックアップする上限",
+                    subtitle = "これより大きいファイルは下の設定に従う",
+                    control = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(10, 50, 200, 1000).forEach { mb ->
+                                FilterChip(
+                                    selected = settings.syncBackupThresholdMb == mb,
+                                    onClick = { viewModel.setSyncBackupThresholdMb(mb) },
+                                    label = { Text(if (mb >= 1000) "${mb / 1000}GB" else "${mb}MB") },
+                                )
+                            }
+                        }
+                    },
+                )
+                SettingRow(
+                    title = "上限を超えたファイル",
+                    subtitle = "バックグラウンド実行では「確認」は安全側 (バックアップ) になります",
+                    control = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SyncBackupPolicy.entries.forEach { p ->
+                                FilterChip(
+                                    selected = settings.syncBackupPolicyOverThreshold == p,
+                                    onClick = { viewModel.setSyncBackupPolicyOverThreshold(p) },
+                                    label = { Text(p.displayName) },
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+
+            HorizontalDivider()
             SettingsSectionHeader("ファイル")
             SettingRow(
                 title = "ファイルの開き方",
@@ -174,6 +231,13 @@ private val DeleteBehavior.displayName: String
         DeleteBehavior.TRASH -> "ゴミ箱へ"
         DeleteBehavior.PERMANENT -> "完全削除"
         DeleteBehavior.ASK -> "毎回確認"
+    }
+
+private val SyncBackupPolicy.displayName: String
+    get() = when (this) {
+        SyncBackupPolicy.ASK -> "確認"
+        SyncBackupPolicy.BACKUP -> "バックアップ"
+        SyncBackupPolicy.SKIP -> "バックアップしない"
     }
 
 @Composable

@@ -1,6 +1,7 @@
 package com.zerotoship.foldex.core.data.repo
 
 import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
 
 /**
@@ -23,4 +24,12 @@ data class UserSettings(
     val deleteBehavior: DeleteBehavior = DeleteBehavior.TRASH,
     /** ゴミ箱の自動削除日数 (0 = 無期限)。 */
     val trashRetentionDays: Int = 30,
+    /** delete 同期で削除されるファイルをバックアップするか。 */
+    val syncDeleteBackup: Boolean = true,
+    /** バックアップを残す世代数。 */
+    val syncBackupGenerations: Int = 3,
+    /** これ以下のサイズ(MB)は常にバックアップ。これより大きいものは [syncBackupPolicyOverThreshold] に従う。 */
+    val syncBackupThresholdMb: Int = 50,
+    /** しきい値を超えたファイルの扱い。 */
+    val syncBackupPolicyOverThreshold: SyncBackupPolicy = SyncBackupPolicy.ASK,
 )
