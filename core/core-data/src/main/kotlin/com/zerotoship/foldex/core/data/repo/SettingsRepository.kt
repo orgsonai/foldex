@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.ThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,9 @@ class SettingsRepository @Inject constructor(
             showExtensionBadge = p[KEY_EXTENSION_BADGE] ?: true,
             confirmBeforeDelete = p[KEY_CONFIRM_DELETE] ?: true,
             undoTimeoutSeconds = p[KEY_UNDO_TIMEOUT] ?: 5,
+            deleteBehavior = p[KEY_DELETE_BEHAVIOR]?.let { runCatching { DeleteBehavior.valueOf(it) }.getOrNull() }
+                ?: DeleteBehavior.TRASH,
+            trashRetentionDays = p[KEY_TRASH_RETENTION] ?: 30,
         )
     }
 
@@ -49,6 +53,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setUndoTimeoutSeconds(seconds: Int) = edit { it[KEY_UNDO_TIMEOUT] = seconds }
 
+    suspend fun setDeleteBehavior(behavior: DeleteBehavior) = edit { it[KEY_DELETE_BEHAVIOR] = behavior.name }
+
+    suspend fun setTrashRetentionDays(days: Int) = edit { it[KEY_TRASH_RETENTION] = days }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         ds.edit(block)
     }
@@ -59,5 +67,7 @@ class SettingsRepository @Inject constructor(
         val KEY_EXTENSION_BADGE = booleanPreferencesKey("extension_badge")
         val KEY_CONFIRM_DELETE = booleanPreferencesKey("confirm_before_delete")
         val KEY_UNDO_TIMEOUT = intPreferencesKey("undo_timeout_seconds")
+        val KEY_DELETE_BEHAVIOR = stringPreferencesKey("delete_behavior")
+        val KEY_TRASH_RETENTION = intPreferencesKey("trash_retention_days")
     }
 }

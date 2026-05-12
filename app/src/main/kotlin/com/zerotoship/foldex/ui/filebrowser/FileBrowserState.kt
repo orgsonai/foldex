@@ -1,5 +1,6 @@
 package com.zerotoship.foldex.ui.filebrowser
 
+import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 
@@ -34,6 +35,8 @@ data class FileBrowserState(
     val showCreateFolderDialog: Boolean = false,
     val favoriteUris: Set<String> = emptySet(),
     val showExtensionBadge: Boolean = true,
+    val deleteBehavior: DeleteBehavior = DeleteBehavior.TRASH,
+    val confirmBeforeDelete: Boolean = true,
 ) {
     val currentUri: FileUri? get() = breadcrumbs.lastOrNull()?.uri
     val canGoUp: Boolean get() = breadcrumbs.size > 1

@@ -516,7 +516,9 @@ fun FileBrowserScreen(
     if (state.pendingDeleteNodes.isNotEmpty()) {
         DeleteConfirmDialog(
             nodes = state.pendingDeleteNodes,
-            onConfirm = { viewModel.confirmDelete() },
+            defaultBehavior = state.deleteBehavior,
+            askDestination = state.deleteBehavior == com.zerotoship.foldex.core.model.DeleteBehavior.ASK,
+            onConfirm = { behavior -> viewModel.confirmDelete(behavior) },
             onDismiss = { viewModel.dismissDeleteDialog() },
         )
     }

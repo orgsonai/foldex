@@ -26,12 +26,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onOpenFileTypes: () -> Unit = {},
+    onOpenTrash: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -105,6 +107,45 @@ fun SettingsScreen(
             )
 
             HorizontalDivider()
+            SettingsSectionHeader("ゴミ箱")
+            SettingRow(
+                title = "削除の行き先",
+                subtitle = "ファイルを削除したときの動作",
+                control = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DeleteBehavior.entries.forEach { b ->
+                            FilterChip(
+                                selected = settings.deleteBehavior == b,
+                                onClick = { viewModel.setDeleteBehavior(b) },
+                                label = { Text(b.displayName) },
+                            )
+                        }
+                    }
+                },
+            )
+            SettingRow(
+                title = "ゴミ箱の保持期間",
+                subtitle = "これより古いものは自動で完全削除",
+                control = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(7 to "7日", 30 to "30日", 90 to "90日", 0 to "無期限").forEach { (days, label) ->
+                            FilterChip(
+                                selected = settings.trashRetentionDays == days,
+                                onClick = { viewModel.setTrashRetentionDays(days) },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                },
+            )
+            SettingRow(
+                title = "ゴミ箱を開く",
+                subtitle = "削除したファイルの復元・完全削除",
+                control = {},
+                onClick = onOpenTrash,
+            )
+
+            HorizontalDivider()
             SettingsSectionHeader("ファイル")
             SettingRow(
                 title = "ファイルの開き方",
@@ -126,6 +167,13 @@ private val ThemeMode.displayName: String
         ThemeMode.SYSTEM -> "システム"
         ThemeMode.LIGHT -> "ライト"
         ThemeMode.DARK -> "ダーク"
+    }
+
+private val DeleteBehavior.displayName: String
+    get() = when (this) {
+        DeleteBehavior.TRASH -> "ゴミ箱へ"
+        DeleteBehavior.PERMANENT -> "完全削除"
+        DeleteBehavior.ASK -> "毎回確認"
     }
 
 @Composable

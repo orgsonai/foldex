@@ -1,5 +1,6 @@
 package com.zerotoship.foldex.core.data.repo
 
+import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.ThemeMode
 
 /**
@@ -18,4 +19,8 @@ data class UserSettings(
     val confirmBeforeDelete: Boolean = true,
     /** アンドゥ Snackbar の表示秒数 (3 / 5 / 10 のいずれか)。 */
     val undoTimeoutSeconds: Int = 5,
+    /** 削除操作の既定の行き先 (ゴミ箱へ / 完全削除 / 毎回確認)。 */
+    val deleteBehavior: DeleteBehavior = DeleteBehavior.TRASH,
+    /** ゴミ箱の自動削除日数 (0 = 無期限)。 */
+    val trashRetentionDays: Int = 30,
 )

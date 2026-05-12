@@ -39,6 +39,7 @@ import com.zerotoship.foldex.ui.servers.ServerLogScreen
 import com.zerotoship.foldex.ui.servers.ServersScreen
 import com.zerotoship.foldex.ui.settings.OpenWithSettingsScreen
 import com.zerotoship.foldex.ui.settings.SettingsScreen
+import com.zerotoship.foldex.ui.settings.TrashScreen
 import com.zerotoship.foldex.ui.sync.SyncJobEditScreen
 import com.zerotoship.foldex.ui.sync.SyncJobsScreen
 
@@ -151,10 +152,16 @@ fun MainScreen(browserViewModel: FileBrowserViewModel) {
                 SyncJobEditScreen(onBack = { navController.popBackStack() }, onSaved = { navController.popBackStack() })
             }
             composable(TopTab.SETTINGS.route) {
-                SettingsScreen(onOpenFileTypes = { navController.navigate("settings/open-with") })
+                SettingsScreen(
+                    onOpenFileTypes = { navController.navigate("settings/open-with") },
+                    onOpenTrash = { navController.navigate("settings/trash") },
+                )
             }
             composable("settings/open-with") {
                 OpenWithSettingsScreen(onBack = { navController.popBackStack() })
+            }
+            composable("settings/trash") {
+                TrashScreen(onBack = { navController.popBackStack() })
             }
         }
     }

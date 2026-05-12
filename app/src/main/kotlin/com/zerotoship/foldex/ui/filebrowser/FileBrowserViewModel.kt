@@ -16,6 +16,8 @@ import com.zerotoship.foldex.core.model.Protocol
 import com.zerotoship.foldex.core.data.repo.OpenWithMode
 import com.zerotoship.foldex.core.data.repo.OpenWithRepository
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
+import com.zerotoship.foldex.core.data.repo.TrashRepository
+import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
 import com.zerotoship.foldex.storage.StorageProviderRouter
@@ -40,6 +42,7 @@ class FileBrowserViewModel @Inject constructor(
     private val storage: StorageProviderRouter,
     private val settingsRepo: SettingsRepository,
     private val openWithRepo: OpenWithRepository,
+    private val trashRepo: TrashRepository,
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("foldex_browser", Context.MODE_PRIVATE)
@@ -77,8 +80,16 @@ class FileBrowserViewModel @Inject constructor(
         }
         viewModelScope.launch {
             settingsRepo.settings.collect { s ->
-                _state.value = _state.value.copy(showExtensionBadge = s.showExtensionBadge)
+                _state.value = _state.value.copy(
+                    showExtensionBadge = s.showExtensionBadge,
+                    deleteBehavior = s.deleteBehavior,
+                    confirmBeforeDelete = s.confirmBeforeDelete,
+                )
             }
+        }
+        viewModelScope.launch {
+            val days = settingsRepo.settings.first().trashRetentionDays
+            runCatching { trashRepo.purgeOlderThan(days) }
         }
     }
 
@@ -308,39 +319,58 @@ class FileBrowserViewModel @Inject constructor(
 
     // --- Delete ---
 
-    fun requestDelete() {
-        val nodes = _state.value.selectedNodes
-        if (nodes.isEmpty()) return
-        _state.value = _state.value.copy(pendingDeleteNodes = nodes)
-    }
+    fun requestDelete() = requestDeleteOf(_state.value.selectedNodes)
 
-    fun requestDeleteSingle(node: FileNode) {
-        _state.value = _state.value.copy(pendingDeleteNodes = listOf(node))
+    fun requestDeleteSingle(node: FileNode) = requestDeleteOf(listOf(node))
+
+    private fun requestDeleteOf(nodes: List<FileNode>) {
+        if (nodes.isEmpty()) return
+        val behavior = _state.value.deleteBehavior
+        // 確認オフ かつ 行き先が固定なら、ダイアログを出さず即実行する。
+        if (!_state.value.confirmBeforeDelete && behavior != DeleteBehavior.ASK) {
+            performDelete(nodes, behavior)
+        } else {
+            _state.value = _state.value.copy(pendingDeleteNodes = nodes)
+        }
     }
 
     fun dismissDeleteDialog() {
         _state.value = _state.value.copy(pendingDeleteNodes = emptyList())
     }
 
-    fun confirmDelete() {
+    fun confirmDelete(behavior: DeleteBehavior) {
         val nodes = _state.value.pendingDeleteNodes
+        _state.value = _state.value.copy(pendingDeleteNodes = emptyList())
+        performDelete(nodes, behavior)
+    }
+
+    private fun performDelete(nodes: List<FileNode>, behavior: DeleteBehavior) {
         if (nodes.isEmpty()) return
-        _state.value = _state.value.copy(pendingDeleteNodes = emptyList(), isLoading = true)
+        _state.value = _state.value.copy(isLoading = true)
         viewModelScope.launch {
             var lastError: String? = null
+            var trashedCount = 0
+            var deletedCount = 0
             for (node in nodes) {
-                when (val r = storage.delete(node.uri, recursive = true)) {
-                    is Result.Success -> Unit
-                    is Result.Failure -> lastError = r.error.message
+                val localFile = (node.uri as? FileUri.Local)?.let { File(it.absolutePath) }
+                if (behavior == DeleteBehavior.TRASH && localFile != null) {
+                    if (trashRepo.moveToTrash(localFile)) trashedCount++
+                    else lastError = "「${node.name}」をゴミ箱へ移動できませんでした"
+                } else {
+                    when (val r = storage.delete(node.uri, recursive = true)) {
+                        is Result.Success -> deletedCount++
+                        is Result.Failure -> lastError = r.error.message
+                    }
                 }
             }
             val currentUri = _state.value.currentUri
             _state.value = _state.value.copy(isLoading = false, selectedUris = emptySet())
             if (currentUri != null) loadFilesSync(currentUri)
-            if (lastError != null) {
-                emit(SnackbarEvent("削除エラー: $lastError"))
-            } else {
-                emit(SnackbarEvent("${nodes.size}件削除しました"))
+            when {
+                lastError != null -> emit(SnackbarEvent("削除エラー: $lastError"))
+                trashedCount > 0 && deletedCount == 0 -> emit(SnackbarEvent("${trashedCount}件をゴミ箱に移動しました"))
+                trashedCount > 0 -> emit(SnackbarEvent("${trashedCount + deletedCount}件削除しました (うち${trashedCount}件はゴミ箱)"))
+                else -> emit(SnackbarEvent("${deletedCount}件削除しました"))
             }
         }
     }
