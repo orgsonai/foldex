@@ -171,6 +171,19 @@ class FileBrowserViewModel @Inject constructor(
         loadFiles(uri)
     }
 
+    // --- 一覧アイテムのタップ / 長押し ---
+    // 画面側からは安定した関数参照として渡すため、選択モード分岐はここで行う。
+
+    fun onItemClick(node: FileNode) {
+        when {
+            _state.value.isSelectionMode -> toggleSelection(node)
+            node.type == NodeType.DIRECTORY -> navigateTo(node.uri, node.name)
+            else -> openFile(node)
+        }
+    }
+
+    fun onItemLongClick(node: FileNode) = toggleSelection(node)
+
     // --- Open file (tap) ---
 
     /**

@@ -31,7 +31,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Star
@@ -342,13 +341,11 @@ fun FileBrowserScreen(
                         }
                     },
                     navigationIcon = {
+                        // 階層を下っても「戻る」には変えず、常にハンバーガー固定。
+                        // 上へ戻る操作はパンくず・端末の戻るボタンで行う。
                         if (state.isSelectionMode) {
                             IconButton(onClick = { viewModel.clearSelection() }) {
                                 Icon(Icons.Default.Close, contentDescription = "選択解除")
-                            }
-                        } else if (state.canGoUp) {
-                            IconButton(onClick = { viewModel.navigateUp() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上へ")
                             }
                         } else {
                             IconButton(onClick = {
@@ -499,14 +496,10 @@ fun FileBrowserScreen(
                     viewMode = state.viewMode,
                     selectedUris = state.selectedUris,
                     showBadge = state.showExtensionBadge,
-                    onFileClick = { node ->
-                        when {
-                            state.isSelectionMode -> viewModel.toggleSelection(node)
-                            node.type == NodeType.DIRECTORY -> viewModel.navigateTo(node.uri, node.name)
-                            else -> viewModel.openFile(node)
-                        }
-                    },
-                    onFileLongClick = { node -> viewModel.toggleSelection(node) },
+                    // 安定な関数参照を渡す (毎回新しいラムダを作らない) → スクロール中に
+                    // 行アイテムが無駄に再コンポーズされない。
+                    onFileClick = viewModel::onItemClick,
+                    onFileLongClick = viewModel::onItemLongClick,
                 )
             }
         }
@@ -612,7 +605,7 @@ private fun FileListContent(
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                     items(
                         items = files,
-                        key = { it.uri.toStorageString() },
+                        key = { it.uri },
                         contentType = { "file-list" },
                     ) { node ->
                         val selected = hasSelection && node.uri.toStorageString() in selectedUris
@@ -635,7 +628,7 @@ private fun FileListContent(
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                     items(
                         items = files,
-                        key = { it.uri.toStorageString() },
+                        key = { it.uri },
                         contentType = { "file-detailed" },
                     ) { node ->
                         val selected = hasSelection && node.uri.toStorageString() in selectedUris
@@ -664,7 +657,7 @@ private fun FileListContent(
                 ) {
                     items(
                         items = files,
-                        key = { it.uri.toStorageString() },
+                        key = { it.uri },
                         contentType = { "file-grid" },
                     ) { node ->
                         val selected = hasSelection && node.uri.toStorageString() in selectedUris

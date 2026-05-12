@@ -42,7 +42,6 @@ import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
-import com.zerotoship.foldex.ui.viewer.AudioArt
 import java.io.File
 
 /** ファイルノードのカテゴリ別アイコン。ディレクトリはフォルダ。 */
@@ -102,24 +101,27 @@ fun ExtensionBadge(node: FileNode, modifier: Modifier = Modifier) {
     )
 }
 
-/** サムネ取得対象なら Coil に渡せるモデルを返す。対象外・リモートは null。 */
+/**
+ * サムネ取得対象なら Coil に渡せるモデルを返す。対象外・リモートは null。
+ *
+ * 一覧では **画像のみ** サムネ化する。動画/音声アートはメタデータ抽出が重く、
+ * スクロールがもたつく原因になるため一覧ではアイコン表示に留める (ビューアでは出す)。
+ */
 private fun thumbnailModelFor(node: FileNode): Any? {
     if (node.type != NodeType.FILE) return null
-    val cat = FileTypeRegistry.categorize(node.name)
-    if (cat != Category.IMAGE && cat != Category.VIDEO && cat != Category.AUDIO) return null
+    if (FileTypeRegistry.categorize(node.name) != Category.IMAGE) return null
     // リモートサムネは帯域消費が大きいため当面アイコンのみ (HANDOFF §10-C: 後で部分DL検討)
-    val source: Any = when (val u = node.uri) {
+    return when (val u = node.uri) {
         is FileUri.Local -> File(u.absolutePath)
         is FileUri.Saf -> Uri.parse(u.documentUri)
-        is FileUri.Remote -> return null
+        is FileUri.Remote -> null
     }
-    return if (cat == Category.AUDIO) AudioArt(source) else source
 }
 
 /**
  * 一覧の先頭に出すアイコン。
  * - 選択中: チェックボックス
- * - 画像/動画のローカルファイル: サムネ (読み込み中・失敗時はカテゴリアイコンにフォールバック)
+ * - 画像のローカルファイル: サムネ (読み込み中・失敗時はカテゴリアイコンにフォールバック)
  * - それ以外: カテゴリアイコン (種別ごとに控えめに色分け)
  */
 @Composable
@@ -139,9 +141,14 @@ fun FileLeadingIcon(
         Icon(iconFor(node), contentDescription = null, tint = tintFor(node, false), modifier = modifier.size(size))
         return
     }
+    val context = LocalContext.current
+    // ImageRequest は再コンポーズのたびに作り直さない (作り直すと Coil が読み込みを再開してしまう)
+    val request = remember(model) {
+        ImageRequest.Builder(context).data(model).size(128).crossfade(true).build()
+    }
     val fallback = rememberVectorPainter(iconFor(node))
     AsyncImage(
-        model = ImageRequest.Builder(LocalContext.current).data(model).crossfade(true).build(),
+        model = request,
         contentDescription = null,
         placeholder = fallback,
         error = fallback,
