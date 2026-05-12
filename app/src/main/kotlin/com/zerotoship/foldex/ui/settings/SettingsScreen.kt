@@ -31,6 +31,7 @@ import com.zerotoship.foldex.core.model.ThemeMode
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    onOpenFileTypes: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -101,6 +102,15 @@ fun SettingsScreen(
                         }
                     }
                 },
+            )
+
+            HorizontalDivider()
+            SettingsSectionHeader("ファイル")
+            SettingRow(
+                title = "ファイルの開き方",
+                subtitle = "拡張子ごとに内蔵ビューア / 毎回選択 / 外部アプリ を指定",
+                control = {},
+                onClick = onOpenFileTypes,
             )
 
             HorizontalDivider()

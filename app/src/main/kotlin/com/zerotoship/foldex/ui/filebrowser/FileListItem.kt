@@ -29,6 +29,7 @@ import com.zerotoship.foldex.core.model.NodeType
 fun FileListItem(
     node: FileNode,
     selected: Boolean = false,
+    showBadge: Boolean = true,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -52,6 +53,10 @@ fun FileListItem(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (showBadge) {
+            Spacer(Modifier.width(8.dp))
+            ExtensionBadge(node)
+        }
     }
 }
 
@@ -60,6 +65,7 @@ fun FileListItem(
 fun FileDetailedItem(
     node: FileNode,
     selected: Boolean = false,
+    showBadge: Boolean = true,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -99,6 +105,10 @@ fun FileDetailedItem(
                     color = colors.onSurfaceVariant,
                 )
             }
+        }
+        if (showBadge) {
+            Spacer(Modifier.width(8.dp))
+            ExtensionBadge(node)
         }
     }
 }

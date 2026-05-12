@@ -33,6 +33,7 @@ data class FileBrowserState(
     val renameTarget: FileNode? = null,
     val showCreateFolderDialog: Boolean = false,
     val favoriteUris: Set<String> = emptySet(),
+    val showExtensionBadge: Boolean = true,
 ) {
     val currentUri: FileUri? get() = breadcrumbs.lastOrNull()?.uri
     val canGoUp: Boolean get() = breadcrumbs.size > 1

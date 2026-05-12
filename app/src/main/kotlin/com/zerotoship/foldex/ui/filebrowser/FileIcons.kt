@@ -1,6 +1,8 @@
 package com.zerotoship.foldex.ui.filebrowser
 
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -80,6 +83,22 @@ fun tintFor(node: FileNode, selected: Boolean): Color {
         Category.APK -> Color(0xFF3DDC84)          // android green
         else -> colors.onSurfaceVariant
     }
+}
+
+/** ファイル名末尾の拡張子バッジ (HANDOFF §11-D)。拡張子がなければ何も出さない。 */
+@Composable
+fun ExtensionBadge(node: FileNode, modifier: Modifier = Modifier) {
+    if (node.type != NodeType.FILE) return
+    val ext = node.name.substringAfterLast('.', "").takeIf { it.isNotEmpty() && it.length <= 5 } ?: return
+    Text(
+        text = ext.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 /** サムネ取得対象なら Coil に渡せるモデル (File / Uri) を返す。対象外・リモートは null。 */

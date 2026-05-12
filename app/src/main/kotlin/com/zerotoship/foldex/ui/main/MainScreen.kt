@@ -37,6 +37,7 @@ import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import com.zerotoship.foldex.ui.servers.ServerEditScreen
 import com.zerotoship.foldex.ui.servers.ServerLogScreen
 import com.zerotoship.foldex.ui.servers.ServersScreen
+import com.zerotoship.foldex.ui.settings.OpenWithSettingsScreen
 import com.zerotoship.foldex.ui.settings.SettingsScreen
 import com.zerotoship.foldex.ui.sync.SyncJobEditScreen
 import com.zerotoship.foldex.ui.sync.SyncJobsScreen
@@ -150,7 +151,10 @@ fun MainScreen(browserViewModel: FileBrowserViewModel) {
                 SyncJobEditScreen(onBack = { navController.popBackStack() }, onSaved = { navController.popBackStack() })
             }
             composable(TopTab.SETTINGS.route) {
-                SettingsScreen()
+                SettingsScreen(onOpenFileTypes = { navController.navigate("settings/open-with") })
+            }
+            composable("settings/open-with") {
+                OpenWithSettingsScreen(onBack = { navController.popBackStack() })
             }
         }
     }

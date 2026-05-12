@@ -156,13 +156,13 @@ fun FileBrowserScreen(
             val intent = when (req) {
                 is OpenRequest.Builtin ->
                     ViewerActivity.intent(context, req.localPath, req.name, req.category)
-                is OpenRequest.External -> Intent.createChooser(
-                    Intent(Intent.ACTION_VIEW).apply {
+                is OpenRequest.External -> {
+                    val view = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(req.uri, req.mime)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    },
-                    req.name,
-                )
+                    }
+                    if (req.chooser) Intent.createChooser(view, req.name) else view
+                }
                 is OpenRequest.InstallApk -> Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(req.uri, "application/vnd.android.package-archive")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -487,6 +487,7 @@ fun FileBrowserScreen(
                     files = state.filteredFiles,
                     viewMode = state.viewMode,
                     selectedUris = state.selectedUris,
+                    showBadge = state.showExtensionBadge,
                     onFileClick = { node ->
                         when {
                             state.isSelectionMode -> viewModel.toggleSelection(node)
@@ -564,6 +565,7 @@ private fun FileListContent(
     files: List<FileNode>,
     viewMode: ViewMode,
     selectedUris: Set<String>,
+    showBadge: Boolean,
     onFileClick: (FileNode) -> Unit,
     onFileLongClick: (FileNode) -> Unit,
     modifier: Modifier = Modifier,
@@ -588,6 +590,7 @@ private fun FileListContent(
                         FileListItem(
                             node = node,
                             selected = selected,
+                            showBadge = showBadge,
                             onClick = { onFileClick(node) },
                             onLongClick = { onFileLongClick(node) },
                         )
@@ -610,6 +613,7 @@ private fun FileListContent(
                         FileDetailedItem(
                             node = node,
                             selected = selected,
+                            showBadge = showBadge,
                             onClick = { onFileClick(node) },
                             onLongClick = { onFileLongClick(node) },
                         )

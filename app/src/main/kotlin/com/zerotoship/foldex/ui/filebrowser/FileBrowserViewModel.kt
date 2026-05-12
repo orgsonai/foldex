@@ -13,6 +13,9 @@ import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.Protocol
+import com.zerotoship.foldex.core.data.repo.OpenWithMode
+import com.zerotoship.foldex.core.data.repo.OpenWithRepository
+import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
 import com.zerotoship.foldex.storage.StorageProviderRouter
@@ -24,6 +27,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,6 +38,8 @@ import javax.inject.Inject
 class FileBrowserViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val storage: StorageProviderRouter,
+    private val settingsRepo: SettingsRepository,
+    private val openWithRepo: OpenWithRepository,
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("foldex_browser", Context.MODE_PRIVATE)
@@ -68,6 +74,11 @@ class FileBrowserViewModel @Inject constructor(
         }
         if (hasPerm) {
             viewModelScope.launch { _quickAccess.value = withContext(Dispatchers.IO) { computeQuickAccess() } }
+        }
+        viewModelScope.launch {
+            settingsRepo.settings.collect { s ->
+                _state.value = _state.value.copy(showExtensionBadge = s.showExtensionBadge)
+            }
         }
     }
 
@@ -161,16 +172,23 @@ class FileBrowserViewModel @Inject constructor(
     fun openFile(node: FileNode) {
         if (node.type != NodeType.FILE) return
         val category = FileTypeRegistry.categorize(node.name)
+        val ext = node.name.substringAfterLast('.', "").lowercase()
         viewModelScope.launch {
+            val mode = openWithRepo.overrides.first()[ext] ?: OpenWithMode.DEFAULT
             val localFile = resolveLocalFile(node) ?: return@launch
+            fun external(chooser: Boolean) = OpenRequest.External(
+                uri = fileProviderUri(localFile),
+                mime = FileTypeRegistry.mimeTypeFor(node.name) ?: "*/*",
+                name = node.name,
+                chooser = chooser,
+            )
             val request = when {
                 category == Category.APK -> OpenRequest.InstallApk(fileProviderUri(localFile))
+                mode == OpenWithMode.EXTERNAL -> external(chooser = false)
+                mode == OpenWithMode.ASK -> external(chooser = true)
+                // DEFAULT / BUILTIN: 内蔵対応があれば内蔵、なければ外部アプリ選択
                 category.hasBuiltInViewer -> OpenRequest.Builtin(localFile.absolutePath, node.name, category)
-                else -> OpenRequest.External(
-                    uri = fileProviderUri(localFile),
-                    mime = FileTypeRegistry.mimeTypeFor(node.name) ?: "*/*",
-                    name = node.name,
-                )
+                else -> external(chooser = true)
             }
             _openRequests.send(request)
         }
