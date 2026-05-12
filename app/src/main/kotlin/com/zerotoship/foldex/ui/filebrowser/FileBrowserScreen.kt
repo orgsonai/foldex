@@ -56,6 +56,8 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -68,6 +70,8 @@ import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
@@ -91,8 +95,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -377,38 +383,43 @@ fun FileBrowserScreen(
                                     tint = MaterialTheme.colorScheme.error)
                             }
                         } else {
-                            val curUri = state.currentUri
-                            if (curUri != null) {
-                                val isFav = curUri.toStorageString() in state.favoriteUris
-                                IconButton(onClick = { viewModel.toggleFavorite(curUri) }) {
-                                    Icon(
-                                        imageVector = if (isFav) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                        contentDescription = if (isFav) "お気に入りから外す" else "お気に入りに追加",
-                                        tint = if (isFav) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
+                            // タイトル (内部ストレージ名等) を埋もれさせないため、常時表示は検索と
+                            // オーバーフローの 2 つだけにする。表示モード切替・お気に入り・更新は ⋮ へ。
                             IconButton(onClick = { viewModel.toggleSearch() }) {
                                 Icon(Icons.Default.Search, contentDescription = "検索")
                             }
-                            IconButton(onClick = { viewModel.setViewMode(ViewMode.LIST) }) {
-                                Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "リスト表示",
-                                    tint = if (state.viewMode == ViewMode.LIST) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant)
+                            var menuOpen by remember { mutableStateOf(false) }
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
                             }
-                            IconButton(onClick = { viewModel.setViewMode(ViewMode.DETAILED) }) {
-                                Icon(Icons.Outlined.ViewList, contentDescription = "詳細表示",
-                                    tint = if (state.viewMode == ViewMode.DETAILED) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            IconButton(onClick = { viewModel.setViewMode(ViewMode.GRID) }) {
-                                Icon(Icons.Outlined.GridView, contentDescription = "グリッド表示",
-                                    tint = if (state.viewMode == ViewMode.GRID) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            IconButton(onClick = { viewModel.refresh() }) {
-                                Icon(Icons.Outlined.Refresh, contentDescription = "更新")
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                val curUri = state.currentUri
+                                if (curUri != null) {
+                                    val isFav = curUri.toStorageString() in state.favoriteUris
+                                    DropdownMenuItem(
+                                        text = { Text(if (isFav) "お気に入りから外す" else "お気に入りに追加") },
+                                        leadingIcon = {
+                                            Icon(if (isFav) Icons.Filled.Star else Icons.Outlined.StarBorder, null)
+                                        },
+                                        onClick = { viewModel.toggleFavorite(curUri); menuOpen = false },
+                                    )
+                                    HorizontalDivider()
+                                }
+                                ViewModeMenuItem(ViewMode.LIST, "リスト表示", Icons.AutoMirrored.Outlined.List, state.viewMode) {
+                                    viewModel.setViewMode(it); menuOpen = false
+                                }
+                                ViewModeMenuItem(ViewMode.DETAILED, "詳細表示", Icons.Outlined.ViewList, state.viewMode) {
+                                    viewModel.setViewMode(it); menuOpen = false
+                                }
+                                ViewModeMenuItem(ViewMode.GRID, "グリッド表示", Icons.Outlined.GridView, state.viewMode) {
+                                    viewModel.setViewMode(it); menuOpen = false
+                                }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("更新") },
+                                    leadingIcon = { Icon(Icons.Outlined.Refresh, null) },
+                                    onClick = { viewModel.refresh(); menuOpen = false },
+                                )
                             }
                         }
                     },
@@ -557,6 +568,22 @@ private fun BreadcrumbRow(
             }
         }
     }
+}
+
+@Composable
+private fun ViewModeMenuItem(
+    mode: ViewMode,
+    label: String,
+    icon: ImageVector,
+    current: ViewMode,
+    onSelect: (ViewMode) -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        leadingIcon = { Icon(icon, contentDescription = null) },
+        trailingIcon = { if (mode == current) Icon(Icons.Default.Check, contentDescription = null) },
+        onClick = { onSelect(mode) },
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
