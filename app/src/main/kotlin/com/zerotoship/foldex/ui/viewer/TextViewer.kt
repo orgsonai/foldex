@@ -1,6 +1,7 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.zerotoship.foldex.ui.viewer
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,18 +9,23 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,22 +38,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.zerotoship.foldex.ui.components.FastScrollbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.charset.Charset
 
-private const val MAX_BYTES = 2L * 1024 * 1024 // 2MB を超えたら開かない (HANDOFF §10-D)
+// 内蔵で開ける上限 (これより大きいと外部アプリ案内のみ)。
+private const val MAX_BYTES = 4L * 1024 * 1024
+// 内蔵エディタで編集可能な上限。これを超えるものは閲覧専用 (Compose の TextField は
+// 巨大テキストで重くなるため。閲覧は 1 行ずつ遅延描画するので大きくても軽い)。
+private const val EDITABLE_MAX_BYTES = 512L * 1024
 
 private sealed interface TextLoad {
     data object Loading : TextLoad
-    data class Loaded(val content: String, val charset: Charset) : TextLoad
+    data class Loaded(val content: String, val charset: Charset, val sizeBytes: Long) : TextLoad
     data class TooLarge(val size: Long) : TextLoad
     data class Failed(val message: String) : TextLoad
 }
 
-/** 等幅フォントの簡易テキストビューア。文字コードは自動判定。[editable] が true なら簡易編集→上書き保存。 */
+/** 等幅フォントの簡易テキストビューア/エディタ。文字コードは自動判定。[editable] が true なら上書き保存できる。 */
 @Composable
 fun TextViewer(file: File, editable: Boolean = false, modifier: Modifier = Modifier) {
     val state by produceState<TextLoad>(TextLoad.Loading, file) {
@@ -57,7 +68,7 @@ fun TextViewer(file: File, editable: Boolean = false, modifier: Modifier = Modif
                 if (len > MAX_BYTES) return@runCatching TextLoad.TooLarge(len)
                 val bytes = file.readBytes()
                 val charset = TextDecoding.detect(bytes)
-                TextLoad.Loaded(String(bytes, charset), charset)
+                TextLoad.Loaded(String(bytes, charset), charset, len)
             }.getOrElse { TextLoad.Failed(it.message ?: "読み込みに失敗しました") }
         }
     }
@@ -68,24 +79,37 @@ fun TextViewer(file: File, editable: Boolean = false, modifier: Modifier = Modif
         }
         is TextLoad.TooLarge -> CenterMessage(
             modifier,
-            "ファイルが大きすぎます (${s.size / 1024}KB)。外部エディタで開いてください。",
+            "ファイルが大きすぎます (${s.size / 1024}KB)。右上の「別のアプリで開く」を使ってください。",
         )
         is TextLoad.Failed -> CenterMessage(modifier, s.message)
-        is TextLoad.Loaded -> LoadedText(file, s.content, s.charset, editable, modifier)
+        is TextLoad.Loaded ->
+            if (editable && s.sizeBytes <= EDITABLE_MAX_BYTES) {
+                EditableText(file, s.content, s.charset, modifier)
+            } else {
+                ReadOnlyText(
+                    content = s.content,
+                    charset = s.charset,
+                    hint = if (editable) "編集するには大きいため閲覧のみ (外部アプリで編集できます)" else null,
+                    modifier = modifier,
+                )
+            }
     }
 }
 
+private fun monoStyle(base: TextStyle, color: androidx.compose.ui.graphics.Color) =
+    base.copy(fontFamily = FontFamily.Monospace, color = color)
+
 @Composable
-private fun LoadedText(file: File, initial: String, charset: Charset, editable: Boolean, modifier: Modifier) {
+private fun EditableText(file: File, initial: String, charset: Charset, modifier: Modifier) {
     val scope = rememberCoroutineScope()
-    var editing by remember { mutableStateOf(false) }
-    var text by remember { mutableStateOf(initial) }
+    val textState = rememberTextFieldState(initial)
     var status by remember { mutableStateOf<String?>(null) }
-    val mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = MaterialTheme.typography.bodySmall.fontSize)
+    var saving by remember { mutableStateOf(false) }
+    val mono = monoStyle(MaterialTheme.typography.bodySmall, LocalContentColor.current)
 
     Column(modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -94,50 +118,65 @@ private fun LoadedText(file: File, initial: String, charset: Charset, editable: 
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            if (editable) {
-                if (editing) {
-                    TextButton(onClick = { text = initial; editing = false; status = null }) { Text("取消") }
-                    TextButton(onClick = {
-                        scope.launch {
-                            val ok = withContext(Dispatchers.IO) {
-                                runCatching { file.writeBytes(text.toByteArray(charset)) }.isSuccess
-                            }
-                            status = if (ok) "保存しました" else "保存に失敗しました"
-                            if (ok) editing = false
+            IconButton(
+                onClick = { status = null; textState.undoState.undo() },
+                enabled = textState.undoState.canUndo,
+            ) { Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "元に戻す") }
+            IconButton(
+                onClick = { status = null; textState.undoState.redo() },
+                enabled = textState.undoState.canRedo,
+            ) { Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "やり直す") }
+            IconButton(
+                onClick = {
+                    saving = true
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            runCatching { file.writeBytes(textState.text.toString().toByteArray(charset)) }.isSuccess
                         }
-                    }) {
-                        androidx.compose.material3.Icon(Icons.Default.Save, null, Modifier.padding(end = 4.dp))
-                        Text("保存")
+                        status = if (ok) "保存しました" else "保存に失敗しました"
+                        saving = false
                     }
-                } else {
-                    TextButton(onClick = { editing = true; status = null }) {
-                        androidx.compose.material3.Icon(Icons.Default.Edit, null, Modifier.padding(end = 4.dp))
-                        Text("編集")
+                },
+                enabled = !saving,
+            ) { Icon(Icons.Default.Save, contentDescription = "保存") }
+        }
+
+        BasicTextField(
+            state = textState,
+            textStyle = mono,
+            lineLimits = TextFieldLineLimits.MultiLine(),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier.fillMaxSize().padding(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun ReadOnlyText(content: String, charset: Charset, hint: String?, modifier: Modifier) {
+    // 1 行ずつ LazyColumn で遅延描画する。1 つの巨大な Text にすると数十万行で固まるため。
+    val lines = remember(content) { content.lines() }
+    val mono = monoStyle(MaterialTheme.typography.bodySmall, LocalContentColor.current)
+    val listState = rememberLazyListState()
+
+    Column(modifier.fillMaxSize()) {
+        Text(
+            text = buildString {
+                append("文字コード: ${charset.name()}  ·  ${lines.size}行")
+                if (hint != null) append("  ·  ").append(hint)
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        )
+        Box(Modifier.fillMaxSize()) {
+            SelectionContainer {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                    items(count = lines.size, key = { it }) { i ->
+                        Text(text = lines[i].ifEmpty { " " }, style = mono)
                     }
                 }
             }
-        }
-
-        if (editing) {
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
-                textStyle = mono.copy(color = LocalContentColor.current),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(12.dp),
-            )
-        } else {
-            SelectionContainer(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .horizontalScroll(rememberScrollState())
-                    .padding(12.dp),
-            ) {
-                Text(text = text, style = mono)
-            }
+            FastScrollbar(listState, lines.size, Modifier.align(Alignment.CenterEnd))
         }
     }
 }
