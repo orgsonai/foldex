@@ -22,7 +22,18 @@ data class SyncJobEntity(
     val excludePatterns: String,
     val maxFileSize: Long?,
 
+    /** ScheduleType=INTERVAL のときの間隔(分)。0 = 手動のみ。 */
     val intervalMinutes: Int,
+    /** ScheduleType の wireName。 */
+    val scheduleType: String = "interval",
+    /** DAILY/WEEKLY/MONTHLY: 時刻 (0..1439 分)。 */
+    val scheduleTimeOfDay: Int = 0,
+    /** WEEKLY: 曜日ビットマスク (bit0=月 ... bit6=日)。 */
+    val scheduleDaysOfWeek: Int = 0,
+    /** MONTHLY: 日 (1..31, 0=月末)。 */
+    val scheduleDayOfMonth: Int = 1,
+    /** DATETIME: 実行 epoch ms。 */
+    val scheduleDateTime: Long = 0L,
     val requiresWifi: Boolean,
     val requiresCharging: Boolean,
     val requiresBatteryNotLow: Boolean,

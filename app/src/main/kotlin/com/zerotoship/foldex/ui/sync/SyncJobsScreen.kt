@@ -135,7 +135,7 @@ private fun SyncJobRow(
                 Text(job.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "${directionShortLabel(job.direction)} ・ ${intervalLabel(job.intervalMinutes)}",
+                    "${directionShortLabel(job.direction)} ・ ${scheduleLabel(job.schedule)}",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 val sub = job.lastRunResult ?: "未実行"

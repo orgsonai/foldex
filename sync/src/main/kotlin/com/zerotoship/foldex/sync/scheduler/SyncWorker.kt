@@ -28,12 +28,16 @@ class SyncWorker @AssistedInject constructor(
     private val syncEngine: SyncEngine,
     private val jobRepository: SyncJobRepository,
     private val storage: StorageProvider,
+    private val scheduler: SyncScheduler,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
         val jobId = inputData.getString(KEY_JOB_ID) ?: return Result.failure()
         val job = jobRepository.findById(jobId) ?: return Result.failure()
         if (!job.enabled) return Result.success()
+
+        // 毎日/毎週/毎月 は OneTimeWork で次回を予約しているので、実行のたびに次回を再予約する。
+        if (job.schedule.isRecurringOneShot) scheduler.scheduleNext(job)
 
         val result = syncEngine.run(job, storage) { progress ->
             setProgressAsync(progress.toData())

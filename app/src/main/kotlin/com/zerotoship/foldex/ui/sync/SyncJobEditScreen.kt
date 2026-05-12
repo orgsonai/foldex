@@ -18,9 +18,14 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,7 +53,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.ConflictPolicy
+import com.zerotoship.foldex.core.model.ScheduleType
 import com.zerotoship.foldex.core.model.SyncDirection
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -137,27 +146,7 @@ fun SyncJobEditScreen(
             )
 
             SectionHeader("スケジュール")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                listOf(0 to "手動のみ", 15 to "15分", 30 to "30分", 60 to "1時間", 180 to "3時間", 360 to "6時間", 720 to "12時間", 1440 to "1日").forEach { (m, label) ->
-                    androidx.compose.material3.FilterChip(
-                        selected = state.intervalMinutes == m,
-                        onClick = { viewModel.update { it.copy(intervalMinutes = m) } },
-                        label = { Text(label) },
-                    )
-                }
-            }
-            OutlinedTextField(
-                value = if (state.intervalMinutes == 0) "" else state.intervalMinutes.toString(),
-                onValueChange = { v ->
-                    val parsed = v.trim().toIntOrNull() ?: 0
-                    viewModel.update { it.copy(intervalMinutes = parsed.coerceAtLeast(0)) }
-                },
-                label = { Text("実行間隔 (分) — 細かく指定する場合") },
-                supportingText = { Text("空欄/0 で手動のみ。Android の制約により定期実行は最短 15 分間隔です。") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            ScheduleSection(state) { transform -> viewModel.update(transform) }
 
             ToggleRow(
                 title = "Wi-Fi のみ",
@@ -274,6 +263,166 @@ private fun ToggleRow(
             Text(description, style = MaterialTheme.typography.bodySmall)
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+private fun scheduleTypeLabel(t: ScheduleType): String = when (t) {
+    ScheduleType.INTERVAL -> "間隔"
+    ScheduleType.DAILY -> "毎日"
+    ScheduleType.WEEKLY -> "毎週"
+    ScheduleType.MONTHLY -> "毎月"
+    ScheduleType.DATETIME -> "日時指定"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScheduleSection(
+    state: SyncJobEditState,
+    update: (transform: (SyncJobEditState) -> SyncJobEditState) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+    ) {
+        ScheduleType.entries.forEach { t ->
+            FilterChip(
+                selected = state.scheduleType == t,
+                onClick = { update { it.copy(scheduleType = t) } },
+                label = { Text(scheduleTypeLabel(t)) },
+            )
+        }
+    }
+    when (state.scheduleType) {
+        ScheduleType.INTERVAL -> {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            ) {
+                listOf(0 to "手動のみ", 15 to "15分", 30 to "30分", 60 to "1時間", 180 to "3時間", 360 to "6時間", 720 to "12時間", 1440 to "1日").forEach { (m, label) ->
+                    FilterChip(
+                        selected = state.intervalMinutes == m,
+                        onClick = { update { it.copy(intervalMinutes = m) } },
+                        label = { Text(label) },
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = if (state.intervalMinutes == 0) "" else state.intervalMinutes.toString(),
+                onValueChange = { v -> update { it.copy(intervalMinutes = (v.trim().toIntOrNull() ?: 0).coerceAtLeast(0)) } },
+                label = { Text("実行間隔 (分) — 細かく指定する場合") },
+                supportingText = { Text("空欄/0 で手動のみ。Android の制約で定期実行は最短 15 分間隔です。") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        ScheduleType.DAILY -> TimeOfDayRow(state.timeOfDayMinutes) { m -> update { it.copy(timeOfDayMinutes = m) } }
+        ScheduleType.WEEKLY -> {
+            Text("曜日 (複数選択可)", style = MaterialTheme.typography.bodySmall)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            ) {
+                listOf("月", "火", "水", "木", "金", "土", "日").forEachIndexed { i, label ->
+                    val bit = 1 shl i
+                    FilterChip(
+                        selected = (state.daysOfWeek and bit) != 0,
+                        onClick = { update { it.copy(daysOfWeek = it.daysOfWeek xor bit) } },
+                        label = { Text(label) },
+                    )
+                }
+            }
+            TimeOfDayRow(state.timeOfDayMinutes) { m -> update { it.copy(timeOfDayMinutes = m) } }
+        }
+        ScheduleType.MONTHLY -> {
+            DayOfMonthDropdown(state.dayOfMonth) { d -> update { it.copy(dayOfMonth = d) } }
+            TimeOfDayRow(state.timeOfDayMinutes) { m -> update { it.copy(timeOfDayMinutes = m) } }
+        }
+        ScheduleType.DATETIME -> DateTimePickerRow(state, update)
+    }
+}
+
+@Composable
+private fun TimeOfDayRow(minutesOfDay: Int, onChange: (Int) -> Unit) {
+    val hour = (minutesOfDay / 60).coerceIn(0, 23)
+    val minute = (minutesOfDay % 60).coerceIn(0, 59)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("時刻", style = MaterialTheme.typography.bodyLarge)
+        SmallDropdown((0..23).toList(), hour, { "%02d".format(it) }) { h -> onChange(h * 60 + minute) }
+        Text(":")
+        SmallDropdown((0..55 step 5).toList(), minute - (minute % 5), { "%02d".format(it) }) { m -> onChange(hour * 60 + m) }
+    }
+}
+
+@Composable
+private fun DayOfMonthDropdown(day: Int, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("毎月", style = MaterialTheme.typography.bodyLarge)
+        val options = (1..31).toList() + 0 // 0 = 月末
+        SmallDropdown(options, day, { if (it == 0) "月末" else "${it}日" }, onChange)
+    }
+}
+
+@Composable
+private fun <T> SmallDropdown(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) { Text(label(selected)) }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { opt ->
+                DropdownMenuItem(text = { Text(label(opt)) }, onClick = { onSelect(opt); expanded = false })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateTimePickerRow(
+    state: SyncJobEditState,
+    update: (transform: (SyncJobEditState) -> SyncJobEditState) -> Unit,
+) {
+    val cal = remember(state.dateTimeMillis) {
+        Calendar.getInstance().apply {
+            if (state.dateTimeMillis > 0) timeInMillis = state.dateTimeMillis
+            else {
+                add(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0)
+            }
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+    }
+    fun commit(c: Calendar) = update { it.copy(dateTimeMillis = c.timeInMillis) }
+    // 初期値が未設定なら一度書き戻しておく
+    LaunchedEffect(Unit) { if (state.dateTimeMillis <= 0) commit(cal) }
+
+    var showDate by remember { mutableStateOf(false) }
+    val dateFmt = remember { SimpleDateFormat("yyyy/MM/dd (E)", Locale.getDefault()) }
+    OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) {
+        Text("日付: ${dateFmt.format(cal.time)}")
+    }
+    TimeOfDayRow(cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)) { m ->
+        val c = cal.clone() as Calendar
+        c.set(Calendar.HOUR_OF_DAY, m / 60); c.set(Calendar.MINUTE, m % 60)
+        commit(c)
+    }
+    if (showDate) {
+        val dpState = rememberDatePickerState(initialSelectedDateMillis = cal.timeInMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDate = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    dpState.selectedDateMillis?.let { picked ->
+                        val p = Calendar.getInstance().apply { timeInMillis = picked }
+                        val c = cal.clone() as Calendar
+                        c.set(p.get(Calendar.YEAR), p.get(Calendar.MONTH), p.get(Calendar.DAY_OF_MONTH))
+                        commit(c)
+                    }
+                    showDate = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDate = false }) { Text("キャンセル") } },
+        ) { DatePicker(state = dpState) }
     }
 }
 

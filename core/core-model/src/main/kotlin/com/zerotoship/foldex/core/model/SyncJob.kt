@@ -18,8 +18,8 @@ data class SyncJob(
     val conflictPolicy: ConflictPolicy,
     val filter: SyncFilter,
 
-    /** WorkManager の最小制約は 15 分。0 のときは「手動のみ」(定期実行しない)。 */
-    val intervalMinutes: Int,
+    /** スケジュール (間隔 / 毎日 / 毎週 / 毎月 / 日時指定)。 */
+    val schedule: SyncSchedule,
 
     val requiresWifi: Boolean = true,
     val requiresCharging: Boolean = false,
