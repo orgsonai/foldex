@@ -470,13 +470,55 @@ class FileBrowserViewModel @Inject constructor(
     private suspend fun executePaste(overwrite: Boolean) {
         val clipboard = _state.value.clipboard ?: return
         val destDir = _state.value.currentUri ?: return
-        _state.value = _state.value.copy(isLoading = true)
+        val opLabel = when (clipboard) {
+            is ClipboardOperation.Copy -> "コピー中…"
+            is ClipboardOperation.Cut -> "移動中…"
+        }
         val nodes = clipboard.nodes
+        _state.value = _state.value.copy(
+            isLoading = true,
+            opProgress = FileOpProgress(
+                label = opLabel,
+                currentName = nodes.firstOrNull()?.name ?: "",
+                currentIndex = 1,
+                totalCount = nodes.size,
+                bytesTransferred = 0,
+                totalBytes = 0,
+            ),
+        )
         val undoActions = mutableListOf<suspend () -> Unit>()
         var lastError: String? = null
 
-        for (node in nodes) {
+        for ((index, node) in nodes.withIndex()) {
             val destUri = destUriFor(destDir, node.name) ?: continue
+            // ProgressObserver で逐次状態を更新。プロバイダによっては 64KB ごとに呼ばれて
+            // 1ファイルで何千回も発火するので、80ms (約 12fps) に間引いて UI 負荷を抑える。
+            var lastTick = 0L
+            val observer = com.zerotoship.foldex.core.model.ProgressObserver { transferred, total ->
+                val now = System.currentTimeMillis()
+                if (now - lastTick < 80 && transferred < total) return@ProgressObserver
+                lastTick = now
+                val prev = _state.value.opProgress
+                if (prev != null) {
+                    _state.value = _state.value.copy(
+                        opProgress = prev.copy(
+                            currentName = node.name,
+                            currentIndex = index + 1,
+                            bytesTransferred = transferred,
+                            totalBytes = total,
+                        ),
+                    )
+                }
+            }
+            // 進捗バーは新しいファイルに切り替える前にリセット (0/total)。
+            _state.value = _state.value.copy(
+                opProgress = _state.value.opProgress?.copy(
+                    currentName = node.name,
+                    currentIndex = index + 1,
+                    bytesTransferred = 0,
+                    totalBytes = 0,
+                ),
+            )
             // overwrite=true なら、衝突しているもののみ既存削除してから書く。
             if (overwrite) {
                 val existing = storage.stat(destUri)
@@ -485,8 +527,8 @@ class FileBrowserViewModel @Inject constructor(
                 }
             }
             val result = when (clipboard) {
-                is ClipboardOperation.Copy -> storage.copyWithin(node.uri, destUri)
-                is ClipboardOperation.Cut -> storage.moveWithin(node.uri, destUri)
+                is ClipboardOperation.Copy -> storage.copyWithin(node.uri, destUri, observer)
+                is ClipboardOperation.Cut -> storage.moveWithin(node.uri, destUri, observer)
             }
             when (result) {
                 is Result.Success -> {
@@ -502,7 +544,11 @@ class FileBrowserViewModel @Inject constructor(
         }
 
         val newClipboard = if (clipboard is ClipboardOperation.Cut) null else clipboard
-        _state.value = _state.value.copy(isLoading = false, clipboard = newClipboard)
+        _state.value = _state.value.copy(
+            isLoading = false,
+            clipboard = newClipboard,
+            opProgress = null,
+        )
         loadFilesSync(destDir)
 
         if (lastError != null) {
@@ -742,12 +788,38 @@ class FileBrowserViewModel @Inject constructor(
             emit(SnackbarEvent("SAF フォルダへの保存はまだ未対応です。内部ストレージかリモート接続を開いてください"))
             return
         }
-        _state.value = _state.value.copy(isLoading = true)
+        _state.value = _state.value.copy(
+            isLoading = true,
+            opProgress = FileOpProgress(
+                label = "保存中…",
+                currentName = shares.firstOrNull()?.name ?: "",
+                currentIndex = 1,
+                totalCount = shares.size,
+                bytesTransferred = 0,
+                totalBytes = 0,
+            ),
+        )
         viewModelScope.launch {
             var saved = 0
             var lastError: String? = null
-            for (share in shares) {
+            for ((index, share) in shares.withIndex()) {
                 val destUri = destUriFor(destDir, uniqueName(destDir, share.name)) ?: continue
+                // 既知のサイズが取れるなら進捗 UI に渡す (Content URI: OpenableColumns.SIZE)。
+                val knownSize = runCatching {
+                    context.contentResolver.query(
+                        android.net.Uri.parse(share.sourceUri),
+                        arrayOf(android.provider.OpenableColumns.SIZE),
+                        null, null, null,
+                    )?.use { cur -> if (cur.moveToFirst()) cur.getLong(0) else 0L } ?: 0L
+                }.getOrDefault(0L)
+                _state.value = _state.value.copy(
+                    opProgress = _state.value.opProgress?.copy(
+                        currentName = share.name,
+                        currentIndex = index + 1,
+                        bytesTransferred = 0,
+                        totalBytes = knownSize,
+                    ),
+                )
                 val ok: Boolean = withContext(Dispatchers.IO) {
                     runCatching {
                         val input = context.contentResolver.openInputStream(android.net.Uri.parse(share.sourceUri))
@@ -755,7 +827,28 @@ class FileBrowserViewModel @Inject constructor(
                         input.use { inStream ->
                             when (val r = storage.openOutput(destUri, com.zerotoship.foldex.core.model.WriteMode.CREATE_NEW)) {
                                 is Result.Success -> r.value.use { outStream ->
-                                    inStream.copyTo(outStream, bufferSize = 64 * 1024)
+                                    val buf = ByteArray(64 * 1024)
+                                    var transferred = 0L
+                                    var lastTick = 0L
+                                    while (true) {
+                                        val n = inStream.read(buf)
+                                        if (n <= 0) break
+                                        outStream.write(buf, 0, n)
+                                        transferred += n
+                                        // バー更新は 64KB ごとは多すぎるので 80ms スロットル。
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastTick >= 80) {
+                                            lastTick = now
+                                            val captured = transferred
+                                            withContext(Dispatchers.Main) {
+                                                _state.value = _state.value.copy(
+                                                    opProgress = _state.value.opProgress?.copy(
+                                                        bytesTransferred = captured,
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                                 is Result.Failure -> {
                                     lastError = r.error.message
@@ -771,7 +864,11 @@ class FileBrowserViewModel @Inject constructor(
                 }
                 if (ok) saved++
             }
-            _state.value = _state.value.copy(isLoading = false, pendingShares = emptyList())
+            _state.value = _state.value.copy(
+                isLoading = false,
+                pendingShares = emptyList(),
+                opProgress = null,
+            )
             loadFilesSync(destDir)
             if (saved > 0) {
                 emit(SnackbarEvent("${saved} 件を保存しました${if (lastError != null) " (${lastError})" else ""}"))

@@ -465,6 +465,11 @@ fun FileBrowserScreen(
         },
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            // 進行中のコピー/移動/保存などの進捗バナー。
+            state.opProgress?.let { p ->
+                FileOpProgressBanner(p)
+                HorizontalDivider()
+            }
             // ACTION_SEND で受け取ったファイルがあるとき: バナーで保存先選択を案内する。
             if (state.pendingShares.isNotEmpty()) {
                 ShareReceiveBanner(
@@ -495,9 +500,11 @@ fun FileBrowserScreen(
                     },
                     onPickFolder = { safLauncher.launch(null) },
                 )
-                state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
+                // opProgress 中はリストを差し替えず、上部バナーだけで進捗を出す。
+                state.isLoading && state.opProgress == null ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
                 state.error != null -> ErrorContent(message = state.error!!, onRetry = { viewModel.refresh() })
                 state.filteredFiles.isEmpty() && state.searchQuery.isNotEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

@@ -21,6 +21,20 @@ data class SnackbarEvent(
 /** ACTION_SEND / ACTION_SEND_MULTIPLE で外部アプリから受け取ったファイル。 */
 data class SharedIncomingFile(val sourceUri: String, val name: String)
 
+/**
+ * コピー / 移動 / 共有保存などの長時間ファイル操作の進捗。
+ * 全体のうち [currentIndex]/[totalCount] 件目を処理中、現在ファイル名は [currentName]。
+ * 進捗バー用のバイト数は [bytesTransferred]/[totalBytes] (totalBytes <= 0 のときは不確定)。
+ */
+data class FileOpProgress(
+    val label: String,          // 「コピー中…」「移動中…」「保存中…」
+    val currentName: String,
+    val currentIndex: Int,
+    val totalCount: Int,
+    val bytesTransferred: Long,
+    val totalBytes: Long,
+)
+
 data class FileBrowserState(
     val breadcrumbs: List<BreadcrumbItem> = emptyList(),
     val files: List<FileNode> = emptyList(),
@@ -45,6 +59,8 @@ data class FileBrowserState(
     val pendingApplyViewModeToSubtree: ViewMode? = null,
     // ACTION_SEND で受け取ったファイル群。空でない間、ファイル一覧上部にバナーで案内する。
     val pendingShares: List<SharedIncomingFile> = emptyList(),
+    // 進行中のコピー/移動/保存などの進捗。null = 表示しない。
+    val opProgress: FileOpProgress? = null,
 ) {
     val currentUri: FileUri? get() = breadcrumbs.lastOrNull()?.uri
     val canGoUp: Boolean get() = breadcrumbs.size > 1
