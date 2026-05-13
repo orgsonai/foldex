@@ -78,3 +78,7 @@ node_modules/
 *.tmp
 .env
 .env.local
+
+# UncaughtExceptionHandler (FoldexApplication) が externalFilesDir に書き出す
+# クラッシュダンプを adb pull で取り出した作業フォルダ。調査用なのでコミットしない。
+crash-logs/
