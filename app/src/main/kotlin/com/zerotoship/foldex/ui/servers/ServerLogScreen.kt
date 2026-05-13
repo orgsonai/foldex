@@ -142,11 +142,14 @@ private fun eventLabel(event: ServerLogEvent): String = when (event) {
     ServerLogEvent.CLIENT_DISCONNECTED -> "切断"
     ServerLogEvent.AUTH_SUCCESS -> "認証成功"
     ServerLogEvent.AUTH_FAILED -> "認証失敗"
+    ServerLogEvent.FILE_OP_FAILED -> "操作失敗"
 }
 
 @Composable
 private fun eventColor(event: ServerLogEvent): androidx.compose.ui.graphics.Color = when (event) {
-    ServerLogEvent.AUTH_FAILED, ServerLogEvent.SERVER_START_FAILED -> MaterialTheme.colorScheme.error
+    ServerLogEvent.AUTH_FAILED,
+    ServerLogEvent.SERVER_START_FAILED,
+    ServerLogEvent.FILE_OP_FAILED -> MaterialTheme.colorScheme.error
     ServerLogEvent.AUTH_SUCCESS, ServerLogEvent.SERVER_STARTED -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.onSurface
 }

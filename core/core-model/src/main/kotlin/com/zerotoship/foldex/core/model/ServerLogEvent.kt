@@ -11,7 +11,8 @@ enum class ServerLogEvent(val storageKey: String) {
     CLIENT_CONNECTED("client_connected"),
     CLIENT_DISCONNECTED("client_disconnected"),
     AUTH_SUCCESS("auth_success"),
-    AUTH_FAILED("auth_failed");
+    AUTH_FAILED("auth_failed"),
+    FILE_OP_FAILED("file_op_failed");
 
     companion object {
         fun fromStorageKey(key: String): ServerLogEvent? =

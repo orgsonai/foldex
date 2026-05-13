@@ -23,10 +23,19 @@ internal fun buildFtpUser(
         ConcurrentLoginPermission(0, 0),
     )
     if (!config.readOnly) authorities.add(WritePermission())
+    // 実機での書き込み不可調査用ログ: ホームに java.io.File が読み書きできるかを残す。
+    runCatching {
+        val home = java.io.File(rootPath)
+        android.util.Log.i(
+            "FoldexFtpUser",
+            "build user=$username home=$rootPath exists=${home.exists()} dir=${home.isDirectory} canRead=${home.canRead()} canWrite=${home.canWrite()} readOnly=${config.readOnly}",
+        )
+    }
     return BaseUser().apply {
         name = username
         homeDirectory = rootPath
         maxIdleTime = 0
+        enabled = true
         this.authorities = authorities
     }
 }

@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.withLock
 import org.apache.ftpserver.DataConnectionConfigurationFactory
 import org.apache.ftpserver.FtpServer
 import org.apache.ftpserver.FtpServerFactory
+import org.apache.ftpserver.filesystem.nativefs.NativeFileSystemFactory
 import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.ssl.SslConfiguration
 import org.apache.ftpserver.ssl.SslConfigurationFactory
@@ -177,15 +178,22 @@ class FtpServerManager @Inject constructor(
         val listenerFactory = ListenerFactory().apply {
             port = config.port
             serverAddress = host
+            // PASV で 227 が「サーバーの正しい LAN IP」を返さないと、
+            // クライアントは戻ってきたアドレスに接続できずアップロードが
+            // 「接続失敗」相当で落ちる。listener と同じ host を明示しておく。
+            val dataConf = DataConnectionConfigurationFactory().apply {
+                passiveAddress = host
+                passiveExternalAddress = host
+                if (sslConfig != null) {
+                    setImplicitSsl(false)
+                    setSslConfiguration(sslConfig)
+                }
+            }
+            setDataConnectionConfiguration(dataConf.createDataConnectionConfiguration())
             if (sslConfig != null) {
                 setSslConfiguration(sslConfig)
                 // Explicit FTPS: 平文で接続して AUTH TLS でアップグレードする。
                 setImplicitSsl(false)
-                val dataConf = DataConnectionConfigurationFactory().apply {
-                    setImplicitSsl(false)
-                    setSslConfiguration(sslConfig)
-                }
-                setDataConnectionConfiguration(dataConf.createDataConnectionConfiguration())
             }
         }
         serverFactory.addListener("default", listenerFactory.createListener())
@@ -195,6 +203,16 @@ class FtpServerManager @Inject constructor(
             repository = repository,
             hasher = hasher,
             logger = logger,
+        )
+        // 明示的に NativeFileSystemFactory を差し込んでおく (defaults でも同じだが、
+        // 「ホームが存在しなければ作る」「大文字小文字を保つ」挙動を意図したものに固定)。
+        serverFactory.fileSystem = NativeFileSystemFactory().apply {
+            isCreateHome = true
+            isCaseInsensitive = false
+        }
+        // 書き込み系コマンドの 5xx を Foldex のサーバーログに流す診断 Ftplet。
+        serverFactory.ftplets = mapOf(
+            "foldex-diag" to FoldexFtpDiagnosticFtplet(config.id, logger),
         )
         return serverFactory.createServer()
     }
