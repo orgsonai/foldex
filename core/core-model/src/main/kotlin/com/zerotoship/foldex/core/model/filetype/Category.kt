@@ -22,7 +22,8 @@ enum class Category {
 
     /** アプリ内に簡易ビューアを持つカテゴリか (タップで内蔵画面を開く対象)。 */
     val hasBuiltInViewer: Boolean
-        get() = this == IMAGE || this == TEXT || this == MARKDOWN || this == HTML || this == AUDIO
+        get() = this == IMAGE || this == TEXT || this == MARKDOWN || this == HTML ||
+            this == AUDIO || this == PDF
 
     /** サムネイル生成を試みる価値があるカテゴリか。 */
     val supportsThumbnail: Boolean

@@ -8,8 +8,16 @@ sealed interface OpenRequest {
     /**
      * 内蔵ビューア (ViewerActivity) で開く。[localPath] はローカルの実体 (リモートはキャッシュ済み)。
      * [editable] が true なら編集→保存が元ファイルに反映される (= ローカルファイルの場合のみ)。
+     * 画像など「同フォルダ内の兄弟をスワイプで切り替えたい」カテゴリは [siblings] にローカル
+     * パス配列を渡す ([localPath] もこの配列の要素である必要がある)。
      */
-    data class Builtin(val localPath: String, val name: String, val category: Category, val editable: Boolean) : OpenRequest
+    data class Builtin(
+        val localPath: String,
+        val name: String,
+        val category: Category,
+        val editable: Boolean,
+        val siblings: List<String> = emptyList(),
+    ) : OpenRequest
 
     /** 外部アプリで ACTION_VIEW する。[chooser] が true ならアプリ選択ダイアログを毎回出す。 */
     data class External(val uri: Uri, val mime: String, val name: String, val chooser: Boolean) : OpenRequest

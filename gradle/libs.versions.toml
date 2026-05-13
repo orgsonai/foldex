@@ -120,6 +120,10 @@ media3-session              = { group = "androidx.media3",         name = "media
 
 # Markdown 内蔵レンダリング (P7) — Markwon
 markwon-core                = { group = "io.noties.markwon",       name = "core",                   version.ref = "markwon" }
+markwon-ext-tables          = { group = "io.noties.markwon",       name = "ext-tables",             version.ref = "markwon" }
+markwon-ext-strikethrough   = { group = "io.noties.markwon",       name = "ext-strikethrough",      version.ref = "markwon" }
+markwon-ext-tasklist        = { group = "io.noties.markwon",       name = "ext-tasklist",           version.ref = "markwon" }
+markwon-linkify             = { group = "io.noties.markwon",       name = "linkify",                version.ref = "markwon" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }

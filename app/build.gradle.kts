@@ -21,8 +21,19 @@ android {
     }
 
     buildTypes {
+        debug {
+            // debug ビルドは Compose ランタイムチェック・JIT 未温め等で release の数倍重い。
+            // 起動時の体感を評価する場合は assembleRelease で確認する。
+            applicationIdSuffix = ".debug"
+            isDebuggable = true
+        }
         release {
+            // R8/ProGuard は依存ライブラリ (SMB/SFTP/FTP/BouncyCastle/Sardine) のルール整備が
+            // 必要なため P9 (リリース準備) で有効化する。当面は OFF。
             isMinifyEnabled = false
+            isDebuggable = false
+            // 配布前の体感確認用に debug 鍵で署名しておく (本番署名は P9)。
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -95,7 +106,14 @@ dependencies {
     implementation(libs.media3.ui)
     implementation(libs.media3.session)
     implementation(libs.markwon.core)
+    implementation(libs.markwon.ext.tables)
+    implementation(libs.markwon.ext.strikethrough)
+    implementation(libs.markwon.ext.tasklist)
+    implementation(libs.markwon.linkify)
     implementation(libs.juniversalchardet)
+
+    // Application.onCreate で SFTP (Apache MINA SSHD) より先に BC を登録するため app から直接参照する。
+    implementation(libs.bouncycastle.bcprov)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.test.ext.junit)

@@ -17,6 +17,10 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.ext.tables.TablePlugin
+import io.noties.markwon.ext.tasklist.TaskListPlugin
+import io.noties.markwon.linkify.LinkifyPlugin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -50,7 +54,16 @@ fun MarkdownViewer(file: File, modifier: Modifier = Modifier) {
                         setTextIsSelectable(true)
                     }
                 },
-                update = { tv -> Markwon.create(tv.context).setMarkdown(tv, md) },
+                update = { tv ->
+                    // 表 (GFM tables) / 取り消し線 / タスクリスト / リンク自動化を有効化。
+                    val markwon = Markwon.builder(tv.context)
+                        .usePlugin(TablePlugin.create(tv.context))
+                        .usePlugin(StrikethroughPlugin.create())
+                        .usePlugin(TaskListPlugin.create(tv.context))
+                        .usePlugin(LinkifyPlugin.create())
+                        .build()
+                    markwon.setMarkdown(tv, md)
+                },
             )
         }
     }

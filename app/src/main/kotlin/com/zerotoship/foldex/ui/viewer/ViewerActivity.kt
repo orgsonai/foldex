@@ -8,11 +8,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -21,6 +24,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,6 +52,7 @@ class ViewerActivity : ComponentActivity() {
         val category = runCatching { Category.valueOf(intent.getStringExtra(EXTRA_CATEGORY) ?: "") }
             .getOrDefault(FileTypeRegistry.categorize(name))
         val editable = intent.getBooleanExtra(EXTRA_EDITABLE, false)
+        val siblings: List<String> = intent.getStringArrayExtra(EXTRA_SIBLINGS)?.toList().orEmpty()
 
         enableEdgeToEdge()
         setContent {
@@ -54,8 +62,9 @@ class ViewerActivity : ComponentActivity() {
                     name = name,
                     category = category,
                     editable = editable,
+                    siblings = siblings,
                     onBack = { finish() },
-                    onOpenExternally = { openExternally(file, name) },
+                    onOpenExternally = { f -> openExternally(f, f.name) },
                 )
             }
         }
@@ -76,6 +85,7 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_NAME = "foldex.viewer.name"
         private const val EXTRA_CATEGORY = "foldex.viewer.category"
         private const val EXTRA_EDITABLE = "foldex.viewer.editable"
+        private const val EXTRA_SIBLINGS = "foldex.viewer.siblings"
 
         fun intent(
             context: Context,
@@ -83,13 +93,29 @@ class ViewerActivity : ComponentActivity() {
             name: String,
             category: Category,
             editable: Boolean = false,
+            siblings: List<String> = emptyList(),
         ): Intent =
             Intent(context, ViewerActivity::class.java)
                 .putExtra(EXTRA_PATH, localPath)
                 .putExtra(EXTRA_NAME, name)
                 .putExtra(EXTRA_CATEGORY, category.name)
                 .putExtra(EXTRA_EDITABLE, editable)
+                .apply {
+                    if (siblings.isNotEmpty()) putExtra(EXTRA_SIBLINGS, siblings.toTypedArray())
+                }
     }
+}
+
+/** ローカル画像をスワイプ閲覧するための同フォルダ画像列挙 (ViewerActivity の fallback)。 */
+private fun collectImagesFromParent(file: File): List<String> {
+    val parent = file.parentFile ?: return listOf(file.absolutePath)
+    val list = runCatching {
+        parent.listFiles { f -> f.isFile && FileTypeRegistry.categorize(f.name) == Category.IMAGE }
+            ?.sortedBy { it.name.lowercase() }
+            ?.map { it.absolutePath }
+            ?: emptyList()
+    }.getOrElse { emptyList() }
+    return if (list.isNotEmpty() && file.absolutePath in list) list else listOf(file.absolutePath)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,20 +125,61 @@ private fun ViewerScreen(
     name: String,
     category: Category,
     editable: Boolean,
+    siblings: List<String>,
     onBack: () -> Unit,
-    onOpenExternally: () -> Unit,
+    onOpenExternally: (File) -> Unit,
 ) {
+    // Markdown / HTML はソース編集をデフォルトにし、プレビューはトグルで切替える
+    // (HANDOFF §10-E / §10-F: 「ソース表示とプレビュー表示の切替」)。
+    val canPreview = category == Category.MARKDOWN || category == Category.HTML
+    var previewMode by remember { mutableStateOf(false) }
+
+    // 画像はスワイプで前後の画像へ。Intent で運ばれた siblings を最優先、
+    // それが無い/不完全なら同フォルダから listFiles で集める (ローカル限定の fallback)。
+    val imagePaths: List<String> = remember(siblings, file) {
+        if (category != Category.IMAGE) return@remember emptyList()
+        val provided = siblings.takeIf { it.size > 1 && it.contains(file.absolutePath) }
+        provided ?: collectImagesFromParent(file)
+    }
+    var imageIndex by remember(imagePaths) {
+        mutableStateOf(imagePaths.indexOf(file.absolutePath).coerceAtLeast(0))
+    }
+    val displayedFile = remember(imageIndex, imagePaths) {
+        imagePaths.getOrNull(imageIndex)?.let { File(it) } ?: file
+    }
+    val displayedName = remember(displayedFile) { displayedFile.name }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Column {
+                        Text(displayedName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (category == Category.IMAGE && imagePaths.size > 1) {
+                            Text(
+                                "${imageIndex + 1} / ${imagePaths.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenExternally) {
+                    if (canPreview) {
+                        IconButton(onClick = { previewMode = !previewMode }) {
+                            if (previewMode) {
+                                Icon(Icons.Default.Edit, contentDescription = "ソースを編集")
+                            } else {
+                                Icon(Icons.Default.Visibility, contentDescription = "プレビュー")
+                            }
+                        }
+                    }
+                    IconButton(onClick = { onOpenExternally(displayedFile) }) {
                         Icon(Icons.Default.OpenInNew, contentDescription = "別のアプリで開く")
                     }
                 },
@@ -121,11 +188,21 @@ private fun ViewerScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (category) {
-                Category.IMAGE -> ImageViewer(file, Modifier.fillMaxSize())
-                Category.MARKDOWN -> MarkdownViewer(file, Modifier.fillMaxSize())
-                Category.HTML -> HtmlViewer(file, Modifier.fillMaxSize())
+                Category.IMAGE -> ImagePagerViewer(
+                    paths = imagePaths,
+                    initialIndex = imageIndex,
+                    onPageChanged = { imageIndex = it },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Category.MARKDOWN ->
+                    if (previewMode) MarkdownViewer(file, Modifier.fillMaxSize())
+                    else TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
+                Category.HTML ->
+                    if (previewMode) HtmlViewer(file, Modifier.fillMaxSize())
+                    else TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
                 Category.TEXT -> TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
                 Category.AUDIO -> AudioPlayer(file, name, Modifier.fillMaxSize())
+                Category.PDF -> PdfViewer(file, Modifier.fillMaxSize())
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         "このファイルはアプリ内で表示できません。\n右上の「別のアプリで開く」を使ってください。",
