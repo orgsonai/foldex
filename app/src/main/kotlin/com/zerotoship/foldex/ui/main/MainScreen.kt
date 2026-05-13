@@ -1,14 +1,17 @@
 package com.zerotoship.foldex.ui.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Lan
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
@@ -22,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -31,9 +35,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.zerotoship.foldex.core.model.Connection
+import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.home.HomeFunction
 import com.zerotoship.foldex.ui.connections.ConnectionsScreen
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserScreen
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
+import com.zerotoship.foldex.ui.home.HomeScreen
+import com.zerotoship.foldex.ui.home.openPermissionsSettings
+import com.zerotoship.foldex.ui.home.rememberSafTreeLauncher
 import com.zerotoship.foldex.ui.servers.ServerEditScreen
 import com.zerotoship.foldex.ui.servers.ServerLogScreen
 import com.zerotoship.foldex.ui.servers.ServersScreen
@@ -50,6 +59,7 @@ private enum class TopTab(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
 ) {
+    HOME("home", "HOME", Icons.Filled.Home, Icons.Outlined.Home),
     FILES("files", "ファイル", Icons.Filled.Folder, Icons.Outlined.Folder),
     CONNECTIONS("connections", "接続", Icons.Filled.Lan, Icons.Outlined.Lan),
     SERVER("server", "サーバー", Icons.Filled.Storage, Icons.Outlined.Storage),
@@ -62,6 +72,7 @@ fun MainScreen(browserViewModel: FileBrowserViewModel) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val context = LocalContext.current
 
     fun selectTab(tab: TopTab) {
         navController.navigate(tab.route) {
@@ -69,6 +80,20 @@ fun MainScreen(browserViewModel: FileBrowserViewModel) {
             launchSingleTop = true
             restoreState = true
         }
+    }
+
+    // HOME 以外の **タブルート** にいるときに端末の戻るボタンが押されたら、(子の BackHandler が
+    // 処理しなければ) 終了ではなく HOME に戻す。サブルート (server/new, settings/trash 等) は
+    // NavController の通常の popBackStack に任せる。
+    val isTabRoot = currentRoute != null && TopTab.entries.any { it.route == currentRoute }
+    BackHandler(enabled = isTabRoot && currentRoute != TopTab.HOME.route) {
+        selectTab(TopTab.HOME)
+    }
+
+    // SAF ピッカー (HOME の SAF タイル or 権限タイルから呼ぶ用)。選択後はファイルブラウザで開く。
+    val safLauncher = rememberSafTreeLauncher { treeUri ->
+        browserViewModel.onSafRootPicked(treeUri)
+        selectTab(TopTab.FILES)
     }
 
     Scaffold(
@@ -96,9 +121,43 @@ fun MainScreen(browserViewModel: FileBrowserViewModel) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = TopTab.FILES.route,
+            startDestination = TopTab.HOME.route,
             modifier = Modifier.padding(innerPadding),
         ) {
+            composable(TopTab.HOME.route) {
+                HomeScreen(
+                    onOpenLocalFolder = { path ->
+                        browserViewModel.open(FileUri.Local(path), displayName = path.substringAfterLast('/').ifEmpty { path })
+                        selectTab(TopTab.FILES)
+                    },
+                    onOpenFunction = { fn ->
+                        when (fn) {
+                            HomeFunction.INTERNAL_STORAGE -> {
+                                browserViewModel.openLocalRoot()
+                                selectTab(TopTab.FILES)
+                            }
+                            HomeFunction.TRASH -> navController.navigate("settings/trash")
+                            HomeFunction.SERVERS -> selectTab(TopTab.SERVER)
+                            HomeFunction.SYNC -> selectTab(TopTab.SYNC)
+                            HomeFunction.SETTINGS -> selectTab(TopTab.SETTINGS)
+                            HomeFunction.PERMISSIONS -> openPermissionsSettings(context)
+                            HomeFunction.SAF_PICK -> safLauncher.launch(null)
+                        }
+                    },
+                    onOpenConnection = { conn ->
+                        // 4 種別の Remote を FileBrowser で開く。SMB だけ専用ヘルパがあるので使う。
+                        when (conn) {
+                            is com.zerotoship.foldex.core.model.Connection.Smb ->
+                                browserViewModel.openSmbConnection(conn.id, conn.name)
+                            else -> browserViewModel.open(
+                                com.zerotoship.foldex.core.model.FileUri.Remote(conn.protocol, conn.id, "/"),
+                                displayName = conn.name,
+                            )
+                        }
+                        selectTab(TopTab.FILES)
+                    },
+                )
+            }
             composable(TopTab.FILES.route) {
                 FileBrowserScreen(viewModel = browserViewModel)
             }
