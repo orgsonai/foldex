@@ -7,6 +7,7 @@ package com.zerotoship.foldex.core.model
 enum class ServerLogEvent(val storageKey: String) {
     SERVER_STARTED("server_started"),
     SERVER_STOPPED("server_stopped"),
+    SERVER_START_FAILED("server_start_failed"),
     CLIENT_CONNECTED("client_connected"),
     CLIENT_DISCONNECTED("client_disconnected"),
     AUTH_SUCCESS("auth_success"),

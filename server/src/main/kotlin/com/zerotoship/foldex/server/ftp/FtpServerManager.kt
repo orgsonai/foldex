@@ -67,7 +67,16 @@ class FtpServerManager @Inject constructor(
             )
         }
         if (result is Result.Failure) {
-            _startErrors.tryEmit("FTP サーバーを起動できませんでした: ${result.error.message}")
+            val msg = "FTP サーバーを起動できませんでした: ${result.error.message}"
+            _startErrors.tryEmit(msg)
+            runCatching {
+                logger.record(
+                    configId = configId,
+                    event = ServerLogEvent.SERVER_START_FAILED,
+                    clientAddress = "self",
+                    details = "type=FTP,reason=${result.error.message}",
+                )
+            }
         }
         result
     }

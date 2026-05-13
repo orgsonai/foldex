@@ -137,6 +137,7 @@ private fun LogRow(log: ServerLog) {
 private fun eventLabel(event: ServerLogEvent): String = when (event) {
     ServerLogEvent.SERVER_STARTED -> "起動"
     ServerLogEvent.SERVER_STOPPED -> "停止"
+    ServerLogEvent.SERVER_START_FAILED -> "起動失敗"
     ServerLogEvent.CLIENT_CONNECTED -> "接続"
     ServerLogEvent.CLIENT_DISCONNECTED -> "切断"
     ServerLogEvent.AUTH_SUCCESS -> "認証成功"
@@ -145,7 +146,7 @@ private fun eventLabel(event: ServerLogEvent): String = when (event) {
 
 @Composable
 private fun eventColor(event: ServerLogEvent): androidx.compose.ui.graphics.Color = when (event) {
-    ServerLogEvent.AUTH_FAILED -> MaterialTheme.colorScheme.error
+    ServerLogEvent.AUTH_FAILED, ServerLogEvent.SERVER_START_FAILED -> MaterialTheme.colorScheme.error
     ServerLogEvent.AUTH_SUCCESS, ServerLogEvent.SERVER_STARTED -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.onSurface
 }

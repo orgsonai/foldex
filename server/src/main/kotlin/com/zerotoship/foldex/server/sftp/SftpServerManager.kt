@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
+import org.apache.sshd.common.signature.BuiltinSignatures
+import org.apache.sshd.server.ServerBuilder
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.sftp.server.SftpSubsystemFactory
 import java.nio.file.Path
@@ -67,7 +69,18 @@ class SftpServerManager @Inject constructor(
             )
         }
         if (result is Result.Failure) {
-            _startErrors.tryEmit("SFTP サーバーを起動できませんでした: ${result.error.message}")
+            val msg = "SFTP サーバーを起動できませんでした: ${result.error.message}"
+            _startErrors.tryEmit(msg)
+            // snackbar は表示が短い・画面遷移で消えるので、ログとしても残す
+            // (サーバー画面 → ログから後追いできる)。
+            runCatching {
+                logger.record(
+                    configId = configId,
+                    event = ServerLogEvent.SERVER_START_FAILED,
+                    clientAddress = "self",
+                    details = "type=SFTP,reason=${result.error.message}",
+                )
+            }
         }
         result
     }
@@ -153,6 +166,35 @@ class SftpServerManager @Inject constructor(
         val server = SshServer.setUpDefaultServer()
         server.port = config.port
         server.host = host
+
+        // Android では setUpDefaultServer の defaults が空になることがある (BC が未登録で
+        // DH 系が unsupported になるなど)。FoldexApplication で BC を登録した上で、
+        // 念のため supported なものだけで再構築する。ignoreUnsupported=true で空エントリを除外。
+        if (server.keyExchangeFactories.isNullOrEmpty()) {
+            server.keyExchangeFactories = ServerBuilder.setUpDefaultKeyExchanges(true)
+        }
+        if (server.signatureFactories.isNullOrEmpty()) {
+            server.signatureFactories = ServerBuilder.setUpDefaultSignatureFactories(true)
+        }
+        // ホスト鍵は RSA 3072 を使うため、RSA 系の署名アルゴリズムが必ず含まれることを保証する。
+        // defaults が何らかの理由で RSA を落とすケース (環境依存の SecurityUtils 判定など) の保険。
+        run {
+            val sigs = (server.signatureFactories ?: emptyList()).toMutableList()
+            val have = sigs.map { it.name }.toMutableSet()
+            listOf(BuiltinSignatures.rsaSHA512, BuiltinSignatures.rsaSHA256, BuiltinSignatures.rsa)
+                .forEach { f ->
+                    if (f.isSupported && f.name !in have) {
+                        sigs.add(0, f); have.add(f.name)
+                    }
+                }
+            server.signatureFactories = sigs
+        }
+        if (server.cipherFactories.isNullOrEmpty()) {
+            server.cipherFactories = ServerBuilder.setUpDefaultCiphers(true)
+        }
+        if (server.macFactories.isNullOrEmpty()) {
+            server.macFactories = ServerBuilder.setUpDefaultMacs(true)
+        }
 
         server.keyPairProvider = SftpKeyPairProvider(config.id, hostKeyManager)
         server.subsystemFactories = listOf(SftpSubsystemFactory())
