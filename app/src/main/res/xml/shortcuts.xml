@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="files"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_agenda"
+        android:shortcutShortLabel="@string/shortcut_files_short"
+        android:shortcutLongLabel="@string/shortcut_files_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.zerotoship.foldex"
+            android:targetClass="com.zerotoship.foldex.MainActivity">
+            <extra
+                android:name="foldex.shortcut"
+                android:value="files" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="connections"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_share"
+        android:shortcutShortLabel="@string/shortcut_connections_short"
+        android:shortcutLongLabel="@string/shortcut_connections_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.zerotoship.foldex"
+            android:targetClass="com.zerotoship.foldex.MainActivity">
+            <extra
+                android:name="foldex.shortcut"
+                android:value="connections" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="servers"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_upload"
+        android:shortcutShortLabel="@string/shortcut_servers_short"
+        android:shortcutLongLabel="@string/shortcut_servers_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.zerotoship.foldex"
+            android:targetClass="com.zerotoship.foldex.MainActivity">
+            <extra
+                android:name="foldex.shortcut"
+                android:value="server" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="trash"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_delete"
+        android:shortcutShortLabel="@string/shortcut_trash_short"
+        android:shortcutLongLabel="@string/shortcut_trash_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.zerotoship.foldex"
+            android:targetClass="com.zerotoship.foldex.MainActivity">
+            <extra
+                android:name="foldex.shortcut"
+                android:value="trash" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+</shortcuts>

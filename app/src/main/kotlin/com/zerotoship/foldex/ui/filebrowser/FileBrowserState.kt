@@ -18,6 +18,9 @@ data class SnackbarEvent(
     val onAction: (suspend () -> Unit)? = null,
 )
 
+/** ACTION_SEND / ACTION_SEND_MULTIPLE で外部アプリから受け取ったファイル。 */
+data class SharedIncomingFile(val sourceUri: String, val name: String)
+
 data class FileBrowserState(
     val breadcrumbs: List<BreadcrumbItem> = emptyList(),
     val files: List<FileNode> = emptyList(),
@@ -40,6 +43,8 @@ data class FileBrowserState(
     val confirmBeforeDelete: Boolean = true,
     // ビューモードを変更したあと「配下のフォルダにも適用するか」を確認する保留状態。null = ダイアログ非表示。
     val pendingApplyViewModeToSubtree: ViewMode? = null,
+    // ACTION_SEND で受け取ったファイル群。空でない間、ファイル一覧上部にバナーで案内する。
+    val pendingShares: List<SharedIncomingFile> = emptyList(),
 ) {
     val currentUri: FileUri? get() = breadcrumbs.lastOrNull()?.uri
     val canGoUp: Boolean get() = breadcrumbs.size > 1

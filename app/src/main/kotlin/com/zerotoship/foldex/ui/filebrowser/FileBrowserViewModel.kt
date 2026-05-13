@@ -703,6 +703,105 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
+    // --- Share receive (ACTION_SEND / ACTION_SEND_MULTIPLE) ---
+
+    /**
+     * 外部アプリから受け取った Android URI 群を受領し、表示名を引いて [pendingShares] に積む。
+     * 実際の書き込みは [saveSharedFilesHere] でユーザーが「ここに保存」を押したとき。
+     */
+    fun receiveSharedFiles(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val collected = uris.mapNotNull { uri ->
+                val name = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/')
+                    ?: "shared_${System.currentTimeMillis()}"
+                SharedIncomingFile(uri.toString(), name)
+            }
+            withContext(Dispatchers.Main) {
+                _state.value = _state.value.copy(pendingShares = collected)
+                if (collected.isNotEmpty()) {
+                    emit(SnackbarEvent("${collected.size} 件の共有を受信しました。保存先で「ここに保存」を押してください"))
+                }
+            }
+        }
+    }
+
+    fun dismissPendingShares() {
+        _state.value = _state.value.copy(pendingShares = emptyList())
+    }
+
+    /** 現在の表示フォルダに、受領した共有ファイルを逐次コピーする。 */
+    fun saveSharedFilesHere() {
+        val shares = _state.value.pendingShares
+        if (shares.isEmpty()) return
+        val destDir = _state.value.currentUri ?: run {
+            emit(SnackbarEvent("保存先フォルダを開いてからもう一度押してください"))
+            return
+        }
+        if (destDir is FileUri.Saf) {
+            emit(SnackbarEvent("SAF フォルダへの保存はまだ未対応です。内部ストレージかリモート接続を開いてください"))
+            return
+        }
+        _state.value = _state.value.copy(isLoading = true)
+        viewModelScope.launch {
+            var saved = 0
+            var lastError: String? = null
+            for (share in shares) {
+                val destUri = destUriFor(destDir, uniqueName(destDir, share.name)) ?: continue
+                val ok: Boolean = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val input = context.contentResolver.openInputStream(android.net.Uri.parse(share.sourceUri))
+                            ?: return@runCatching false
+                        input.use { inStream ->
+                            when (val r = storage.openOutput(destUri, com.zerotoship.foldex.core.model.WriteMode.CREATE_NEW)) {
+                                is Result.Success -> r.value.use { outStream ->
+                                    inStream.copyTo(outStream, bufferSize = 64 * 1024)
+                                }
+                                is Result.Failure -> {
+                                    lastError = r.error.message
+                                    return@runCatching false
+                                }
+                            }
+                            true
+                        }
+                    }.getOrElse {
+                        lastError = it.message
+                        false
+                    }
+                }
+                if (ok) saved++
+            }
+            _state.value = _state.value.copy(isLoading = false, pendingShares = emptyList())
+            loadFilesSync(destDir)
+            if (saved > 0) {
+                emit(SnackbarEvent("${saved} 件を保存しました${if (lastError != null) " (${lastError})" else ""}"))
+            } else {
+                emit(SnackbarEvent("保存に失敗しました: ${lastError ?: "原因不明"}"))
+            }
+        }
+    }
+
+    private fun queryDisplayName(uri: android.net.Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cur ->
+                if (cur.moveToFirst()) cur.getString(0) else null
+            }
+    }.getOrNull()
+
+    private suspend fun uniqueName(destDir: FileUri, name: String): String {
+        var candidate = name
+        var counter = 1
+        while (true) {
+            val test = destUriFor(destDir, candidate) ?: return candidate
+            if (storage.stat(test) !is Result.Success) return candidate
+            val base = name.substringBeforeLast('.', name)
+            val ext = name.substringAfterLast('.', "")
+            candidate = if (ext.isNotEmpty() && ext != name) "$base ($counter).$ext" else "$name ($counter)"
+            counter++
+            if (counter > 999) return "shared_${System.currentTimeMillis()}_$name"
+        }
+    }
+
     // --- Search ---
 
     fun toggleSearch() {

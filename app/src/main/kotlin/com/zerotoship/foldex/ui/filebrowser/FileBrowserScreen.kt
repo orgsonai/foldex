@@ -465,6 +465,15 @@ fun FileBrowserScreen(
         },
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            // ACTION_SEND で受け取ったファイルがあるとき: バナーで保存先選択を案内する。
+            if (state.pendingShares.isNotEmpty()) {
+                ShareReceiveBanner(
+                    count = state.pendingShares.size,
+                    onSaveHere = { viewModel.saveSharedFilesHere() },
+                    onCancel = { viewModel.dismissPendingShares() },
+                )
+                HorizontalDivider()
+            }
             // パンくずナビ
             if (!state.isSearchActive && state.breadcrumbs.size > 1) {
                 BreadcrumbRow(

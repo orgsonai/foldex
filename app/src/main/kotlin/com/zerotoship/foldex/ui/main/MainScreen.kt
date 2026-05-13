@@ -68,7 +68,13 @@ private enum class TopTab(
 }
 
 @Composable
-fun MainScreen(browserViewModel: FileBrowserViewModel) {
+fun MainScreen(
+    browserViewModel: FileBrowserViewModel,
+    shortcutAction: String? = null,
+    onShortcutConsumed: () -> Unit = {},
+    sharedUris: List<android.net.Uri> = emptyList(),
+    onSharedUrisConsumed: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -79,6 +85,34 @@ fun MainScreen(browserViewModel: FileBrowserViewModel) {
             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
             launchSingleTop = true
             restoreState = true
+        }
+    }
+
+    // App Shortcuts (manifest 静的) から `foldex.shortcut` を受けて該当タブ/画面に遷移する。
+    // 受け取りは MainActivity が `pendingShortcut` で保持し、一度処理したら null に戻す。
+    androidx.compose.runtime.LaunchedEffect(shortcutAction) {
+        when (shortcutAction) {
+            "files" -> selectTab(TopTab.FILES)
+            "connections" -> selectTab(TopTab.CONNECTIONS)
+            "server" -> selectTab(TopTab.SERVER)
+            "sync" -> selectTab(TopTab.SYNC)
+            "settings" -> selectTab(TopTab.SETTINGS)
+            "trash" -> {
+                selectTab(TopTab.SETTINGS)
+                navController.navigate("settings/trash")
+            }
+            null -> Unit
+            else -> Unit
+        }
+        if (shortcutAction != null) onShortcutConsumed()
+    }
+
+    // ACTION_SEND/ACTION_SEND_MULTIPLE: 受け取った URI を FileBrowserViewModel に渡し、ファイルタブへ。
+    androidx.compose.runtime.LaunchedEffect(sharedUris) {
+        if (sharedUris.isNotEmpty()) {
+            browserViewModel.receiveSharedFiles(sharedUris)
+            selectTab(TopTab.FILES)
+            onSharedUrisConsumed()
         }
     }
 
