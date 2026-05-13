@@ -26,8 +26,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
@@ -237,6 +239,8 @@ private fun ShortcutTile(sc: HomeShortcut, onClick: () -> Unit, onLongClick: () 
                 HomeFunction.SETTINGS -> Icons.Default.Lock
                 HomeFunction.PERMISSIONS -> Icons.Default.Lock
                 HomeFunction.SAF_PICK -> Icons.Default.Cloud
+                HomeFunction.ALL_IMAGES -> Icons.Default.Image
+                HomeFunction.ALL_VIDEOS -> Icons.Default.Movie
             }
             subtitle = null
         }

@@ -43,6 +43,8 @@ import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import com.zerotoship.foldex.ui.home.HomeScreen
 import com.zerotoship.foldex.ui.home.openPermissionsSettings
 import com.zerotoship.foldex.ui.home.rememberSafTreeLauncher
+import com.zerotoship.foldex.ui.media.MediaCollectionScreen
+import com.zerotoship.foldex.ui.media.MediaCollectionViewModel
 import com.zerotoship.foldex.ui.servers.ServerEditScreen
 import com.zerotoship.foldex.ui.servers.ServerLogScreen
 import com.zerotoship.foldex.ui.servers.ServersScreen
@@ -176,6 +178,8 @@ fun MainScreen(
                             HomeFunction.SETTINGS -> selectTab(TopTab.SETTINGS)
                             HomeFunction.PERMISSIONS -> openPermissionsSettings(context)
                             HomeFunction.SAF_PICK -> safLauncher.launch(null)
+                            HomeFunction.ALL_IMAGES -> navController.navigate("media/image")
+                            HomeFunction.ALL_VIDEOS -> navController.navigate("media/video")
                         }
                     },
                     onOpenConnection = { conn ->
@@ -263,6 +267,12 @@ fun MainScreen(
             }
             composable("settings/trash") {
                 TrashScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                route = "media/{kind}",
+                arguments = listOf(navArgument(MediaCollectionViewModel.ARG_KIND) { type = NavType.StringType }),
+            ) {
+                MediaCollectionScreen(onBack = { navController.popBackStack() })
             }
         }
     }

@@ -98,6 +98,8 @@ class HomeViewModel @Inject constructor(
         // HOME はタイルのランチャー的役割で、Files / ゴミ箱 / 権限 / SAF を提供する。
         val BUILT_IN: List<HomeShortcut> = listOf(
             HomeShortcut.Function(id = "builtin_files", label = "ファイル", kind = HomeFunction.INTERNAL_STORAGE),
+            HomeShortcut.Function(id = "builtin_images", label = "画像", kind = HomeFunction.ALL_IMAGES),
+            HomeShortcut.Function(id = "builtin_videos", label = "動画", kind = HomeFunction.ALL_VIDEOS),
             HomeShortcut.Function(id = "builtin_trash", label = "ゴミ箱", kind = HomeFunction.TRASH),
             HomeShortcut.Function(id = "builtin_perms", label = "権限/SAF", kind = HomeFunction.PERMISSIONS),
             HomeShortcut.Function(id = "builtin_saf", label = "SAFで開く", kind = HomeFunction.SAF_PICK),

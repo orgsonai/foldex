@@ -41,4 +41,6 @@ enum class HomeFunction {
     SETTINGS,
     PERMISSIONS,
     SAF_PICK, // SAF ツリー選択を起動 (SD カード等)
+    ALL_IMAGES, // MediaStore.Images で端末内の画像を横断表示
+    ALL_VIDEOS, // MediaStore.Video で端末内の動画を横断表示
 }
