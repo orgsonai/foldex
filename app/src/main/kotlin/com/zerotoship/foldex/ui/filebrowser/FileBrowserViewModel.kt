@@ -26,6 +26,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,7 +69,15 @@ class FileBrowserViewModel @Inject constructor(
             hasSafRoot = safRootUri != null,
             favoriteUris = favorites,
         )
+        // 起動時の navigateTo: 前回開いていたローカルフォルダがあればそれを優先 (まだ存在する場合のみ)。
+        // リモートは復元しない (起動経路でネットワークに当たらせない)。
+        val lastLocal = prefs.getString(KEY_LAST_LOCAL_PATH, null)
+            ?.let { path -> File(path).takeIf { it.isDirectory } }
         when {
+            hasPerm && lastLocal != null -> navigateTo(
+                FileUri.Local(lastLocal.absolutePath),
+                displayName = displayNameForLocal(lastLocal),
+            )
             hasPerm -> navigateTo(
                 FileUri.Local(Environment.getExternalStorageDirectory().absolutePath),
                 displayName = "内部ストレージ",
@@ -87,10 +96,23 @@ class FileBrowserViewModel @Inject constructor(
                 )
             }
         }
+        // ゴミ箱の自動掃除は起動経路の I/O 競合を避けるため少し遅らせる。
         viewModelScope.launch {
+            delay(2_000)
             val days = settingsRepo.settings.first().trashRetentionDays
             runCatching { trashRepo.purgeOlderThan(days) }
         }
+    }
+
+    private fun displayNameForLocal(file: File): String {
+        val root = runCatching { Environment.getExternalStorageDirectory().absolutePath }.getOrNull()
+        if (root != null && file.absolutePath == root) return "内部ストレージ"
+        return file.name.ifEmpty { file.absolutePath }
+    }
+
+    private fun saveLastLocalPath(uri: FileUri) {
+        val path = (uri as? FileUri.Local)?.absolutePath ?: return
+        prefs.edit().putString(KEY_LAST_LOCAL_PATH, path).apply()
     }
 
     // --- Navigation ---
@@ -143,7 +165,12 @@ class FileBrowserViewModel @Inject constructor(
 
     fun navigateTo(uri: FileUri, displayName: String) {
         val newCrumbs = _state.value.breadcrumbs + BreadcrumbItem(uri, displayName)
-        _state.value = _state.value.copy(breadcrumbs = newCrumbs, selectedUris = emptySet())
+        _state.value = _state.value.copy(
+            breadcrumbs = newCrumbs,
+            selectedUris = emptySet(),
+            viewMode = loadViewModeFor(uri),
+        )
+        saveLastLocalPath(uri)
         loadFiles(uri)
     }
 
@@ -151,8 +178,14 @@ class FileBrowserViewModel @Inject constructor(
         val crumbs = _state.value.breadcrumbs
         if (index !in crumbs.indices) return
         val newCrumbs = crumbs.take(index + 1)
-        _state.value = _state.value.copy(breadcrumbs = newCrumbs, selectedUris = emptySet())
-        loadFiles(newCrumbs.last().uri)
+        val target = newCrumbs.last().uri
+        _state.value = _state.value.copy(
+            breadcrumbs = newCrumbs,
+            selectedUris = emptySet(),
+            viewMode = loadViewModeFor(target),
+        )
+        saveLastLocalPath(target)
+        loadFiles(target)
     }
 
     fun navigateUp(): Boolean {
@@ -163,7 +196,57 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     fun setViewMode(mode: ViewMode) {
-        _state.value = _state.value.copy(viewMode = mode)
+        val uri = _state.value.currentUri
+        _state.value = _state.value.copy(viewMode = mode, pendingApplyViewModeToSubtree = mode)
+        if (uri != null) saveViewMode(uri, mode, applyToSubtree = false)
+    }
+
+    /** ビューモード変更直後の「配下にも適用?」確認ダイアログの応答を反映する。 */
+    fun applyViewModeToSubtree(apply: Boolean) {
+        val pending = _state.value.pendingApplyViewModeToSubtree ?: return
+        val uri = _state.value.currentUri
+        if (uri != null && apply) saveViewMode(uri, pending, applyToSubtree = true)
+        _state.value = _state.value.copy(pendingApplyViewModeToSubtree = null)
+    }
+
+    /** [navigateTo] / [open] からも呼ぶ、対象 URI に登録済みビューモードがあればロードする。 */
+    private fun loadViewModeFor(uri: FileUri): ViewMode {
+        prefs.getString(viewModeKey(uri), null)?.let { return parseModeEntry(it).first }
+        var parent = parentUri(uri)
+        while (parent != null) {
+            prefs.getString(viewModeKey(parent), null)?.let {
+                val (mode, subtree) = parseModeEntry(it)
+                if (subtree) return mode
+            }
+            parent = parentUri(parent)
+        }
+        return ViewMode.LIST
+    }
+
+    private fun saveViewMode(uri: FileUri, mode: ViewMode, applyToSubtree: Boolean) {
+        prefs.edit().putString(viewModeKey(uri), "${mode.name}|$applyToSubtree").apply()
+    }
+
+    private fun viewModeKey(uri: FileUri): String = "viewMode_" + when (uri) {
+        is FileUri.Local -> "local:${uri.absolutePath}"
+        is FileUri.Remote -> "remote:${uri.protocol.name}:${uri.connectionId}:${uri.path}"
+        is FileUri.Saf -> "saf:${uri.documentUri}"
+    }
+
+    private fun parentUri(uri: FileUri): FileUri? = when (uri) {
+        is FileUri.Local -> java.io.File(uri.absolutePath).parentFile?.absolutePath?.let { FileUri.Local(it) }
+        is FileUri.Remote -> {
+            if (uri.path == "/" || uri.path.isEmpty()) null
+            else FileUri.Remote(uri.protocol, uri.connectionId, uri.path.substringBeforeLast('/').ifEmpty { "/" })
+        }
+        is FileUri.Saf -> null
+    }
+
+    private fun parseModeEntry(raw: String): Pair<ViewMode, Boolean> {
+        val parts = raw.split('|')
+        val mode = runCatching { ViewMode.valueOf(parts[0]) }.getOrDefault(ViewMode.LIST)
+        val subtree = parts.getOrNull(1)?.toBoolean() ?: false
+        return mode to subtree
     }
 
     fun refresh() {
@@ -195,11 +278,17 @@ class FileBrowserViewModel @Inject constructor(
      */
     fun openFile(node: FileNode) {
         if (node.type != NodeType.FILE) return
-        val category = FileTypeRegistry.categorize(node.name)
+        val initialCategory = FileTypeRegistry.categorize(node.name)
         val ext = node.name.substringAfterLast('.', "").lowercase()
         viewModelScope.launch {
             val mode = openWithRepo.overrides.first()[ext] ?: OpenWithMode.DEFAULT
             val localFile = resolveLocalFile(node) ?: return@launch
+            // 拡張子なし / 不明 のときは先頭バイトを覗いて、テキストっぽければ TEXT 扱いにする
+            // (例: `Dockerfile.bak`, `LICENSE`, `Makefile`, シェルスクリプトでも shebang 始まりだが
+            //   拡張子なしのもの)。バイナリ誤判定を避けるため null バイト混入 / 非印字率で判定。
+            val category = if (initialCategory == Category.UNKNOWN && localFile.isFile) {
+                if (looksLikeText(localFile)) Category.TEXT else initialCategory
+            } else initialCategory
             fun external(chooser: Boolean) = OpenRequest.External(
                 uri = fileProviderUri(localFile),
                 mime = FileTypeRegistry.mimeTypeFor(node.name) ?: "*/*",
@@ -212,7 +301,17 @@ class FileBrowserViewModel @Inject constructor(
                 mode == OpenWithMode.ASK -> external(chooser = true)
                 // DEFAULT / BUILTIN: 内蔵対応があれば内蔵、なければ外部アプリ選択
                 category.hasBuiltInViewer ->
-                    OpenRequest.Builtin(localFile.absolutePath, node.name, category, editable = node.uri is FileUri.Local)
+                    OpenRequest.Builtin(
+                        localPath = localFile.absolutePath,
+                        name = node.name,
+                        category = category,
+                        editable = node.uri is FileUri.Local,
+                        // 画像はスワイプで前後の画像へ遷移できるよう、同フォルダの兄弟画像を集める
+                        // (HANDOFF §10-C: 「隣の画像へスワイプ」)。ローカルのみ対応。
+                        siblings = if (category == Category.IMAGE && node.uri is FileUri.Local) {
+                            collectImageSiblings(localFile)
+                        } else emptyList(),
+                    )
                 else -> external(chooser = true)
             }
             _openRequests.send(request)
@@ -244,6 +343,60 @@ class FileBrowserViewModel @Inject constructor(
 
     private fun fileProviderUri(file: File): Uri =
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
+    /**
+     * 先頭バイトを覗いてテキストっぽいかを推定する。
+     * - NUL バイト混入 → 多くがバイナリ → false
+     * - 制御文字 (タブ・改行・CR 以外) の割合が 5% 未満なら true
+     * - 4MB 超は閲覧/編集の上限を超えるので false
+     */
+    private fun looksLikeText(file: File): Boolean {
+        if (!file.isFile || file.length() == 0L) return false
+        if (file.length() > 4L * 1024 * 1024) return false
+        return runCatching {
+            val sampleSize = minOf(8192L, file.length()).toInt()
+            val bytes = ByteArray(sampleSize)
+            file.inputStream().use { ins ->
+                var read = 0
+                while (read < sampleSize) {
+                    val n = ins.read(bytes, read, sampleSize - read)
+                    if (n < 0) break
+                    read += n
+                }
+                if (read < bytes.size) return@use bytes.copyOf(read) else bytes
+            }
+            val actual = if (file.length() < sampleSize) bytes.copyOf(file.length().toInt()) else bytes
+            if (actual.isEmpty()) return@runCatching false
+            // NUL バイトはほぼ確実にバイナリ。
+            if (actual.any { it == 0.toByte() }) return@runCatching false
+            // 制御文字 (0x09 タブ / 0x0A LF / 0x0D CR を除く) の割合をチェック。
+            var nonPrintable = 0
+            for (b in actual) {
+                val u = b.toInt() and 0xFF
+                if (u in 0x00..0x1F && u != 0x09 && u != 0x0A && u != 0x0D) nonPrintable++
+                else if (u == 0x7F) nonPrintable++
+            }
+            nonPrintable.toFloat() / actual.size < 0.05f
+        }.getOrDefault(false)
+    }
+
+    /**
+     * 同フォルダ内の画像ファイル絶対パス一覧を、現在の表示順 (state.files) に従って返す。
+     * 表示中フォルダ以外を開いた場合は state.files に該当兄弟が居ないので、空リストを返す
+     * (= スワイプ無効でも単独表示は可能)。
+     */
+    private fun collectImageSiblings(target: File): List<String> {
+        val files = _state.value.files
+        val parentPath = target.parentFile?.absolutePath ?: return emptyList()
+        val curParentPath = (_state.value.currentUri as? FileUri.Local)?.absolutePath
+        // 兄弟は現在表示中のフォルダにいる場合のみ (表示順を尊重したいため)。
+        if (curParentPath != parentPath) return emptyList()
+        return files.asSequence()
+            .filter { it.type == NodeType.FILE }
+            .filter { FileTypeRegistry.categorize(it.name) == Category.IMAGE }
+            .mapNotNull { (it.uri as? FileUri.Local)?.absolutePath }
+            .toList()
+    }
 
     // --- Selection ---
 
@@ -282,51 +435,88 @@ class FileBrowserViewModel @Inject constructor(
         _state.value = _state.value.copy(clipboard = null)
     }
 
+    /**
+     * 貼り付け。宛先に同名がある場合は [pasteConflicts] にためてダイアログ表示用に公開する。
+     * 競合に対する応答後は [confirmPasteOverwrite] / [dismissPasteConflict] を経由して
+     * [executePaste] が呼ばれる。
+     */
     fun paste() {
         val clipboard = _state.value.clipboard ?: return
         val destDir = _state.value.currentUri ?: return
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
-            val nodes = clipboard.nodes
-            val undoActions = mutableListOf<suspend () -> Unit>()
-            var lastError: String? = null
-
-            for (node in nodes) {
+            // 衝突 (宛先に同名 = stat が成功) を先に集める。
+            val conflicts = mutableListOf<FileNode>()
+            for (node in clipboard.nodes) {
                 val destUri = destUriFor(destDir, node.name) ?: continue
-                val result = when (clipboard) {
-                    is ClipboardOperation.Copy -> storage.copyWithin(node.uri, destUri)
-                    is ClipboardOperation.Cut -> storage.moveWithin(node.uri, destUri)
-                }
-                when (result) {
-                    is Result.Success -> {
-                        when (clipboard) {
-                            is ClipboardOperation.Copy ->
-                                undoActions.add { storage.delete(destUri, recursive = true) }
-                            is ClipboardOperation.Cut ->
-                                undoActions.add { storage.moveWithin(destUri, node.uri) }
-                        }
-                    }
-                    is Result.Failure -> lastError = result.error.message
-                }
+                if (storage.stat(destUri) is Result.Success) conflicts += node
             }
-
-            val newClipboard = if (clipboard is ClipboardOperation.Cut) null else clipboard
-            _state.value = _state.value.copy(isLoading = false, clipboard = newClipboard)
-            loadFilesSync(destDir)
-
-            if (lastError != null) {
-                emit(SnackbarEvent("エラー: $lastError"))
+            if (conflicts.isNotEmpty()) {
+                _state.value = _state.value.copy(pasteConflicts = conflicts)
             } else {
-                val msg = when (clipboard) {
-                    is ClipboardOperation.Copy -> "${nodes.size}件コピーしました"
-                    is ClipboardOperation.Cut -> "${nodes.size}件移動しました"
-                }
-                val undo: suspend () -> Unit = {
-                    undoActions.forEach { it() }
-                    loadFilesSync(destDir)
-                }
-                emit(SnackbarEvent(msg, actionLabel = "元に戻す", onAction = undo))
+                executePaste(overwrite = false)
             }
+        }
+    }
+
+    fun confirmPasteOverwrite() {
+        _state.value = _state.value.copy(pasteConflicts = emptyList())
+        viewModelScope.launch { executePaste(overwrite = true) }
+    }
+
+    fun dismissPasteConflict() {
+        _state.value = _state.value.copy(pasteConflicts = emptyList())
+    }
+
+    private suspend fun executePaste(overwrite: Boolean) {
+        val clipboard = _state.value.clipboard ?: return
+        val destDir = _state.value.currentUri ?: return
+        _state.value = _state.value.copy(isLoading = true)
+        val nodes = clipboard.nodes
+        val undoActions = mutableListOf<suspend () -> Unit>()
+        var lastError: String? = null
+
+        for (node in nodes) {
+            val destUri = destUriFor(destDir, node.name) ?: continue
+            // overwrite=true なら、衝突しているもののみ既存削除してから書く。
+            if (overwrite) {
+                val existing = storage.stat(destUri)
+                if (existing is Result.Success) {
+                    storage.delete(destUri, recursive = true)
+                }
+            }
+            val result = when (clipboard) {
+                is ClipboardOperation.Copy -> storage.copyWithin(node.uri, destUri)
+                is ClipboardOperation.Cut -> storage.moveWithin(node.uri, destUri)
+            }
+            when (result) {
+                is Result.Success -> {
+                    when (clipboard) {
+                        is ClipboardOperation.Copy ->
+                            undoActions.add { storage.delete(destUri, recursive = true) }
+                        is ClipboardOperation.Cut ->
+                            undoActions.add { storage.moveWithin(destUri, node.uri) }
+                    }
+                }
+                is Result.Failure -> lastError = result.error.message
+            }
+        }
+
+        val newClipboard = if (clipboard is ClipboardOperation.Cut) null else clipboard
+        _state.value = _state.value.copy(isLoading = false, clipboard = newClipboard)
+        loadFilesSync(destDir)
+
+        if (lastError != null) {
+            emit(SnackbarEvent("エラー: $lastError"))
+        } else {
+            val msg = when (clipboard) {
+                is ClipboardOperation.Copy -> "${nodes.size}件コピーしました"
+                is ClipboardOperation.Cut -> "${nodes.size}件移動しました"
+            }
+            val undo: suspend () -> Unit = {
+                undoActions.forEach { it() }
+                loadFilesSync(destDir)
+            }
+            emit(SnackbarEvent(msg, actionLabel = "元に戻す", onAction = undo))
         }
     }
 
@@ -427,21 +617,28 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
-    // --- Create folder ---
+    // --- Create folder / file ---
 
-    fun showCreateFolderDialog() {
-        _state.value = _state.value.copy(showCreateFolderDialog = true)
+    fun showCreateDialog(kind: CreateKind = CreateKind.FOLDER) {
+        _state.value = _state.value.copy(pendingCreate = kind)
     }
 
-    fun dismissCreateFolderDialog() {
-        _state.value = _state.value.copy(showCreateFolderDialog = false)
+    fun dismissCreateDialog() {
+        _state.value = _state.value.copy(pendingCreate = null)
     }
 
-    fun createFolder(name: String) {
+    fun confirmCreate(name: String, kind: CreateKind) {
+        when (kind) {
+            CreateKind.FOLDER -> createFolder(name)
+            CreateKind.FILE -> createFile(name)
+        }
+    }
+
+    private fun createFolder(name: String) {
         if (name.isBlank()) return
         val currentUri = _state.value.currentUri ?: return
         val newUri = destUriFor(currentUri, name) ?: return
-        _state.value = _state.value.copy(showCreateFolderDialog = false, isLoading = true)
+        _state.value = _state.value.copy(pendingCreate = null, isLoading = true)
         viewModelScope.launch {
             when (val r = storage.mkdir(newUri, false)) {
                 is Result.Success -> {
@@ -456,6 +653,51 @@ class FileBrowserViewModel @Inject constructor(
                 is Result.Failure -> {
                     _state.value = _state.value.copy(isLoading = false)
                     emit(SnackbarEvent("フォルダ作成エラー: ${r.error.message}"))
+                }
+            }
+        }
+    }
+
+    /** 空ファイルを作成し、内蔵ビューアで開けるカテゴリならそのまま開く。 */
+    private fun createFile(name: String) {
+        if (name.isBlank()) return
+        val currentUri = _state.value.currentUri ?: return
+        val newUri = destUriFor(currentUri, name) ?: return
+        _state.value = _state.value.copy(pendingCreate = null, isLoading = true)
+        viewModelScope.launch {
+            // 既存があれば上書きはせず、エラーで返す。
+            val existing = storage.stat(newUri)
+            if (existing is Result.Success) {
+                _state.value = _state.value.copy(isLoading = false)
+                emit(SnackbarEvent("「$name」は既に存在します"))
+                return@launch
+            }
+            val created = when (val r = storage.openOutput(newUri, com.zerotoship.foldex.core.model.WriteMode.CREATE_NEW)) {
+                is Result.Success -> {
+                    withContext(Dispatchers.IO) { runCatching { r.value.close() } }
+                    true
+                }
+                is Result.Failure -> {
+                    emit(SnackbarEvent("ファイル作成エラー: ${r.error.message}"))
+                    false
+                }
+            }
+            loadFilesSync(currentUri)
+            _state.value = _state.value.copy(isLoading = false)
+            if (created) {
+                emit(SnackbarEvent("「$name」を作成しました"))
+                // ローカル新規ファイルは内蔵ビューアで開ける場合があるので、すぐ開く。
+                val category = FileTypeRegistry.categorize(name)
+                val localPath = (newUri as? FileUri.Local)?.absolutePath
+                if (localPath != null && category.hasBuiltInViewer) {
+                    _openRequests.send(
+                        OpenRequest.Builtin(
+                            localPath = localPath,
+                            name = name,
+                            category = category,
+                            editable = true,
+                        ),
+                    )
                 }
             }
         }
@@ -598,6 +840,8 @@ class FileBrowserViewModel @Inject constructor(
     companion object {
         private const val KEY_SAF_ROOT = "saf_root_uri"
         private const val KEY_FAVORITES = "favorite_uris"
+        // 前回開いていたローカルパス (起動時の復元用)。リモートは保存しない (起動経路でネットワークを避けるため)。
+        private const val KEY_LAST_LOCAL_PATH = "last_local_path"
 
         // 列挙中の部分結果を UI へ反映する最小間隔 (ミリ秒)。これより短い間隔の更新はスキップする。
         private const val FLUSH_INTERVAL_MS = 80L

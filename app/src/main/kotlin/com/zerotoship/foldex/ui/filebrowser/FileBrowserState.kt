@@ -32,11 +32,14 @@ data class FileBrowserState(
     val isSearchActive: Boolean = false,
     val pendingDeleteNodes: List<FileNode> = emptyList(),
     val renameTarget: FileNode? = null,
-    val showCreateFolderDialog: Boolean = false,
+    val pendingCreate: CreateKind? = null, // null = 非表示, FOLDER/FILE = ダイアログ表示中
+    val pasteConflicts: List<FileNode> = emptyList(), // paste 時の上書き確認待ち
     val favoriteUris: Set<String> = emptySet(),
     val showExtensionBadge: Boolean = true,
     val deleteBehavior: DeleteBehavior = DeleteBehavior.TRASH,
     val confirmBeforeDelete: Boolean = true,
+    // ビューモードを変更したあと「配下のフォルダにも適用するか」を確認する保留状態。null = ダイアログ非表示。
+    val pendingApplyViewModeToSubtree: ViewMode? = null,
 ) {
     val currentUri: FileUri? get() = breadcrumbs.lastOrNull()?.uri
     val canGoUp: Boolean get() = breadcrumbs.size > 1

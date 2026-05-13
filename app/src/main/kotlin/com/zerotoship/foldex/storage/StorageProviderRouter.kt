@@ -28,15 +28,30 @@ import javax.inject.Singleton
 /**
  * [FileUri] の種別に応じて適切な [StorageProvider] を選んで委譲するルーター。
  * UI/ViewModel 層は本クラスのみを保持すれば良く、ストレージ実装の追加は本クラスへ反映する。
+ *
+ * リモートプロバイダ (SMB/SFTP/FTP/WebDAV) は `dagger.Lazy<T>` 経由で受け取り、
+ * 最初に使われるまで生成しない。これにより起動経路 (Hilt graph 構築) から
+ * jcifs-ng / MINA-SSHD / Apache Commons NET / OkHttp のクラス初期化を外せる。
  */
 @Singleton
 class StorageProviderRouter @Inject constructor(
     private val local: LocalStorageProvider,
-    private val smb: SmbStorageProvider,
-    private val sftp: SftpStorageProvider,
-    private val ftp: FtpStorageProvider,
-    private val webdav: WebDavStorageProvider,
+    private val smbLazy: dagger.Lazy<SmbStorageProvider>,
+    private val sftpLazy: dagger.Lazy<SftpStorageProvider>,
+    private val ftpLazy: dagger.Lazy<FtpStorageProvider>,
+    private val webdavLazy: dagger.Lazy<WebDavStorageProvider>,
 ) : StorageProvider {
+
+    // 一度でも生成された Provider のみ disconnect で触れるよう追跡する。
+    @Volatile private var smbCreated = false
+    @Volatile private var sftpCreated = false
+    @Volatile private var ftpCreated = false
+    @Volatile private var webdavCreated = false
+
+    private val smb: SmbStorageProvider get() = smbLazy.get().also { smbCreated = true }
+    private val sftp: SftpStorageProvider get() = sftpLazy.get().also { sftpCreated = true }
+    private val ftp: FtpStorageProvider get() = ftpLazy.get().also { ftpCreated = true }
+    private val webdav: WebDavStorageProvider get() = webdavLazy.get().also { webdavCreated = true }
 
     private fun pick(uri: FileUri): StorageProvider = when (uri) {
         is FileUri.Local, is FileUri.Saf -> local
@@ -54,10 +69,10 @@ class StorageProviderRouter @Inject constructor(
 
     override suspend fun disconnect() {
         local.disconnect()
-        smb.disconnect()
-        sftp.disconnect()
-        ftp.disconnect()
-        webdav.disconnect()
+        if (smbCreated) smb.disconnect()
+        if (sftpCreated) sftp.disconnect()
+        if (ftpCreated) ftp.disconnect()
+        if (webdavCreated) webdav.disconnect()
     }
 
     override suspend fun stat(uri: FileUri): Result<FileNode, StorageError> = pick(uri).stat(uri)

@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.SdStorage
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
@@ -457,8 +458,8 @@ fun FileBrowserScreen(
         },
         floatingActionButton = {
             if (!state.isSelectionMode && !state.canPaste && state.currentUri != null) {
-                FloatingActionButton(onClick = { viewModel.showCreateFolderDialog() }) {
-                    Icon(Icons.Default.CreateNewFolder, contentDescription = "フォルダを作成")
+                FloatingActionButton(onClick = { viewModel.showCreateDialog(CreateKind.FOLDER) }) {
+                    Icon(Icons.Default.Add, contentDescription = "新規作成")
                 }
             }
         },
@@ -527,13 +528,49 @@ fun FileBrowserScreen(
             onDismiss = { viewModel.dismissRenameDialog() },
         )
     }
-    if (state.showCreateFolderDialog) {
-        CreateFolderDialog(
-            onConfirm = { viewModel.createFolder(it) },
-            onDismiss = { viewModel.dismissCreateFolderDialog() },
+    state.pendingCreate?.let { kind ->
+        CreateDialog(
+            initialKind = kind,
+            onConfirm = { name, k -> viewModel.confirmCreate(name, k) },
+            onDismiss = { viewModel.dismissCreateDialog() },
+        )
+    }
+    if (state.pasteConflicts.isNotEmpty()) {
+        PasteOverwriteDialog(
+            conflicts = state.pasteConflicts,
+            onOverwrite = { viewModel.confirmPasteOverwrite() },
+            onCancel = { viewModel.dismissPasteConflict() },
+        )
+    }
+    state.pendingApplyViewModeToSubtree?.let { mode ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { viewModel.applyViewModeToSubtree(false) },
+            title = { Text("配下のフォルダにも適用?") },
+            text = {
+                Text(
+                    "この「${viewModeLabel(mode)}」を、現在のフォルダの配下にも初期値として適用しますか?\n" +
+                        "(個別フォルダで別のモードを選び直せば上書きされます)",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { viewModel.applyViewModeToSubtree(true) }) {
+                    Text("配下にも適用")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { viewModel.applyViewModeToSubtree(false) }) {
+                    Text("このフォルダのみ")
+                }
+            },
         )
     }
     } // end ModalNavigationDrawer content
+}
+
+private fun viewModeLabel(mode: ViewMode): String = when (mode) {
+    ViewMode.LIST -> "リスト"
+    ViewMode.DETAILED -> "詳細"
+    ViewMode.GRID -> "グリッド"
 }
 
 @Composable
