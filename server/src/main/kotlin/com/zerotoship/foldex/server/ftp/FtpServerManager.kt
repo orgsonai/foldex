@@ -21,7 +21,6 @@ import kotlinx.coroutines.sync.withLock
 import org.apache.ftpserver.DataConnectionConfigurationFactory
 import org.apache.ftpserver.FtpServer
 import org.apache.ftpserver.FtpServerFactory
-import org.apache.ftpserver.filesystem.nativefs.NativeFileSystemFactory
 import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.ssl.SslConfiguration
 import org.apache.ftpserver.ssl.SslConfigurationFactory
@@ -184,6 +183,11 @@ class FtpServerManager @Inject constructor(
             val dataConf = DataConnectionConfigurationFactory().apply {
                 passiveAddress = host
                 passiveExternalAddress = host
+                // PASV のポート範囲を固定 (デフォルトは ephemeral = 0 で OS 任せ)。
+                // Android 11+ では一部 OS バージョンで ephemeral ポートの listen 開始が
+                // 遅延する事例があり、データ転送開始 (STOR) で client がタイムアウトする
+                // ことがある。固定範囲にしておくとデバッグもしやすい。
+                passivePorts = "30000-30100"
                 if (sslConfig != null) {
                     setImplicitSsl(false)
                     setSslConfiguration(sslConfig)
@@ -204,12 +208,11 @@ class FtpServerManager @Inject constructor(
             hasher = hasher,
             logger = logger,
         )
-        // 明示的に NativeFileSystemFactory を差し込んでおく (defaults でも同じだが、
-        // 「ホームが存在しなければ作る」「大文字小文字を保つ」挙動を意図したものに固定)。
-        serverFactory.fileSystem = NativeFileSystemFactory().apply {
-            isCreateHome = true
-            isCaseInsensitive = false
-        }
+        // NIO ([java.nio.file.Files]) ベースの独自 FileSystemFactory に差し替える。
+        // 動機: 実機で FTP の書き込みが通らない件 (java.io.File + RandomAccessFile が
+        // Android scoped storage で不安定だった可能性) と、SFTP (NIO) は動くという
+        // 切り分けから、FTP も NIO に揃える。詳細は NioFileSystemFactory のコメント。
+        serverFactory.fileSystem = NioFileSystemFactory(rootPath)
         // 書き込み系コマンドの 5xx を Foldex のサーバーログに流す診断 Ftplet。
         serverFactory.ftplets = mapOf(
             "foldex-diag" to FoldexFtpDiagnosticFtplet(config.id, logger),
