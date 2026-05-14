@@ -305,7 +305,10 @@ class FileBrowserViewModel @Inject constructor(
                         localPath = localFile.absolutePath,
                         name = node.name,
                         category = category,
-                        editable = node.uri is FileUri.Local,
+                        // ローカル + リモートともに編集可能にする (リモートはキャッシュに編集 →
+                        // FileBrowser に戻ったタイミングで [checkPendingUploads] が変更を検出して
+                        // 元のリモートにアップロードバックする)。SAF は未対応。
+                        editable = node.uri !is FileUri.Saf,
                         // 画像はスワイプで前後の画像へ遷移できるよう、同フォルダの兄弟画像を集める
                         // (HANDOFF §10-C: 「隣の画像へスワイプ」)。ローカルのみ対応。
                         siblings = if (category == Category.IMAGE && node.uri is FileUri.Local) {
@@ -325,6 +328,17 @@ class FileBrowserViewModel @Inject constructor(
         is FileUri.Remote -> downloadToCache(node)
     }
 
+    /**
+     * 外部アプリ or 内蔵エディタに渡したキャッシュファイル → 元のリモート URI。
+     * 編集が終わってユーザーが Foldex に戻ったとき [checkPendingUploads] で更新を検出して
+     * アップロードバックする。
+     */
+    private data class PendingRemoteEdit(
+        val remoteUri: FileUri.Remote,
+        val mtimeAtOpen: Long,
+    )
+    private val pendingRemoteEdits = mutableMapOf<String, PendingRemoteEdit>()
+
     private suspend fun downloadToCache(node: FileNode): File? {
         emit(SnackbarEvent("ダウンロード中…"))
         val dir = File(context.cacheDir, "opened").apply { mkdirs() }
@@ -334,10 +348,65 @@ class FileBrowserViewModel @Inject constructor(
             is Result.Success -> withContext(Dispatchers.IO) {
                 runCatching {
                     r.value.use { input -> out.outputStream().use { input.copyTo(it) } }
+                    // 編集後のアップロードバック用に DL 直後の mtime を控える。
+                    val remote = node.uri as? FileUri.Remote
+                    if (remote != null) {
+                        pendingRemoteEdits[out.absolutePath] = PendingRemoteEdit(remote, out.lastModified())
+                    }
                     out
                 }.getOrElse { emit(SnackbarEvent("ダウンロード失敗: ${it.message}")); null }
             }
             is Result.Failure -> { emit(SnackbarEvent("ダウンロード失敗: ${r.error.message}")); null }
+        }
+    }
+
+    /**
+     * 外部アプリ/内蔵エディタから戻ってきたタイミングで、キャッシュファイルが
+     * DL 時より新しければ元のリモートにアップロードバックする。
+     */
+    fun checkPendingUploads() {
+        if (pendingRemoteEdits.isEmpty()) return
+        viewModelScope.launch {
+            val snapshot = pendingRemoteEdits.toMap()
+            var uploaded = 0
+            var failed = 0
+            for ((path, info) in snapshot) {
+                val f = File(path)
+                if (!f.exists()) {
+                    pendingRemoteEdits.remove(path)
+                    continue
+                }
+                if (f.lastModified() <= info.mtimeAtOpen) continue // 編集されていない
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        when (val r = storage.openOutput(info.remoteUri, com.zerotoship.foldex.core.model.WriteMode.OVERWRITE)) {
+                            is Result.Success -> r.value.use { out ->
+                                f.inputStream().use { it.copyTo(out) }
+                            }
+                            is Result.Failure -> error(r.error.message ?: "openOutput failed")
+                        }
+                        true
+                    }.getOrElse { false }
+                }
+                if (ok) {
+                    uploaded++
+                    pendingRemoteEdits[path] = info.copy(mtimeAtOpen = f.lastModified())
+                } else {
+                    failed++
+                }
+            }
+            if (uploaded > 0 || failed > 0) {
+                val msg = buildString {
+                    if (uploaded > 0) append("${uploaded} 件をリモートに保存しました")
+                    if (failed > 0) {
+                        if (uploaded > 0) append(" / ")
+                        append("${failed} 件は失敗")
+                    }
+                }
+                emit(SnackbarEvent(msg))
+                val cur = _state.value.currentUri
+                if (cur != null) loadFilesSync(cur)
+            }
         }
     }
 

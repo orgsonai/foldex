@@ -112,6 +112,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.FileNode
@@ -156,6 +158,12 @@ fun FileBrowserScreen(
         }
     }
 
+    // 外部エディタ / 内蔵ビューアから戻ってきた際に、リモートからキャッシュへ DL したファイルが
+    // 編集されていれば自動でアップロードバックする。
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.checkPendingUploads()
+    }
+
     // 「ファイルを開く」要求 (内蔵ビューア / 外部アプリ / APK インストール) を処理
     LaunchedEffect(Unit) {
         viewModel.openRequests.collect { req ->
@@ -163,9 +171,11 @@ fun FileBrowserScreen(
                 is OpenRequest.Builtin ->
                     ViewerActivity.intent(context, req.localPath, req.name, req.category, req.editable)
                 is OpenRequest.External -> {
+                    // 外部アプリで開く: WRITE 権限も付ける (テキスト系の外部エディタが保存
+                    // できないと SecurityException が出るため)。
                     val view = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(req.uri, req.mime)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                     }
                     if (req.chooser) Intent.createChooser(view, req.name) else view
                 }

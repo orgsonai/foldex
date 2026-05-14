@@ -73,9 +73,11 @@ class ViewerActivity : ComponentActivity() {
     private fun openExternally(file: File, name: String) {
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         val mime = FileTypeRegistry.mimeTypeFor(name) ?: "*/*"
+        // 外部エディタが保存できるよう WRITE 権限も付与する (READ だけだと
+        // androidx.core.content.FileProvider の Permission Denial で書き込み拒否)。
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
         runCatching { startActivity(Intent.createChooser(intent, name)) }
     }
