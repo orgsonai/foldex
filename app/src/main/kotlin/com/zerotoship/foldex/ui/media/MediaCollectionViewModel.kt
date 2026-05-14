@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 
 /** HOME の「画像」/「動画」タイルから開かれる横断ビューア用 ViewModel。 */
@@ -31,7 +32,6 @@ class MediaCollectionViewModel @Inject constructor(
     private val _state = MutableStateFlow(MediaCollectionState(kind = kind))
     val state: StateFlow<MediaCollectionState> = _state.asStateFlow()
 
-    /** 権限の有無を反映 (画面側で `RequestPermission` の結果を受けて呼ぶ)。 */
     fun setPermissionGranted(granted: Boolean) {
         _state.value = _state.value.copy(hasPermission = granted)
         if (granted) reload()
@@ -41,8 +41,59 @@ class MediaCollectionViewModel @Inject constructor(
         _state.value = _state.value.copy(isLoading = true, error = null)
         viewModelScope.launch {
             val items = withContext(Dispatchers.IO) { runCatching { query() }.getOrElse { emptyList() } }
-            _state.value = _state.value.copy(items = items, isLoading = false)
+            val folders = computeFolders(items)
+            _state.value = _state.value.copy(items = items, folders = folders, isLoading = false)
         }
+    }
+
+    /** 指定パス配下に「入る」(= フォルダごとビューから一覧へ)。`null` で全フォルダ一覧に戻る。 */
+    fun openFolder(folderPath: String?) {
+        _state.value = _state.value.copy(openedFolder = folderPath, selectedUris = emptySet())
+    }
+
+    /** 長押し選択モード: 単体トグル。 */
+    fun toggleSelection(uri: Uri) {
+        val cur = _state.value.selectedUris.toMutableSet()
+        val key = uri.toString()
+        if (!cur.add(key)) cur.remove(key)
+        _state.value = _state.value.copy(selectedUris = cur)
+    }
+
+    fun clearSelection() {
+        _state.value = _state.value.copy(selectedUris = emptySet())
+    }
+
+    /** 選択中のメディアを MediaStore から削除 (実体ファイルも削除される)。 */
+    fun deleteSelected() {
+        val keys = _state.value.selectedUris
+        if (keys.isEmpty()) return
+        viewModelScope.launch {
+            val targets = _state.value.items.filter { it.contentUri.toString() in keys }
+            val deleted = withContext(Dispatchers.IO) {
+                var n = 0
+                targets.forEach { item ->
+                    runCatching {
+                        // 1) MediaStore レコード削除を試みる。スコープドストレージで RecoverableSecurityException
+                        //    が出ることがあるが、MANAGE_EXTERNAL_STORAGE があれば通る想定。
+                        val rows = context.contentResolver.delete(item.contentUri, null, null)
+                        // 2) ContentResolver が 0 だった場合は File でフォールバック (path が取れていれば)。
+                        if (rows == 0 && item.filePath != null) {
+                            val f = File(item.filePath)
+                            if (f.exists()) f.delete()
+                        }
+                        n++
+                    }
+                }
+                n
+            }
+            // 状態を再ロード (FolderCount などのために)。
+            reload()
+            _state.value = _state.value.copy(selectedUris = emptySet(), lastMessage = "${deleted} 件を削除しました")
+        }
+    }
+
+    fun consumeMessage() {
+        _state.value = _state.value.copy(lastMessage = null)
     }
 
     private fun query(): List<MediaItem> {
@@ -90,6 +141,24 @@ class MediaCollectionViewModel @Inject constructor(
         return out
     }
 
+    /** items を直属フォルダごとに集計。filePath が null のものは「その他」にまとめる。 */
+    private fun computeFolders(items: List<MediaItem>): List<MediaFolder> {
+        val byParent = LinkedHashMap<String, MutableList<MediaItem>>()
+        for (it in items) {
+            val parent = it.filePath?.let { p -> File(p).parent } ?: "(その他)"
+            byParent.getOrPut(parent) { mutableListOf() }.add(it)
+        }
+        return byParent.map { (path, group) ->
+            MediaFolder(
+                path = path,
+                displayName = if (path == "(その他)") path else File(path).name,
+                count = group.size,
+                sampleUri = group.firstOrNull()?.contentUri,
+                latestModifiedSec = group.maxOfOrNull { it.modifiedSec } ?: 0L,
+            )
+        }.sortedByDescending { it.latestModifiedSec }
+    }
+
     companion object {
         const val ARG_KIND = "kind"
     }
@@ -102,14 +171,34 @@ data class MediaItem(
     val displayName: String,
     val size: Long,
     val modifiedSec: Long,
-    val filePath: String?, // _DATA, MANAGE_EXTERNAL_STORAGE 下で取れる。null/非アクセスのことあり。
+    val filePath: String?,
     val durationMs: Long,
+)
+
+data class MediaFolder(
+    val path: String,
+    val displayName: String,
+    val count: Int,
+    val sampleUri: Uri?,
+    val latestModifiedSec: Long,
 )
 
 data class MediaCollectionState(
     val kind: MediaKind,
     val items: List<MediaItem> = emptyList(),
+    val folders: List<MediaFolder> = emptyList(),
+    val openedFolder: String? = null,
     val isLoading: Boolean = false,
     val hasPermission: Boolean = false,
     val error: String? = null,
-)
+    val selectedUris: Set<String> = emptySet(),
+    val lastMessage: String? = null,
+) {
+    /** 現在の選択モード (1 件でも選択中か)。 */
+    val isSelectionMode: Boolean get() = selectedUris.isNotEmpty()
+
+    /** 現在の表示対象: openedFolder が指定されていればその配下のみ、null なら全件。 */
+    val visibleItems: List<MediaItem>
+        get() = if (openedFolder == null) items
+                else items.filter { (it.filePath?.let { p -> File(p).parent } ?: "(その他)") == openedFolder }
+}

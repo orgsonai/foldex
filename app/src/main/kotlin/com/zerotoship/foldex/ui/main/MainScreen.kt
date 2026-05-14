@@ -272,7 +272,16 @@ fun MainScreen(
                 route = "media/{kind}",
                 arguments = listOf(navArgument(MediaCollectionViewModel.ARG_KIND) { type = NavType.StringType }),
             ) {
-                MediaCollectionScreen(onBack = { navController.popBackStack() })
+                MediaCollectionScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenLocalFolder = { path ->
+                        browserViewModel.open(
+                            FileUri.Local(path),
+                            displayName = path.substringAfterLast('/').ifEmpty { path },
+                        )
+                        selectTab(TopTab.FILES)
+                    },
+                )
             }
         }
     }
