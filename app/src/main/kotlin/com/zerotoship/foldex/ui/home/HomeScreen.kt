@@ -8,8 +8,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,29 +25,34 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -67,18 +74,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.Connection
+import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.home.HomeFunction
 import com.zerotoship.foldex.core.model.home.HomeShortcut
+import com.zerotoship.foldex.ui.components.AppDrawerContent
+import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import kotlinx.coroutines.launch
 
 /**
  * HOME 画面 (アプリ起動時の最初の画面)。
  *
- * - 上部 TopAppBar 左に **ハンバーガー**: ModalNavigationDrawer を開き、登録済み接続の一覧を出す。
+ * - 上部 TopAppBar 左に **ハンバーガー**: ファイル画面と同じドロワー (クイックアクセス /
+ *   お気に入り / リモート接続) を共有する [AppDrawerContent]。
  * - 中央のグリッド: 組み込み機能タイル + ユーザー追加 (ローカルフォルダ / リモート接続) のタイル。
  * - FAB: タイルを追加するダイアログを開く (種別 = ローカルフォルダ / リモート接続)。
- * - タイル長押し: ユーザー追加分のみ削除可。
+ * - タイル長押し: 隠す / 上へ / 下へ / 削除 (削除は組み込み以外) のメニュー。
+ * - 右上 ⋮: 非表示タイルの復元ダイアログ。
  *
  * 画面遷移は呼び出し元 ([com.zerotoship.foldex.ui.main.MainScreen]) のコールバックで行う。
  */
@@ -88,57 +101,45 @@ fun HomeScreen(
     onOpenLocalFolder: (String) -> Unit,
     onOpenFunction: (HomeFunction) -> Unit,
     onOpenConnection: (Connection) -> Unit,
+    onOpenUri: (FileUri, String) -> Unit,
+    onPickFolder: () -> Unit,
+    browserViewModel: FileBrowserViewModel,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val shortcuts by viewModel.shortcuts.collectAsState()
+    val hidden by viewModel.hiddenShortcuts.collectAsState()
     val connections by viewModel.allConnections.collectAsState()
+    val quickAccess by browserViewModel.quickAccess.collectAsStateWithLifecycle()
+    val browserState by browserViewModel.state.collectAsStateWithLifecycle()
+    val favorites = remember(browserState.favoriteUris) {
+        browserState.favoriteUris.mapNotNull { key ->
+            FileUri.fromStorageStringOrNull(key)?.let { it to key }
+        }
+    }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var showAdd by remember { mutableStateOf(false) }
     var pendingRemove by remember { mutableStateOf<HomeShortcut?>(null) }
+    var showHiddenDialog by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    fun closeDrawerThen(action: () -> Unit) {
+        scope.launch { drawerState.close() }
+        action()
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "Foldex",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    )
-                    HorizontalDivider()
-                    Text(
-                        "リモート接続",
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    if (connections.isEmpty()) {
-                        Text(
-                            "登録された接続はありません",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                        )
-                    } else {
-                        connections.forEach { conn ->
-                            NavigationDrawerItem(
-                                icon = { Icon(Icons.Default.Storage, contentDescription = null) },
-                                label = { Text("${conn.name} (${conn.protocol.name})") },
-                                selected = false,
-                                onClick = {
-                                    scope.launch { drawerState.close() }
-                                    onOpenConnection(conn)
-                                },
-                                modifier = Modifier.padding(horizontal = 12.dp),
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                }
-            }
+            AppDrawerContent(
+                quickAccess = quickAccess,
+                favorites = favorites,
+                connections = connections,
+                selectedKey = null,
+                onOpenUri = { uri, name -> closeDrawerThen { onOpenUri(uri, name) } },
+                onPickFolder = { closeDrawerThen { onPickFolder() } },
+                onOpenConnection = { conn -> closeDrawerThen { onOpenConnection(conn) } },
+            )
         },
     ) {
         Scaffold(
@@ -148,6 +149,19 @@ fun HomeScreen(
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Menu, contentDescription = "メニュー")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("非表示タイルを表示") },
+                                leadingIcon = { Icon(Icons.Default.Restore, null) },
+                                enabled = hidden.isNotEmpty(),
+                                onClick = { showHiddenDialog = true; menuOpen = false },
+                            )
                         }
                     },
                 )
@@ -166,6 +180,8 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxSize().padding(inner),
             ) {
                 items(shortcuts, key = { it.id }) { sc ->
+                    val canRemove = !sc.id.startsWith("builtin_")
+                    val idx = shortcuts.indexOfFirst { it.id == sc.id }
                     ShortcutTile(
                         sc = sc,
                         onClick = {
@@ -178,10 +194,13 @@ fun HomeScreen(
                                 is HomeShortcut.Function -> onOpenFunction(sc.kind)
                             }
                         },
-                        onLongClick = {
-                            // 組み込みタイル (builtin_ で始まる id) は削除不可。
-                            if (!sc.id.startsWith("builtin_")) pendingRemove = sc
-                        },
+                        canMoveUp = idx > 0,
+                        canMoveDown = idx in 0 until shortcuts.lastIndex,
+                        canRemove = canRemove,
+                        onMoveUp = { viewModel.moveUp(sc.id) },
+                        onMoveDown = { viewModel.moveDown(sc.id) },
+                        onHide = { viewModel.setHidden(sc.id, true) },
+                        onRemove = { pendingRemove = sc },
                     )
                 }
             }
@@ -213,11 +232,28 @@ fun HomeScreen(
             },
         )
     }
+    if (showHiddenDialog) {
+        HiddenShortcutsDialog(
+            hidden = hidden,
+            onDismiss = { showHiddenDialog = false },
+            onRestore = { id -> viewModel.setHidden(id, false) },
+        )
+    }
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun ShortcutTile(sc: HomeShortcut, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun ShortcutTile(
+    sc: HomeShortcut,
+    onClick: () -> Unit,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    canRemove: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onHide: () -> Unit,
+    onRemove: () -> Unit,
+) {
     val icon: ImageVector
     val tint = MaterialTheme.colorScheme.primary
     val subtitle: String?
@@ -245,37 +281,66 @@ private fun ShortcutTile(sc: HomeShortcut, onClick: () -> Unit, onLongClick: () 
             subtitle = null
         }
     }
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = Modifier
-            .aspectRatio(1f)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxSize().padding(8.dp),
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
+            modifier = Modifier
+                .aspectRatio(1f)
+                .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true }),
         ) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.height(40.dp))
-            Spacer(Modifier.height(6.dp))
-            Text(
-                sc.label,
-                style = MaterialTheme.typography.titleSmall,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxSize().padding(8.dp),
+            ) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.height(40.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
+                    sc.label,
+                    style = MaterialTheme.typography.titleSmall,
                     textAlign = TextAlign.Center,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (subtitle != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("隠す") },
+                leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
+                onClick = { onHide(); menuOpen = false },
+            )
+            DropdownMenuItem(
+                text = { Text("上へ移動") },
+                leadingIcon = { Icon(Icons.Default.ArrowUpward, null) },
+                enabled = canMoveUp,
+                onClick = { onMoveUp(); menuOpen = false },
+            )
+            DropdownMenuItem(
+                text = { Text("下へ移動") },
+                leadingIcon = { Icon(Icons.Default.ArrowDownward, null) },
+                enabled = canMoveDown,
+                onClick = { onMoveDown(); menuOpen = false },
+            )
+            if (canRemove) {
+                DropdownMenuItem(
+                    text = { Text("削除") },
+                    leadingIcon = { Icon(Icons.Default.Delete, null) },
+                    onClick = { onRemove(); menuOpen = false },
                 )
             }
         }
@@ -301,7 +366,7 @@ private fun AddShortcutDialog(
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 // 種別の切替: ローカル / リモート
-                androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = mode == AddMode.LOCAL,
                         onClick = { mode = AddMode.LOCAL },
@@ -415,6 +480,44 @@ private fun RemoveConfirmDialog(label: String, onDismiss: () -> Unit, onConfirm:
         text = { Text("「$label」を HOME から削除しますか?") },
         confirmButton = { TextButton(onClick = onConfirm) { Text("削除") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+private fun HiddenShortcutsDialog(
+    hidden: List<HomeShortcut>,
+    onDismiss: () -> Unit,
+    onRestore: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("非表示タイル") },
+        text = {
+            if (hidden.isEmpty()) {
+                Text("非表示にされたタイルはありません")
+            } else {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    hidden.forEach { sc ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        ) {
+                            Text(
+                                sc.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { onRestore(sc.id) }) {
+                                Icon(Icons.Default.Visibility, null, modifier = Modifier.height(18.dp))
+                                Spacer(Modifier.height(4.dp))
+                                Text("表示する")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
     )
 }
 

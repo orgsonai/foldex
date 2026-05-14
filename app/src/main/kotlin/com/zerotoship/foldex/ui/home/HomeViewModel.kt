@@ -23,6 +23,8 @@ import javax.inject.Inject
  * - 表示するタイルは「組み込み (固定)」+「ユーザー追加 (DataStore)」の合成。
  * - リモート接続ショートカットの label は最新の Connection.name に同期し直す
  *   (接続をリネームした際に HOME が古い名前を出さないようにするため)。
+ * - 並び順は [HomeShortcutRepository.orderIds] (未登録 id は末尾)。
+ * - 非表示は [HomeShortcutRepository.hiddenIds] で除外し、復元用に [hiddenShortcuts] で公開。
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -34,11 +36,12 @@ class HomeViewModel @Inject constructor(
     val allConnections: StateFlow<List<Connection>> = connections.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** HOME のタイル一覧 (組み込み + カスタム)。リモートはコネクション名を最新化する。 */
-    val shortcuts: StateFlow<List<HomeShortcut>> = combine(
+    /** 全タイル (組み込み + カスタム) を「表示順」適用後 / 非表示適用前で返す内部用 Flow。 */
+    private val allShortcuts = combine(
         repo.customShortcuts,
         connections.observeAll(),
-    ) { custom, conns ->
+        repo.orderIds,
+    ) { custom, conns, order ->
         val byId = conns.associateBy { it.id }
         val refreshed = custom.map { sc ->
             if (sc is HomeShortcut.RemoteConnection) {
@@ -46,8 +49,18 @@ class HomeViewModel @Inject constructor(
                 if (name != null && name != sc.label) sc.copy(label = name) else sc
             } else sc
         }
-        BUILT_IN + refreshed
+        applyOrder(BUILT_IN + refreshed, order)
+    }
+
+    /** HOME のタイル一覧 (表示分)。組み込みも含めて非表示 id は除外する。 */
+    val shortcuts: StateFlow<List<HomeShortcut>> = combine(allShortcuts, repo.hiddenIds) { all, hidden ->
+        all.filter { it.id !in hidden }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BUILT_IN)
+
+    /** 復元 UI 用: 非表示にされている全タイル。 */
+    val hiddenShortcuts: StateFlow<List<HomeShortcut>> = combine(allShortcuts, repo.hiddenIds) { all, hidden ->
+        all.filter { it.id in hidden }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun addLocalFolder(label: String, path: String) {
         viewModelScope.launch { repo.addLocalFolder(label, path) }
@@ -62,6 +75,29 @@ class HomeViewModel @Inject constructor(
 
     fun remove(id: String) {
         viewModelScope.launch { repo.remove(id) }
+    }
+
+    fun setHidden(id: String, hidden: Boolean) {
+        viewModelScope.launch { repo.setHidden(id, hidden) }
+    }
+
+    /** 表示中タイルのうち id を 1 つ上 / 下に動かして並び順を保存する。 */
+    fun moveUp(id: String) = move(id, delta = -1)
+    fun moveDown(id: String) = move(id, delta = +1)
+
+    private fun move(id: String, delta: Int) {
+        viewModelScope.launch {
+            val current = shortcuts.value.map { it.id }.toMutableList()
+            val idx = current.indexOf(id)
+            if (idx < 0) return@launch
+            val newIdx = (idx + delta).coerceIn(0, current.lastIndex)
+            if (newIdx == idx) return@launch
+            current.removeAt(idx)
+            current.add(newIdx, id)
+            // 表示中だけだと非表示分の位置情報が落ちるので、非表示タイルを末尾に保持しつつ保存。
+            val hidden = hiddenShortcuts.value.map { it.id }
+            repo.setOrder(current + hidden.filter { it !in current })
+        }
     }
 
     /**
@@ -104,5 +140,19 @@ class HomeViewModel @Inject constructor(
             HomeShortcut.Function(id = "builtin_perms", label = "権限/SAF", kind = HomeFunction.PERMISSIONS),
             HomeShortcut.Function(id = "builtin_saf", label = "SAFで開く", kind = HomeFunction.SAF_PICK),
         )
+
+        /** 保存された [order] に従って並び替え、未登録 id は元の順序のまま末尾に回す。 */
+        fun applyOrder(items: List<HomeShortcut>, order: List<String>): List<HomeShortcut> {
+            if (order.isEmpty()) return items
+            val byId = items.associateBy { it.id }
+            val seen = mutableSetOf<String>()
+            val out = ArrayList<HomeShortcut>(items.size)
+            for (id in order) {
+                val sc = byId[id] ?: continue
+                if (seen.add(id)) out.add(sc)
+            }
+            for (sc in items) if (sc.id !in seen) out.add(sc)
+            return out
+        }
     }
 }

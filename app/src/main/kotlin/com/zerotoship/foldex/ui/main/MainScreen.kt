@@ -162,6 +162,7 @@ fun MainScreen(
         ) {
             composable(TopTab.HOME.route) {
                 HomeScreen(
+                    browserViewModel = browserViewModel,
                     onOpenLocalFolder = { path ->
                         browserViewModel.open(FileUri.Local(path), displayName = path.substringAfterLast('/').ifEmpty { path })
                         selectTab(TopTab.FILES)
@@ -194,6 +195,11 @@ fun MainScreen(
                         }
                         selectTab(TopTab.FILES)
                     },
+                    onOpenUri = { uri, name ->
+                        browserViewModel.open(uri, displayName = name)
+                        selectTab(TopTab.FILES)
+                    },
+                    onPickFolder = { safLauncher.launch(null) },
                 )
             }
             composable(TopTab.FILES.route) {
