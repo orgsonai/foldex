@@ -3,6 +3,7 @@ package com.zerotoship.foldex.ui.filebrowser
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.SortBy
 
 data class BreadcrumbItem(val uri: FileUri, val displayName: String)
 
@@ -61,6 +62,13 @@ data class FileBrowserState(
     val pendingShares: List<SharedIncomingFile> = emptyList(),
     // 進行中のコピー/移動/保存などの進捗。null = 表示しない。
     val opProgress: FileOpProgress? = null,
+    // ソート: 既定は 名前 昇順。
+    val sortBy: SortBy = SortBy.NAME,
+    val sortAscending: Boolean = true,
+    // 隠しファイル ("." で始まる) の表示。
+    val showHidden: Boolean = false,
+    // 単体プロパティ表示の対象 (null = ダイアログ非表示)。
+    val propertiesTarget: FileNode? = null,
 ) {
     val currentUri: FileUri? get() = breadcrumbs.lastOrNull()?.uri
     val canGoUp: Boolean get() = breadcrumbs.size > 1

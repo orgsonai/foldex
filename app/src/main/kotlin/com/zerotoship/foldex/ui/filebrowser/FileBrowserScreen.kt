@@ -57,8 +57,15 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Folder
@@ -395,6 +402,47 @@ fun FileBrowserScreen(
                                 Icon(Icons.Default.Delete, contentDescription = "削除",
                                     tint = MaterialTheme.colorScheme.error)
                             }
+                            // 選択中の overflow: 共有 / 外部 / プロパティ / HOME 追加。
+                            var selMenuOpen by remember { mutableStateOf(false) }
+                            IconButton(onClick = { selMenuOpen = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "その他")
+                            }
+                            DropdownMenu(expanded = selMenuOpen, onDismissRequest = { selMenuOpen = false }) {
+                                val sel = state.selectedNodes
+                                val hasFile = sel.any { it.type == com.zerotoship.foldex.core.model.NodeType.FILE }
+                                val singleFile = sel.size == 1 && sel[0].type == com.zerotoship.foldex.core.model.NodeType.FILE
+                                val localFolders = sel.filter {
+                                    it.type == com.zerotoship.foldex.core.model.NodeType.DIRECTORY &&
+                                        it.uri is com.zerotoship.foldex.core.model.FileUri.Local
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("共有") },
+                                    leadingIcon = { Icon(Icons.Default.Share, null) },
+                                    enabled = hasFile,
+                                    onClick = { viewModel.shareSelected(); selMenuOpen = false },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("別のアプリで開く") },
+                                    leadingIcon = { Icon(Icons.Default.OpenInNew, null) },
+                                    enabled = singleFile,
+                                    onClick = { viewModel.openSelectedExternally(); selMenuOpen = false },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("プロパティ") },
+                                    leadingIcon = { Icon(Icons.Default.Info, null) },
+                                    enabled = sel.size == 1,
+                                    onClick = {
+                                        sel.firstOrNull()?.let { viewModel.showProperties(it) }
+                                        selMenuOpen = false
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("HOME に追加") },
+                                    leadingIcon = { Icon(Icons.Default.Home, null) },
+                                    enabled = localFolders.isNotEmpty(),
+                                    onClick = { viewModel.addSelectedFoldersToHome(); selMenuOpen = false },
+                                )
+                            }
                         } else {
                             // タイトル (内部ストレージ名等) を埋もれさせないため、常時表示は検索と
                             // オーバーフローの 2 つだけにする。表示モード切替・お気に入り・更新は ⋮ へ。
@@ -427,6 +475,49 @@ fun FileBrowserScreen(
                                 ViewModeMenuItem(ViewMode.GRID, "グリッド表示", Icons.Outlined.GridView, state.viewMode) {
                                     viewModel.setViewMode(it); menuOpen = false
                                 }
+                                HorizontalDivider()
+                                // ソート
+                                Text(
+                                    "並び替え",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                )
+                                @Composable
+                                fun sortItem(label: String, by: com.zerotoship.foldex.core.model.SortBy) {
+                                    val selected = state.sortBy == by
+                                    val asc = state.sortAscending
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                label + if (selected) (if (asc) " ▲" else " ▼") else "",
+                                                color = if (selected) MaterialTheme.colorScheme.primary
+                                                        else MaterialTheme.colorScheme.onSurface,
+                                            )
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.SortByAlpha, null) },
+                                        onClick = {
+                                            // 同じカラム再選択で昇降を反転、別カラム選択は昇順から。
+                                            val newAsc = if (selected) !asc else true
+                                            viewModel.setSort(by, newAsc); menuOpen = false
+                                        },
+                                    )
+                                }
+                                sortItem("名前", com.zerotoship.foldex.core.model.SortBy.NAME)
+                                sortItem("サイズ", com.zerotoship.foldex.core.model.SortBy.SIZE)
+                                sortItem("更新日時", com.zerotoship.foldex.core.model.SortBy.DATE)
+                                sortItem("種類", com.zerotoship.foldex.core.model.SortBy.TYPE)
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text(if (state.showHidden) "隠しファイルを隠す" else "隠しファイルを表示") },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (state.showHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            null,
+                                        )
+                                    },
+                                    onClick = { viewModel.toggleShowHidden(); menuOpen = false },
+                                )
                                 HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text("更新") },
@@ -567,6 +658,9 @@ fun FileBrowserScreen(
             onOverwrite = { viewModel.confirmPasteOverwrite() },
             onCancel = { viewModel.dismissPasteConflict() },
         )
+    }
+    state.propertiesTarget?.let { target ->
+        FilePropertiesDialog(node = target, onDismiss = { viewModel.dismissProperties() })
     }
     state.pendingApplyViewModeToSubtree?.let { mode ->
         androidx.compose.material3.AlertDialog(

@@ -44,6 +44,7 @@ class FileBrowserViewModel @Inject constructor(
     private val settingsRepo: SettingsRepository,
     private val openWithRepo: OpenWithRepository,
     private val trashRepo: TrashRepository,
+    private val homeShortcutRepo: com.zerotoship.foldex.core.data.repo.HomeShortcutRepository,
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("foldex_browser", Context.MODE_PRIVATE)
@@ -64,10 +65,21 @@ class FileBrowserViewModel @Inject constructor(
         val hasPerm = checkStoragePermission()
         val safRootUri = prefs.getString(KEY_SAF_ROOT, null)
         val favorites = prefs.getStringSet(KEY_FAVORITES, emptySet()) ?: emptySet()
+        // ソート / 隠しファイルの既定を prefs から復元。
+        val sortBy = runCatching {
+            com.zerotoship.foldex.core.model.SortBy.valueOf(
+                prefs.getString(KEY_SORT_BY, com.zerotoship.foldex.core.model.SortBy.NAME.name)!!,
+            )
+        }.getOrDefault(com.zerotoship.foldex.core.model.SortBy.NAME)
+        val sortAsc = prefs.getBoolean(KEY_SORT_ASC, true)
+        val showHidden = prefs.getBoolean(KEY_SHOW_HIDDEN, false)
         _state.value = _state.value.copy(
             hasStoragePermission = hasPerm,
             hasSafRoot = safRootUri != null,
             favoriteUris = favorites,
+            sortBy = sortBy,
+            sortAscending = sortAsc,
+            showHidden = showHidden,
         )
         // 起動時の navigateTo: 前回開いていたローカルフォルダがあればそれを優先 (まだ存在する場合のみ)。
         // リモートは復元しない (起動経路でネットワークに当たらせない)。
@@ -985,6 +997,98 @@ class FileBrowserViewModel @Inject constructor(
 
     // --- Favorites ---
 
+    // --- Sort / Hidden / Properties / Share / Open externally / HOME add ---
+
+    fun setSort(by: com.zerotoship.foldex.core.model.SortBy, ascending: Boolean) {
+        if (_state.value.sortBy == by && _state.value.sortAscending == ascending) return
+        _state.value = _state.value.copy(sortBy = by, sortAscending = ascending)
+        prefs.edit().putString(KEY_SORT_BY, by.name).putBoolean(KEY_SORT_ASC, ascending).apply()
+        val cur = _state.value.currentUri
+        if (cur != null) viewModelScope.launch { loadFilesSync(cur) }
+    }
+
+    fun toggleShowHidden() {
+        val newVal = !_state.value.showHidden
+        _state.value = _state.value.copy(showHidden = newVal)
+        prefs.edit().putBoolean(KEY_SHOW_HIDDEN, newVal).apply()
+        val cur = _state.value.currentUri
+        if (cur != null) viewModelScope.launch { loadFilesSync(cur) }
+    }
+
+    fun showProperties(node: FileNode) {
+        _state.value = _state.value.copy(propertiesTarget = node)
+    }
+
+    fun dismissProperties() {
+        _state.value = _state.value.copy(propertiesTarget = null)
+    }
+
+    /** 選択中ノードを「リモートはローカルにDLしてから」FileProvider 経由で他アプリに共有する。 */
+    fun shareSelected() {
+        val nodes = _state.value.selectedNodes.filter { it.type == NodeType.FILE }
+        if (nodes.isEmpty()) return
+        viewModelScope.launch {
+            val uris = ArrayList<Uri>(nodes.size)
+            val mimes = HashSet<String>()
+            for (n in nodes) {
+                val local = resolveLocalFile(n) ?: continue
+                runCatching {
+                    uris.add(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", local))
+                    val mime = FileTypeRegistry.mimeTypeFor(n.name) ?: "*/*"
+                    mimes.add(mime)
+                }
+            }
+            if (uris.isEmpty()) return@launch
+            val send = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    putExtra(Intent.EXTRA_STREAM, uris[0])
+                    type = mimes.firstOrNull() ?: "*/*"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                    type = if (mimes.size == 1) mimes.first() else "*/*"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            runCatching { context.startActivity(Intent.createChooser(send, "共有").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) }
+                .onFailure { emit(SnackbarEvent("共有できませんでした: ${it.message}")) }
+            clearSelection()
+        }
+    }
+
+    /** 選択中のローカルフォルダを HOME のタイルとして追加する。 */
+    fun addSelectedFoldersToHome() {
+        val folders = _state.value.selectedNodes.filter {
+            it.type == NodeType.DIRECTORY && it.uri is FileUri.Local
+        }
+        if (folders.isEmpty()) {
+            emit(SnackbarEvent("HOME に追加できるのはローカルフォルダだけです"))
+            return
+        }
+        viewModelScope.launch {
+            for (n in folders) {
+                val path = (n.uri as FileUri.Local).absolutePath
+                homeShortcutRepo.addLocalFolder(n.name, path)
+            }
+            emit(SnackbarEvent("${folders.size} 件を HOME に追加しました"))
+            clearSelection()
+        }
+    }
+
+    /** 選択中の単一ノードを外部アプリで開く (ACTION_VIEW, chooser)。 */
+    fun openSelectedExternally() {
+        val node = _state.value.selectedNodes.firstOrNull { it.type == NodeType.FILE } ?: return
+        viewModelScope.launch {
+            val local = resolveLocalFile(node) ?: return@launch
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", local)
+            val mime = FileTypeRegistry.mimeTypeFor(node.name) ?: "*/*"
+            _openRequests.send(OpenRequest.External(uri = uri, mime = mime, name = node.name, chooser = true))
+            clearSelection()
+        }
+    }
+
     fun toggleFavorite(uri: FileUri) {
         val key = uri.toStorageString()
         val current = _state.value.favoriteUris
@@ -1041,7 +1145,12 @@ class FileBrowserViewModel @Inject constructor(
             lastFlush = now
         }
         withContext(Dispatchers.Default) {
-            storage.list(uri).collect { node ->
+            val options = com.zerotoship.foldex.core.model.ListOptions(
+                showHidden = _state.value.showHidden,
+                sortBy = _state.value.sortBy,
+                sortAscending = _state.value.sortAscending,
+            )
+            storage.list(uri, options).collect { node ->
                 acc.add(node)
                 flush(force = false) // 内部で時間しきい値によりスロットルされる
             }
@@ -1107,6 +1216,9 @@ class FileBrowserViewModel @Inject constructor(
         private const val KEY_FAVORITES = "favorite_uris"
         // 前回開いていたローカルパス (起動時の復元用)。リモートは保存しない (起動経路でネットワークを避けるため)。
         private const val KEY_LAST_LOCAL_PATH = "last_local_path"
+        private const val KEY_SORT_BY = "sort_by"
+        private const val KEY_SORT_ASC = "sort_ascending"
+        private const val KEY_SHOW_HIDDEN = "show_hidden"
 
         // 列挙中の部分結果を UI へ反映する最小間隔 (ミリ秒)。これより短い間隔の更新はスキップする。
         private const val FLUSH_INTERVAL_MS = 80L
