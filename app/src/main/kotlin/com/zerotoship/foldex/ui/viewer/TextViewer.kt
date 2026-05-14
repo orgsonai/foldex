@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zerotoship.foldex.ui.components.FastScrollbar
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,11 +85,12 @@ import java.io.File
 import java.nio.charset.Charset
 
 // 内蔵で開ける上限 (これより大きいと外部アプリ案内のみ)。
-private const val MAX_BYTES = 4L * 1024 * 1024
+private const val MAX_BYTES = 8L * 1024 * 1024
 
-// 内蔵エディタで編集可能な上限。これを超えるものは閲覧専用 (Compose の TextField は
-// 巨大テキストで重くなるため。閲覧は 1 行ずつ遅延描画するので大きくても軽い)。
-private const val EDITABLE_MAX_BYTES = 512L * 1024
+// 内蔵エディタで編集可能な上限 = MAX_BYTES と一致。
+// 旧設計では「512KB 超は閲覧専用」を区切りにしていたが、巨大テキストでも
+// 軽快に動かすため Gutter / LineCount の再計算を throttle 化したので一律編集可能に。
+private const val EDITABLE_MAX_BYTES = MAX_BYTES
 
 // フォントサイズの上下限 (ピンチズーム時)。
 private const val MIN_FONT_SP = 8f
@@ -160,13 +162,18 @@ private fun TextEditor(file: File, initial: String, charset: Charset, modifier: 
         fontSizeSp = (fontSizeSp * zoomChange).coerceIn(MIN_FONT_SP, MAX_FONT_SP)
     }
 
-    // 検索結果 (char index 範囲)。テキスト or クエリ変更で再計算。
+    // 検索結果 (char index 範囲)。テキスト or クエリ変更で再計算するが、200ms debounce で
+    // 入力中の毎キーストロークで全文検索を走らせない。
     val matches: List<IntRange> by produceState(initialValue = emptyList(), searchQuery, searchOpen, textState) {
         if (!searchOpen || searchQuery.isEmpty()) { value = emptyList(); return@produceState }
-        snapshotFlow { textState.text.toString() }.distinctUntilChanged().collect { text ->
-            value = findMatches(text, searchQuery)
-            matchIndex = 0
-        }
+        snapshotFlow { textState.text.length }
+            .distinctUntilChanged()
+            .collectLatest {
+                kotlinx.coroutines.delay(200)
+                val text = withContext(Dispatchers.Default) { textState.text.toString() }
+                value = withContext(Dispatchers.Default) { findMatches(text, searchQuery) }
+                matchIndex = 0
+            }
     }
 
     // 検索ヒットへキャレットを移動 → BasicTextField がそこへスクロールする。
@@ -233,6 +240,13 @@ private fun TextEditor(file: File, initial: String, charset: Charset, modifier: 
  * 編集本体。BasicTextField の `scrollState` を Gutter と共有することで
  * スクロール位置を完全同期させ、Gutter は BasicTextField の [TextLayoutResult] を
  * 元に Canvas で行番号を描画する (= ワードラップ時も論理行と差分なしで揃う)。
+ *
+ * パフォーマンス対策:
+ *  - `state.text.toString()` を毎 recomposition で呼ぶと 4MB 級では数十 ms かかる
+ *    のでフレームスキップ要因になる。代わりに「論理行の先頭 char offset」を
+ *    [snapshotFlow] + 200ms `debounce` で background 計算し、Gutter に渡す。
+ *  - GutterCanvas は表示中の visual line だけ走査し、`tl.getLineForVerticalPosition`
+ *    で開始位置を二分検索 (= O(log N))。論理行番号も IntArray の binarySearch で求める。
  */
 @Composable
 private fun EditorBody(
@@ -250,9 +264,20 @@ private fun EditorBody(
     val sharedScroll = rememberScrollState()
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
 
-    // 論理行数で gutter の幅を決める (桁数 × 等幅文字幅 + パディング)。
-    val text = state.text.toString()
-    val logicalLineCount = remember(text) { text.count { it == '\n' } + 1 }
+    // 論理行の先頭 offset を IntArray で保持。debounce で 200ms 入力が落ち着いてから更新。
+    var lineStarts by remember { mutableStateOf(intArrayOf(0)) }
+    LaunchedEffect(state) {
+        snapshotFlow { state.text.length }
+            .distinctUntilChanged()
+            .collectLatest { _ ->
+                kotlinx.coroutines.delay(200)
+                val snapshot = state.text.toString()
+                val computed = withContext(Dispatchers.Default) { computeLineStarts(snapshot) }
+                lineStarts = computed
+            }
+    }
+
+    val logicalLineCount = lineStarts.size
     val density = LocalDensity.current
     val gutterWidth: Dp = remember(fontSizeSp, logicalLineCount) {
         // 等幅フォントの 1 文字幅は概ね fontSize × 0.6 sp。+ 左右パディング。
@@ -266,7 +291,7 @@ private fun EditorBody(
         Row(Modifier.fillMaxSize()) {
             if (showLineNumbers) {
                 GutterCanvas(
-                    text = text,
+                    lineStarts = lineStarts,
                     textLayout = textLayout,
                     scrollOffsetPx = sharedScroll.value,
                     style = gutterStyle,
@@ -309,6 +334,22 @@ private fun EditorBody(
             )
         }
     }
+}
+
+/** テキストを 1 度だけ走査して論理行 (= '\n' 区切り) の先頭 offset を IntArray で返す。 */
+private fun computeLineStarts(text: String): IntArray {
+    // 最初は 0 から始まる。容量は `text.length / 30 + 1` 程度の概算。
+    val initial = (text.length / 30 + 1).coerceAtLeast(8)
+    var arr = IntArray(initial)
+    arr[0] = 0
+    var size = 1
+    for (i in text.indices) {
+        if (text[i] == '\n') {
+            if (size == arr.size) arr = arr.copyOf(arr.size * 2)
+            arr[size++] = i + 1
+        }
+    }
+    return arr.copyOf(size)
 }
 
 /** BasicTextField の縦スクロールに追従する操作可能スクロールバー。
@@ -383,45 +424,46 @@ private fun EditorScrollbar(scrollState: androidx.compose.foundation.ScrollState
 }
 
 /**
- * 行番号を Canvas で描画する gutter。BasicTextField の TextLayoutResult を元に
- * 「各論理行が始まる visual line の Y 座標」を求め、そこに番号を置く。
- * 縦スクロールは [scrollOffsetPx] を引いて追従させる (= BasicTextField の scrollState と完全同期)。
+ * 行番号を Canvas で描画する gutter。
+ *
+ * 表示中の visual line だけを走査することで、巨大ファイルでもフレームを落とさない:
+ *  1. `tl.getLineForVerticalPosition(scrollOffsetPx)` で先頭の visual line を二分検索 (O(log N))。
+ *  2. 各 visual line の char start を `tl.getLineStart` で取り、IntArray に対し binarySearch で論理行番号を解決。
+ *  3. visual line が論理行の先頭と一致するときだけ番号を描く (= ワードラップで折り返した行は無番号)。
  */
 @Composable
 private fun GutterCanvas(
-    text: String,
+    lineStarts: IntArray,
     textLayout: TextLayoutResult?,
     scrollOffsetPx: Int,
     style: TextStyle,
     measurer: TextMeasurer,
     modifier: Modifier,
 ) {
-    // 「各論理行の先頭 char offset」のリスト。0 は最初の行、次は最初の '\n' の次の char、…
-    val logicalLineStartOffsets: List<Int> = remember(text) {
-        val out = ArrayList<Int>(text.length / 40 + 1)
-        out.add(0)
-        for (i in text.indices) if (text[i] == '\n') out.add(i + 1)
-        out
-    }
-
     androidx.compose.foundation.Canvas(modifier = modifier.padding(end = 6.dp, top = 4.dp)) {
         val tl = textLayout ?: return@Canvas
         val visibleHeight = size.height
-        // 高速化: 画面外をスキップ
-        for (i in logicalLineStartOffsets.indices) {
-            val offset = logicalLineStartOffsets[i]
-            // テキスト末尾を超えていたら停止 (空行の途中など)
-            if (offset > text.length) break
-            val visualLine = runCatching { tl.getLineForOffset(offset) }.getOrNull() ?: continue
-            val top = tl.getLineTop(visualLine) - scrollOffsetPx
-            val bottom = tl.getLineBottom(visualLine) - scrollOffsetPx
-            if (bottom < 0f) continue
+        val visualLineCount = tl.lineCount
+        if (visualLineCount <= 0) return@Canvas
+        // 先頭の visible visual line。getLineForVerticalPosition は O(log N)。
+        val firstVisible = runCatching {
+            tl.getLineForVerticalPosition(scrollOffsetPx.toFloat().coerceAtLeast(0f))
+        }.getOrNull() ?: 0
+
+        var v = firstVisible
+        while (v < visualLineCount) {
+            val top = tl.getLineTop(v) - scrollOffsetPx
             if (top > visibleHeight) break
-            val label = (i + 1).toString()
-            val layout = measurer.measure(label, style = style)
-            // 右寄せ: gutter 幅から番号幅を引いた位置に描く
-            val x = (size.width - layout.size.width).coerceAtLeast(0f)
-            drawText(textLayoutResult = layout, topLeft = Offset(x, top))
+            val charStart = tl.getLineStart(v)
+            // この visual line が「論理行の先頭」と一致しているか?
+            val idx = lineStarts.binarySearch(charStart)
+            if (idx >= 0) {
+                val label = (idx + 1).toString()
+                val layout = measurer.measure(label, style = style)
+                val x = (size.width - layout.size.width).coerceAtLeast(0f)
+                drawText(textLayoutResult = layout, topLeft = Offset(x, top))
+            }
+            v++
         }
     }
 }
