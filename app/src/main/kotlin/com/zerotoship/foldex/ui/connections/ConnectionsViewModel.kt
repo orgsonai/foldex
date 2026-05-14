@@ -41,7 +41,7 @@ class ConnectionsViewModel @Inject constructor(
             protocol = protocol,
             name = "",
             host = "",
-            port = defaultPort,
+            portText = defaultPort.toString(),
             username = "",
             password = "",
             share = "",
@@ -53,6 +53,9 @@ class ConnectionsViewModel @Inject constructor(
             charset = "UTF-8",
             basePath = "/",
             useHttps = true,
+            sftpAuthMode = SftpAuthMode.PASSWORD,
+            sftpPrivateKeyPem = "",
+            sftpPublicKeyOpenSsh = "",
         )
     }
 
@@ -64,7 +67,7 @@ class ConnectionsViewModel @Inject constructor(
                 protocol = Protocol.SMB,
                 name = connection.name,
                 host = connection.host,
-                port = connection.port,
+                portText = connection.port.toString(),
                 username = connection.username.orEmpty(),
                 password = "",
                 share = connection.share,
@@ -76,6 +79,9 @@ class ConnectionsViewModel @Inject constructor(
                 charset = connection.charset,
                 basePath = "/",
                 useHttps = true,
+                sftpAuthMode = SftpAuthMode.PASSWORD,
+                sftpPrivateKeyPem = "",
+                sftpPublicKeyOpenSsh = "",
             )
             is Connection.Sftp -> EditingState(
                 id = connection.id,
@@ -83,7 +89,7 @@ class ConnectionsViewModel @Inject constructor(
                 protocol = Protocol.SFTP,
                 name = connection.name,
                 host = connection.host,
-                port = connection.port,
+                portText = connection.port.toString(),
                 username = connection.username.orEmpty(),
                 password = "",
                 share = "",
@@ -95,6 +101,13 @@ class ConnectionsViewModel @Inject constructor(
                 charset = connection.charset,
                 basePath = "/",
                 useHttps = true,
+                sftpAuthMode = if (connection.authMethod == AuthMethod.PUBLIC_KEY) {
+                    SftpAuthMode.PUBLIC_KEY
+                } else {
+                    SftpAuthMode.PASSWORD
+                },
+                sftpPrivateKeyPem = "",
+                sftpPublicKeyOpenSsh = "",
             )
             is Connection.Ftp -> EditingState(
                 id = connection.id,
@@ -102,7 +115,7 @@ class ConnectionsViewModel @Inject constructor(
                 protocol = Protocol.FTP,
                 name = connection.name,
                 host = connection.host,
-                port = connection.port,
+                portText = connection.port.toString(),
                 username = connection.username.orEmpty(),
                 password = "",
                 share = "",
@@ -114,6 +127,9 @@ class ConnectionsViewModel @Inject constructor(
                 charset = connection.charset,
                 basePath = "/",
                 useHttps = true,
+                sftpAuthMode = SftpAuthMode.PASSWORD,
+                sftpPrivateKeyPem = "",
+                sftpPublicKeyOpenSsh = "",
             )
             is Connection.WebDav -> EditingState(
                 id = connection.id,
@@ -121,7 +137,7 @@ class ConnectionsViewModel @Inject constructor(
                 protocol = Protocol.WEBDAV,
                 name = connection.name,
                 host = connection.host,
-                port = connection.port,
+                portText = connection.port.toString(),
                 username = connection.username.orEmpty(),
                 password = "",
                 share = "",
@@ -133,8 +149,25 @@ class ConnectionsViewModel @Inject constructor(
                 charset = connection.charset,
                 basePath = connection.basePath,
                 useHttps = connection.useHttps,
+                sftpAuthMode = SftpAuthMode.PASSWORD,
+                sftpPrivateKeyPem = "",
+                sftpPublicKeyOpenSsh = "",
             )
         }
+    }
+
+    /** SFTP: クライアント秘密鍵を生成し、公開鍵 (authorized_keys 用) を編集状態に格納する。 */
+    fun generateSftpKeyPair() {
+        val current = _editing.value ?: return
+        if (current.protocol != Protocol.SFTP) return
+        val kp = SshClientKeyHelper.generate()
+        val pem = SshClientKeyHelper.toPkcs8Pem(kp)
+        val ssh = SshClientKeyHelper.toOpenSshPublic(kp, comment = "foldex@${current.host.ifBlank { "android" }}")
+        _editing.value = current.copy(
+            sftpAuthMode = SftpAuthMode.PUBLIC_KEY,
+            sftpPrivateKeyPem = pem,
+            sftpPublicKeyOpenSsh = ssh,
+        )
     }
 
     fun cancelEdit() {
@@ -158,11 +191,74 @@ class ConnectionsViewModel @Inject constructor(
         }
         _editing.value = current.copy(
             protocol = protocol,
-            port = newPort,
+            portText = newPort.toString(),
             anonymous = if (protocol == Protocol.SFTP) false else current.anonymous,
             useTls = if (protocol == Protocol.FTP) current.useTls else false,
             passiveMode = if (protocol == Protocol.FTP) current.passiveMode else true,
         )
+    }
+
+    /**
+     * `sftp://user@host:port/path` のような URI を解釈し、現在の編集状態に反映する。
+     * 不正な書式なら何もしない。protocol/host/port/username/basePath を埋める。
+     */
+    fun applyUri(uri: String): Boolean {
+        val current = _editing.value ?: return false
+        val trimmed = uri.trim()
+        // scheme://[user[:pass]@]host[:port][/path]
+        val re = Regex("^([a-zA-Z][a-zA-Z0-9+.\\-]*)://(?:([^@/]+)@)?\\[?([^/:\\]]+)\\]?(?::(\\d+))?(/.*)?$")
+        val m = re.matchEntire(trimmed) ?: return false
+        val scheme = m.groupValues[1].lowercase()
+        val userinfo = m.groupValues[2]
+        val host = m.groupValues[3]
+        val portStr = m.groupValues[4]
+        val path = m.groupValues[5].ifEmpty { "/" }
+        val protocol = when (scheme) {
+            "sftp", "ssh" -> Protocol.SFTP
+            "ftp" -> Protocol.FTP
+            "ftps" -> Protocol.FTP
+            "smb", "cifs" -> Protocol.SMB
+            "webdav", "dav", "http" -> Protocol.WEBDAV
+            "webdavs", "davs", "https" -> Protocol.WEBDAV
+            else -> return false
+        }
+        val (user, pass) = userinfo.split(':', limit = 2).let {
+            if (it.size == 2) it[0] to it[1] else (it.firstOrNull().orEmpty() to "")
+        }
+        val defaultPort = when (protocol) {
+            Protocol.WEBDAV -> if (scheme == "https" || scheme == "webdavs" || scheme == "davs") 443 else 80
+            else -> protocol.defaultPort
+        }
+        val port = portStr.toIntOrNull() ?: defaultPort
+        // SMB の path は //host/share/sub → share とサブパス。
+        val (smbShare, smbSub) = if (protocol == Protocol.SMB) {
+            val parts = path.trimStart('/').split('/', limit = 2)
+            (parts.getOrNull(0).orEmpty() to (parts.getOrNull(1)?.let { "/$it" } ?: "/"))
+        } else "" to "/"
+        _editing.value = current.copy(
+            protocol = protocol,
+            host = host,
+            portText = port.toString(),
+            username = user.ifBlank { current.username },
+            password = pass.ifBlank { current.password },
+            share = if (protocol == Protocol.SMB) smbShare.ifBlank { current.share } else current.share,
+            basePath = when (protocol) {
+                Protocol.WEBDAV -> path
+                Protocol.SMB -> smbSub
+                else -> current.basePath
+            },
+            useHttps = when (protocol) {
+                Protocol.WEBDAV -> scheme == "https" || scheme == "webdavs" || scheme == "davs"
+                else -> current.useHttps
+            },
+            useTls = when (protocol) {
+                Protocol.FTP -> scheme == "ftps"
+                else -> current.useTls
+            },
+            // 名前は空ならスキーム+ホストで補完。
+            name = if (current.name.isBlank()) "$scheme://$host" else current.name,
+        )
+        return true
     }
 
     fun save() {
@@ -188,7 +284,7 @@ class ConnectionsViewModel @Inject constructor(
                 id = draft.id,
                 name = draft.name.trim(),
                 host = draft.host.trim(),
-                port = draft.port,
+                port = draft.effectivePort(),
                 username = draft.username.trim().ifBlank { null },
                 authMethod = authMethod,
                 basePath = basePath,
@@ -216,7 +312,7 @@ class ConnectionsViewModel @Inject constructor(
                 id = draft.id,
                 name = draft.name.trim(),
                 host = draft.host.trim(),
-                port = draft.port,
+                port = draft.effectivePort(),
                 username = draft.username.trim().ifBlank { null },
                 authMethod = authMethod,
                 share = draft.share.trim(),
@@ -239,7 +335,7 @@ class ConnectionsViewModel @Inject constructor(
                 id = draft.id,
                 name = draft.name.trim(),
                 host = draft.host.trim(),
-                port = draft.port,
+                port = draft.effectivePort(),
                 username = draft.username.trim().ifBlank { null },
                 authMethod = authMethod,
                 useTls = draft.useTls,
@@ -261,22 +357,43 @@ class ConnectionsViewModel @Inject constructor(
             sendEvent(ConnectionEvent.Message("SFTP はユーザー名が必須"))
             return
         }
-        if (draft.isNew && draft.password.isBlank()) {
-            sendEvent(ConnectionEvent.Message("初回はパスワードが必要"))
-            return
+        if (draft.sftpAuthMode == SftpAuthMode.PUBLIC_KEY) {
+            // 公開鍵モード: 編集セッション中に新規生成された場合のみ秘密鍵を更新する。
+            // 既存接続を編集して鍵を変えないときは Credential = null で repo に渡し、既存の鍵を温存する。
+            if (draft.isNew && draft.sftpPrivateKeyPem.isBlank()) {
+                sendEvent(ConnectionEvent.Message("「鍵を生成」を押して公開鍵を発行してください"))
+                return
+            }
+        } else {
+            // パスワードモード: 初回はパスワード必須。
+            if (draft.isNew && draft.password.isBlank()) {
+                sendEvent(ConnectionEvent.Message("初回はパスワードが必要"))
+                return
+            }
         }
         viewModelScope.launch {
+            val authMethod = if (draft.sftpAuthMode == SftpAuthMode.PUBLIC_KEY) {
+                AuthMethod.PUBLIC_KEY
+            } else {
+                AuthMethod.PASSWORD
+            }
             val connection = Connection.Sftp(
                 id = draft.id,
                 name = draft.name.trim(),
                 host = draft.host.trim(),
-                port = draft.port,
+                port = draft.effectivePort(),
                 username = draft.username.trim(),
-                authMethod = AuthMethod.PASSWORD,
+                authMethod = authMethod,
                 hostKeyFingerprint = draft.hostKeyFingerprint.trim().ifBlank { null },
             )
             val credential: Credential? = when {
-                draft.password.isNotEmpty() -> Credential.Password(draft.password.toByteArray(Charsets.UTF_8))
+                draft.sftpAuthMode == SftpAuthMode.PUBLIC_KEY && draft.sftpPrivateKeyPem.isNotBlank() ->
+                    Credential.SshPrivateKey(
+                        keyData = draft.sftpPrivateKeyPem.toByteArray(Charsets.UTF_8),
+                        passphrase = null,
+                    )
+                draft.sftpAuthMode == SftpAuthMode.PASSWORD && draft.password.isNotEmpty() ->
+                    Credential.Password(draft.password.toByteArray(Charsets.UTF_8))
                 else -> null
             }
             persist(connection, credential, draft.isNew)
@@ -308,13 +425,16 @@ class ConnectionsViewModel @Inject constructor(
         _events.trySend(event)
     }
 
+    /** SFTP の認証方式 UI 選択。 */
+    enum class SftpAuthMode { PASSWORD, PUBLIC_KEY }
+
     data class EditingState(
         val id: String,
         val isNew: Boolean,
         val protocol: Protocol,
         val name: String,
         val host: String,
-        val port: Int,
+        val portText: String, // 空欄を許可。保存時に [effectivePort] でフォールバック。
         val username: String,
         val password: String,
         val share: String,
@@ -326,7 +446,19 @@ class ConnectionsViewModel @Inject constructor(
         val charset: String,
         val basePath: String,
         val useHttps: Boolean,
-    )
+        // SFTP 専用: 認証方式 + 生成済み鍵ペア (UI 表示・保存用)。
+        val sftpAuthMode: SftpAuthMode = SftpAuthMode.PASSWORD,
+        val sftpPrivateKeyPem: String = "",
+        val sftpPublicKeyOpenSsh: String = "",
+    ) {
+        /** 保存時のポート: 入力が空 or 不正なら protocol の既定。 */
+        fun effectivePort(): Int = portText.trim().toIntOrNull()
+            ?.takeIf { it in 1..65535 }
+            ?: when (protocol) {
+                Protocol.WEBDAV -> if (useHttps) 443 else 80
+                else -> protocol.defaultPort
+            }
+    }
 
     sealed class ConnectionEvent {
         data class Message(val text: String) : ConnectionEvent()

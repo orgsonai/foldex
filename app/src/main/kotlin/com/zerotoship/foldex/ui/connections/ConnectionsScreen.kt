@@ -2,6 +2,8 @@ package com.zerotoship.foldex.ui.connections
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -195,6 +197,8 @@ fun ConnectionsScreen(
             state = state,
             onUpdate = viewModel::updateField,
             onProtocolChange = viewModel::changeProtocol,
+            onApplyUri = viewModel::applyUri,
+            onGenerateSftpKey = viewModel::generateSftpKeyPair,
             onSave = viewModel::save,
             onDismiss = viewModel::cancelEdit,
         )
@@ -248,6 +252,8 @@ private fun ConnectionEditDialog(
     state: ConnectionsViewModel.EditingState,
     onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
     onProtocolChange: (Protocol) -> Unit,
+    onApplyUri: (String) -> Boolean,
+    onGenerateSftpKey: () -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -261,8 +267,41 @@ private fun ConnectionEditDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 if (state.isNew) {
+                    // ワンライナー入力: sftp://user@host:port/path 形式をペーストすると各欄に分解。
+                    var oneLiner by remember { mutableStateOf("") }
+                    var oneLinerError by remember { mutableStateOf(false) }
+                    OutlinedTextField(
+                        value = oneLiner,
+                        onValueChange = {
+                            oneLiner = it
+                            oneLinerError = false
+                        },
+                        label = { Text("URL から入力 (例: sftp://user@host:22/path)") },
+                        singleLine = true,
+                        isError = oneLinerError,
+                        supportingText = if (oneLinerError) {
+                            { Text("URL の書式が不正です") }
+                        } else null,
+                        trailingIcon = {
+                            TextButton(onClick = {
+                                if (oneLiner.isNotBlank()) {
+                                    if (onApplyUri(oneLiner)) {
+                                        oneLiner = ""
+                                        oneLinerError = false
+                                    } else {
+                                        oneLinerError = true
+                                    }
+                                }
+                            }) { Text("展開") }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = state.protocol == Protocol.SMB,
@@ -305,20 +344,22 @@ private fun ConnectionEditDialog(
                     )
                     Spacer(Modifier.size(8.dp))
                     OutlinedTextField(
-                        value = state.port.toString(),
+                        value = state.portText,
                         onValueChange = { v ->
-                            v.toIntOrNull()?.let { p -> onUpdate { st -> st.copy(port = p) } }
-                                ?: if (v.isEmpty()) onUpdate { st -> st.copy(port = state.protocol.defaultPort) } else Unit
+                            // 数字以外は無視。空欄も保持できるようにする (強制的に 22 等が入らないように)。
+                            val sanitized = v.filter { it.isDigit() }.take(5)
+                            onUpdate { st -> st.copy(portText = sanitized) }
                         },
                         label = { Text("ポート") },
                         singleLine = true,
+                        placeholder = { Text(state.protocol.defaultPort.toString()) },
                         modifier = Modifier.size(width = 96.dp, height = 56.dp),
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 when (state.protocol) {
                     Protocol.SMB -> SmbExtraFields(state, onUpdate)
-                    Protocol.SFTP -> SftpExtraFields(state, onUpdate)
+                    Protocol.SFTP -> SftpExtraFields(state, onUpdate, onGenerateSftpKey)
                     Protocol.FTP -> FtpExtraFields(state, onUpdate)
                     Protocol.WEBDAV -> WebDavExtraFields(state, onUpdate)
                 }
@@ -370,8 +411,69 @@ private fun SmbExtraFields(
 private fun SftpExtraFields(
     state: ConnectionsViewModel.EditingState,
     onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
+    onGenerateKey: () -> Unit,
 ) {
-    UserPasswordFields(state, onUpdate)
+    OutlinedTextField(
+        value = state.username,
+        onValueChange = { v -> onUpdate { it.copy(username = v) } },
+        label = { Text("ユーザー名") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    // 認証方式: パスワード or 公開鍵 (authorized_keys)。
+    Text("認証方式", style = MaterialTheme.typography.labelMedium)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = state.sftpAuthMode == ConnectionsViewModel.SftpAuthMode.PASSWORD,
+            onClick = { onUpdate { it.copy(sftpAuthMode = ConnectionsViewModel.SftpAuthMode.PASSWORD) } },
+            label = { Text("パスワード") },
+        )
+        FilterChip(
+            selected = state.sftpAuthMode == ConnectionsViewModel.SftpAuthMode.PUBLIC_KEY,
+            onClick = { onUpdate { it.copy(sftpAuthMode = ConnectionsViewModel.SftpAuthMode.PUBLIC_KEY) } },
+            label = { Text("公開鍵 (authorized_keys)") },
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+    if (state.sftpAuthMode == ConnectionsViewModel.SftpAuthMode.PASSWORD) {
+        OutlinedTextField(
+            value = state.password,
+            onValueChange = { v -> onUpdate { it.copy(password = v) } },
+            label = { Text(if (state.isNew) "パスワード" else "パスワード (変更時のみ)") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    } else {
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        TextButton(onClick = onGenerateKey) {
+            Text(if (state.sftpPublicKeyOpenSsh.isBlank()) "鍵を生成" else "鍵を再生成")
+        }
+        if (state.sftpPublicKeyOpenSsh.isNotBlank()) {
+            Text(
+                "リモートの ~/.ssh/authorized_keys にコピーしてください:",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            OutlinedTextField(
+                value = state.sftpPublicKeyOpenSsh,
+                onValueChange = {},
+                readOnly = true,
+                singleLine = false,
+                maxLines = 4,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TextButton(onClick = {
+                clipboard.setText(androidx.compose.ui.text.AnnotatedString(state.sftpPublicKeyOpenSsh))
+            }) { Text("公開鍵をコピー") }
+        } else if (!state.isNew) {
+            Text(
+                "既に登録済みの鍵を使用します (再生成する場合は上の「鍵を生成」)。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = state.hostKeyFingerprint,
@@ -440,7 +542,7 @@ private fun WebDavExtraFields(
             onCheckedChange = { v ->
                 onUpdate {
                     val newPort = if (v) 443 else 80
-                    it.copy(useHttps = v, port = newPort)
+                    it.copy(useHttps = v, portText = newPort.toString())
                 }
             },
         )
