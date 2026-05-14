@@ -250,73 +250,36 @@ fun FileBrowserScreen(
         action()
     }
 
+    val selectedDrawerKey = run {
+        val cur = state.currentUri
+        when (cur) {
+            is FileUri.Remote -> "conn:${cur.connectionId}"
+            null -> null
+            else -> cur.toStorageString()
+        }
+    }
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "Foldex",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    )
-                    HorizontalDivider()
-                    DrawerSectionLabel("クイックアクセス")
-                    quickAccess.forEach { entry ->
-                        val selected = (state.currentUri as? FileUri.Local)?.absolutePath ==
-                            (entry.uri as? FileUri.Local)?.absolutePath
-                        NavigationDrawerItem(
-                            icon = { Icon(quickAccessIcon(entry.kind), contentDescription = null) },
-                            label = { Text(entry.label) },
-                            selected = selected,
-                            onClick = { closeDrawerThen { viewModel.open(entry.uri, entry.label) } },
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                        )
-                    }
-                    NavigationDrawerItem(
-                        icon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
-                        label = { Text("別のフォルダを開く…") },
-                        selected = false,
-                        onClick = { closeDrawerThen { safLauncher.launch(null) } },
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                    )
-
-                    if (favorites.isNotEmpty()) {
-                        DrawerSectionLabel("お気に入り")
-                        favorites.forEach { (uri, key) ->
-                            NavigationDrawerItem(
-                                icon = { Icon(Icons.Outlined.Star, contentDescription = null) },
-                                label = { Text(favoriteLabel(uri), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                selected = state.currentUri?.toStorageString() == key,
-                                onClick = { closeDrawerThen { viewModel.open(uri, favoriteLabel(uri)) } },
-                                modifier = Modifier.padding(horizontal = 12.dp),
+            com.zerotoship.foldex.ui.components.AppDrawerContent(
+                quickAccess = quickAccess,
+                favorites = favorites,
+                connections = connections,
+                selectedKey = selectedDrawerKey,
+                onOpenUri = { uri, name -> closeDrawerThen { viewModel.open(uri, name) } },
+                onPickFolder = { closeDrawerThen { safLauncher.launch(null) } },
+                onOpenConnection = { conn ->
+                    closeDrawerThen {
+                        when (conn) {
+                            is Connection.Smb -> viewModel.openSmbConnection(conn.id, conn.name)
+                            else -> viewModel.open(
+                                FileUri.Remote(conn.protocol, conn.id, "/"),
+                                conn.name,
                             )
                         }
                     }
-
-                    if (connections.isNotEmpty()) {
-                        DrawerSectionLabel("リモート接続")
-                        connections.forEach { connection ->
-                            val selected = (state.currentUri as? FileUri.Remote)?.connectionId == connection.id
-                            NavigationDrawerItem(
-                                icon = { Icon(Icons.Outlined.Storage, contentDescription = null) },
-                                label = { Text(connection.name) },
-                                selected = selected,
-                                onClick = {
-                                    closeDrawerThen {
-                                        if (connection is Connection.Smb) {
-                                            viewModel.openSmbConnection(connection.id, connection.name)
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.padding(horizontal = 12.dp),
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                }
-            }
+                },
+            )
         },
     ) {
     Scaffold(
@@ -356,10 +319,25 @@ fun FileBrowserScreen(
                         if (state.isSelectionMode) {
                             Text("${state.selectedUris.size}件選択中")
                         } else {
+                            // タップ: パスを手動入力するダイアログを開く。
+                            // 長押し: 現在の絶対パスをクリップボードへコピー。
+                            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
                             Text(
                                 text = state.breadcrumbs.lastOrNull()?.displayName ?: "Foldex",
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.combinedClickable(
+                                    onClick = { viewModel.showPathInput() },
+                                    onLongClick = {
+                                        val path = viewModel.currentAbsolutePath()
+                                        if (path != null) {
+                                            clipboard.setText(androidx.compose.ui.text.AnnotatedString(path))
+                                            drawerScope.launch {
+                                                snackbarHostState.showSnackbar("パスをコピーしました: $path")
+                                            }
+                                        }
+                                    },
+                                ),
                             )
                         }
                     },
@@ -662,6 +640,13 @@ fun FileBrowserScreen(
     state.propertiesTarget?.let { target ->
         FilePropertiesDialog(node = target, onDismiss = { viewModel.dismissProperties() })
     }
+    state.pendingPathInput?.let { initial ->
+        PathInputDialog(
+            initial = initial,
+            onConfirm = { viewModel.navigateToManualPath(it) },
+            onDismiss = { viewModel.dismissPathInput() },
+        )
+    }
     state.pendingApplyViewModeToSubtree?.let { mode ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { viewModel.applyViewModeToSubtree(false) },
@@ -920,28 +905,3 @@ private fun EmptyContent() {
     }
 }
 
-@Composable
-private fun DrawerSectionLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 28.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-    )
-}
-
-private fun quickAccessIcon(kind: QuickAccessKind): ImageVector = when (kind) {
-    QuickAccessKind.INTERNAL_STORAGE -> Icons.Outlined.PhoneAndroid
-    QuickAccessKind.DOWNLOAD -> Icons.Outlined.Download
-    QuickAccessKind.IMAGES -> Icons.Outlined.Image
-    QuickAccessKind.CAMERA -> Icons.Outlined.PhotoCamera
-    QuickAccessKind.VIDEO -> Icons.Outlined.Movie
-    QuickAccessKind.MUSIC -> Icons.Outlined.MusicNote
-    QuickAccessKind.DOCUMENTS -> Icons.Outlined.Description
-    QuickAccessKind.SD_CARD -> Icons.Outlined.SdStorage
-}
-
-private fun favoriteLabel(uri: FileUri): String {
-    val s = uri.toStorageString().trimEnd('/')
-    return s.substringAfterLast('/').ifEmpty { s }
-}
