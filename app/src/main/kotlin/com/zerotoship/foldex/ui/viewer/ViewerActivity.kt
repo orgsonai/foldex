@@ -204,7 +204,11 @@ private fun ViewerScreen(
                     else TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
                 Category.TEXT -> TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
                 Category.AUDIO -> AudioPlayer(file, name, Modifier.fillMaxSize())
-                Category.VIDEO -> VideoViewer(file, Modifier.fillMaxSize())
+                Category.VIDEO -> VideoViewer(
+                    file = file,
+                    modifier = Modifier.fillMaxSize(),
+                    onOpenExternally = onOpenExternally,
+                )
                 Category.PDF -> PdfViewer(file, Modifier.fillMaxSize())
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
