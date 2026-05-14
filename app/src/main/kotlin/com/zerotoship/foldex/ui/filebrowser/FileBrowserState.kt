@@ -69,6 +69,8 @@ data class FileBrowserState(
     val showHidden: Boolean = false,
     // 単体プロパティ表示の対象 (null = ダイアログ非表示)。
     val propertiesTarget: FileNode? = null,
+    // パス手動入力ダイアログの初期文字列 (null = 非表示)。
+    val pendingPathInput: String? = null,
 ) {
     val currentUri: FileUri? get() = breadcrumbs.lastOrNull()?.uri
     val canGoUp: Boolean get() = breadcrumbs.size > 1

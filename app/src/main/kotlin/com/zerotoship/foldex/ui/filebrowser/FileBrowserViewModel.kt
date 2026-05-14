@@ -1023,6 +1023,62 @@ class FileBrowserViewModel @Inject constructor(
         _state.value = _state.value.copy(propertiesTarget = null)
     }
 
+    /**
+     * 現在開いている URI の「人が読める絶対パス」を返す。クリップボードへコピーする用。
+     * Local: そのまま絶対パス、Remote: `<scheme>://<connectionId><path>`、SAF: documentUri 文字列。
+     */
+    fun currentAbsolutePath(): String? = when (val u = _state.value.currentUri) {
+        is FileUri.Local -> u.absolutePath
+        is FileUri.Remote -> "${u.protocol.scheme}://${u.connectionId}/${u.path.trimStart('/')}"
+        is FileUri.Saf -> u.documentUri
+        null -> null
+    }
+
+    /** タイトル長押し時にダイアログを開く: 現在パスを初期値にして編集できる。 */
+    fun showPathInput() {
+        _state.value = _state.value.copy(pendingPathInput = currentAbsolutePath() ?: "/")
+    }
+
+    fun dismissPathInput() {
+        _state.value = _state.value.copy(pendingPathInput = null)
+    }
+
+    /**
+     * パス手動入力ダイアログの確定。`/` 始まりはローカル絶対パス、それ以外は
+     * [FileUri.fromStorageStringOrNull] で解釈を試みる (sftp://... 等)。
+     * 解釈できた / そのフォルダが存在すれば navigate、駄目なら snackbar。
+     */
+    fun navigateToManualPath(input: String) {
+        val raw = input.trim()
+        if (raw.isEmpty()) {
+            emit(SnackbarEvent("パスが空です"))
+            return
+        }
+        val target: FileUri? = when {
+            raw.startsWith("/") -> FileUri.Local(raw.trimEnd('/').ifEmpty { "/" })
+            else -> FileUri.fromStorageStringOrNull(raw)
+        }
+        if (target == null) {
+            emit(SnackbarEvent("パスを解釈できませんでした: $raw"))
+            return
+        }
+        // ローカルなら存在チェック (リモート/SAF はネットワーク/解決後に判定する)。
+        if (target is FileUri.Local) {
+            val f = File(target.absolutePath)
+            if (!f.isDirectory) {
+                emit(SnackbarEvent("フォルダが見つかりません: ${target.absolutePath}"))
+                return
+            }
+        }
+        val name = when (target) {
+            is FileUri.Local -> displayNameForLocal(File(target.absolutePath))
+            is FileUri.Remote -> target.path.trimEnd('/').substringAfterLast('/').ifEmpty { target.connectionId }
+            is FileUri.Saf -> "ストレージ"
+        }
+        _state.value = _state.value.copy(pendingPathInput = null)
+        open(target, name)
+    }
+
     /** 選択中ノードを「リモートはローカルにDLしてから」FileProvider 経由で他アプリに共有する。 */
     fun shareSelected() {
         val nodes = _state.value.selectedNodes.filter { it.type == NodeType.FILE }
