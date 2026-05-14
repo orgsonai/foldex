@@ -30,6 +30,7 @@ ftpserver           = "1.2.0"
 coil                = "3.0.4"
 media3              = "1.4.1"
 markwon             = "4.6.2"
+zip4j               = "2.11.5"
 
 [libraries]
 # AndroidX Core
@@ -124,6 +125,9 @@ markwon-ext-tables          = { group = "io.noties.markwon",       name = "ext-t
 markwon-ext-strikethrough   = { group = "io.noties.markwon",       name = "ext-strikethrough",      version.ref = "markwon" }
 markwon-ext-tasklist        = { group = "io.noties.markwon",       name = "ext-tasklist",           version.ref = "markwon" }
 markwon-linkify             = { group = "io.noties.markwon",       name = "linkify",                version.ref = "markwon" }
+
+# ZIP 圧縮/解凍 + AES 暗号化 (P7) — zip4j
+zip4j                       = { group = "net.lingala.zip4j",       name = "zip4j",                  version.ref = "zip4j" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }

@@ -333,11 +333,32 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
-    /** ローカルの実体ファイルを返す。リモートはキャッシュへDLする。失敗時は snackbar を出して null。 */
+    /** ローカルの実体ファイルを返す。リモート/SAF はキャッシュへDLする。失敗時は snackbar を出して null。 */
     private suspend fun resolveLocalFile(node: FileNode): File? = when (val u = node.uri) {
         is FileUri.Local -> File(u.absolutePath)
-        is FileUri.Saf -> { emit(SnackbarEvent("この場所のファイルを開く処理は未対応です")); null }
+        is FileUri.Saf -> downloadSafToCache(node)
         is FileUri.Remote -> downloadToCache(node)
+    }
+
+    /** SAF ノードをキャッシュにコピー (内蔵ビューア用)。書き戻しは未対応 (editable=false で開く)。 */
+    private suspend fun downloadSafToCache(node: FileNode): File? = withContext(Dispatchers.IO) {
+        val u = node.uri as FileUri.Saf
+        runCatching {
+            val out = File(context.cacheDir, "saf_${System.currentTimeMillis()}_${node.name}")
+            when (val r = storage.openInput(u)) {
+                is Result.Success -> r.value.use { ins ->
+                    out.outputStream().use { os -> ins.copyTo(os) }
+                }
+                is Result.Failure -> {
+                    emit(SnackbarEvent("読み込み失敗: ${r.error.message}"))
+                    return@withContext null
+                }
+            }
+            out
+        }.getOrElse {
+            emit(SnackbarEvent("読み込み失敗: ${it.message}"))
+            null
+        }
     }
 
     /**
@@ -865,10 +886,8 @@ class FileBrowserViewModel @Inject constructor(
             emit(SnackbarEvent("保存先フォルダを開いてからもう一度押してください"))
             return
         }
-        if (destDir is FileUri.Saf) {
-            emit(SnackbarEvent("SAF フォルダへの保存はまだ未対応です。内部ストレージかリモート接続を開いてください"))
-            return
-        }
+        // SAF (Termux などの DocumentsProvider) も書き込み対応済み: openOutput(CREATE_NEW) が
+        // 親 documentUri + pendingChildName を見て createDocument を呼ぶ。
         _state.value = _state.value.copy(
             isLoading = true,
             opProgress = FileOpProgress(
@@ -1145,6 +1164,209 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
+    // --- ZIP ---
+
+    /** 選択中のノードを ZIP 化する確認ダイアログを開く。 */
+    fun requestZipCompress() {
+        val sel = _state.value.selectedNodes
+        if (sel.isEmpty()) return
+        _state.value = _state.value.copy(pendingZipCompress = sel)
+    }
+
+    fun dismissZipCompress() {
+        _state.value = _state.value.copy(pendingZipCompress = emptyList())
+    }
+
+    /**
+     * ZIP 圧縮を実行する。出力先は現在のフォルダ。
+     * リモート/SAF はキャッシュに DL してから zip4j に渡し、できた zip を [openOutput] で書き込み。
+     * [password] が空なら通常 ZIP、そうでなければ AES-256。
+     */
+    fun executeZipCompress(zipName: String, password: String?) {
+        val targets = _state.value.pendingZipCompress
+        val destDir = _state.value.currentUri ?: return
+        if (targets.isEmpty()) return
+        val finalName = if (zipName.endsWith(".zip", ignoreCase = true)) zipName else "$zipName.zip"
+        _state.value = _state.value.copy(pendingZipCompress = emptyList(), isLoading = true)
+        viewModelScope.launch {
+            val cacheZip = withContext(Dispatchers.IO) {
+                File(context.cacheDir, "compress_${System.currentTimeMillis()}_$finalName")
+            }
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val locals = ArrayList<File>(targets.size)
+                    for (n in targets) {
+                        val f = resolveLocalFile(n) ?: continue
+                        locals += f
+                    }
+                    if (locals.isEmpty()) return@runCatching false
+                    ZipOps.compress(locals, cacheZip, password.takeUnless { it.isNullOrEmpty() })
+                    true
+                }.getOrElse { e ->
+                    emit(SnackbarEvent("圧縮失敗: ${e.message}"))
+                    false
+                }
+            }
+            if (!ok || !cacheZip.exists()) {
+                _state.value = _state.value.copy(isLoading = false)
+                return@launch
+            }
+            // できた zip を destDir に書き込む。
+            val destUri = destUriFor(destDir, uniqueName(destDir, finalName))
+            if (destUri == null) {
+                emit(SnackbarEvent("保存先を解決できません"))
+                _state.value = _state.value.copy(isLoading = false)
+                return@launch
+            }
+            val written = withContext(Dispatchers.IO) {
+                runCatching {
+                    cacheZip.inputStream().use { ins ->
+                        when (val r = storage.openOutput(destUri, com.zerotoship.foldex.core.model.WriteMode.CREATE_NEW)) {
+                            is Result.Success -> r.value.use { os -> ins.copyTo(os) }
+                            is Result.Failure -> {
+                                emit(SnackbarEvent("保存失敗: ${r.error.message}"))
+                                return@runCatching false
+                            }
+                        }
+                    }
+                    true
+                }.getOrElse {
+                    emit(SnackbarEvent("保存失敗: ${it.message}"))
+                    false
+                }
+            }
+            runCatching { cacheZip.delete() }
+            loadFilesSync(destDir)
+            _state.value = _state.value.copy(isLoading = false)
+            if (written) {
+                emit(SnackbarEvent("「$finalName」を作成しました"))
+                clearSelection()
+            }
+        }
+    }
+
+    /** 単一の zip ノードに対して解凍ダイアログを開く。最初は password なしで試す。 */
+    fun requestZipExtract(node: FileNode? = null) {
+        val target = node ?: _state.value.selectedNodes.singleOrNull { it.type == NodeType.FILE && ZipOps.isLikelyZip(it.name) }
+        if (target == null) {
+            emit(SnackbarEvent("解凍する ZIP を 1 件だけ選んでください"))
+            return
+        }
+        _state.value = _state.value.copy(
+            pendingZipExtract = ZipExtractRequest(target, needsPassword = false),
+        )
+    }
+
+    fun dismissZipExtract() {
+        _state.value = _state.value.copy(pendingZipExtract = null)
+    }
+
+    /**
+     * 解凍を実行する。展開先は現在のフォルダ配下に「<zip基名>/」フォルダを作る。
+     * [password] が空ならまずパスワードなしで試行し、要パスワード判定なら再度ダイアログを出す。
+     */
+    fun executeZipExtract(password: String?) {
+        val req = _state.value.pendingZipExtract ?: return
+        val node = req.node
+        val destDir = _state.value.currentUri ?: return
+        _state.value = _state.value.copy(pendingZipExtract = null, isLoading = true)
+        viewModelScope.launch {
+            // 1) zip 本体をローカルに揃える
+            val zipFile = withContext(Dispatchers.IO) { resolveLocalFile(node) }
+            if (zipFile == null) {
+                _state.value = _state.value.copy(isLoading = false)
+                return@launch
+            }
+            // 2) 一旦キャッシュに展開
+            val cacheOut = withContext(Dispatchers.IO) {
+                File(context.cacheDir, "extract_${System.currentTimeMillis()}_${node.name.removeSuffix(".zip")}")
+                    .apply { mkdirs() }
+            }
+            val (ok, needsPwd, message) = withContext(Dispatchers.IO) {
+                try {
+                    ZipOps.extract(zipFile, cacheOut, password.takeUnless { it.isNullOrEmpty() })
+                    Triple(true, false, null)
+                } catch (e: ZipOps.WrongPassword) {
+                    Triple(false, true, e.message)
+                } catch (e: Exception) {
+                    Triple(false, false, e.message)
+                }
+            }
+            if (!ok) {
+                _state.value = _state.value.copy(isLoading = false)
+                if (needsPwd) {
+                    _state.value = _state.value.copy(
+                        pendingZipExtract = req.copy(needsPassword = true, initialError = message),
+                    )
+                } else {
+                    emit(SnackbarEvent("解凍失敗: ${message ?: "原因不明"}"))
+                }
+                return@launch
+            }
+            // 3) cacheOut の中身を destDir 配下にコピー (storage 経由で SAF/Remote にも対応)
+            val baseName = node.name.removeSuffix(".zip")
+            val baseDirUri = destUriFor(destDir, uniqueName(destDir, baseName))
+            if (baseDirUri == null) {
+                emit(SnackbarEvent("展開先を解決できません"))
+                cacheOut.deleteRecursively()
+                _state.value = _state.value.copy(isLoading = false)
+                return@launch
+            }
+            val mkRes = withContext(Dispatchers.IO) { storage.mkdir(baseDirUri, recursive = true) }
+            if (mkRes is Result.Failure) {
+                emit(SnackbarEvent("展開フォルダ作成失敗: ${mkRes.error.message}"))
+                cacheOut.deleteRecursively()
+                _state.value = _state.value.copy(isLoading = false)
+                return@launch
+            }
+            // baseDirUri は擬似 URI (SAF) / 正規 URI (Local/Remote) のどちらか。実体ノードの
+            // URI を解決し直すために、改めて parent dir の中の同名フォルダを stat する。
+            val realBase = resolveDir(destDir, baseName)
+            val target = realBase ?: baseDirUri
+            withContext(Dispatchers.IO) {
+                copyTreeIntoStorage(cacheOut, target)
+            }
+            cacheOut.deleteRecursively()
+            loadFilesSync(destDir)
+            _state.value = _state.value.copy(isLoading = false)
+            emit(SnackbarEvent("「$baseName/」に展開しました"))
+            clearSelection()
+        }
+    }
+
+    /** 展開後 ZIP 直下のファイル/フォルダを storage 経由で再帰コピーする (SAF/Remote 対応)。 */
+    private suspend fun copyTreeIntoStorage(srcDir: File, destDirUri: FileUri) {
+        val children = srcDir.listFiles() ?: return
+        for (child in children) {
+            val childDest = destUriFor(destDirUri, child.name) ?: continue
+            if (child.isDirectory) {
+                storage.mkdir(childDest, recursive = true)
+                val realChild = resolveDir(destDirUri, child.name) ?: childDest
+                copyTreeIntoStorage(child, realChild)
+            } else {
+                runCatching {
+                    child.inputStream().use { ins ->
+                        when (val r = storage.openOutput(childDest, com.zerotoship.foldex.core.model.WriteMode.CREATE_NEW)) {
+                            is Result.Success -> r.value.use { os -> ins.copyTo(os) }
+                            is Result.Failure -> Unit
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** 親 [parentDir] 配下に [name] という名前で実在するフォルダの URI を解決して返す。 */
+    private suspend fun resolveDir(parentDir: FileUri, name: String): FileUri? {
+        var found: FileUri? = null
+        runCatching {
+            storage.list(parentDir, com.zerotoship.foldex.core.model.ListOptions()).collect { node ->
+                if (node.type == NodeType.DIRECTORY && node.name == name) found = node.uri
+            }
+        }
+        return found
+    }
+
     fun toggleFavorite(uri: FileUri) {
         val key = uri.toStorageString()
         val current = _state.value.favoriteUris
@@ -1245,7 +1467,9 @@ class FileBrowserViewModel @Inject constructor(
 
     private fun destUriFor(dir: FileUri, name: String): FileUri? = when (dir) {
         is FileUri.Local -> FileUri.Local("${dir.absolutePath}/$name")
-        is FileUri.Saf -> null // SAF destination not supported in P3
+        // SAF: 親 dir.documentUri 配下に「name で createDocument する予定の」擬似 URI を返す。
+        // openOutput(CREATE_NEW) / mkdir 側で pendingChildName を見て実体生成する。
+        is FileUri.Saf -> FileUri.Saf(dir.documentUri, pendingChildName = name)
         is FileUri.Remote -> FileUri.Remote(
             protocol = dir.protocol,
             connectionId = dir.connectionId,

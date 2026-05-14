@@ -55,8 +55,10 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -420,6 +422,21 @@ fun FileBrowserScreen(
                                     enabled = localFolders.isNotEmpty(),
                                     onClick = { viewModel.addSelectedFoldersToHome(); selMenuOpen = false },
                                 )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("ZIP 圧縮") },
+                                    leadingIcon = { Icon(Icons.Default.FolderZip, null) },
+                                    onClick = { viewModel.requestZipCompress(); selMenuOpen = false },
+                                )
+                                val onlyZip = sel.singleOrNull()?.let {
+                                    it.type == com.zerotoship.foldex.core.model.NodeType.FILE && ZipOps.isLikelyZip(it.name)
+                                } == true
+                                DropdownMenuItem(
+                                    text = { Text("ZIP 解凍") },
+                                    leadingIcon = { Icon(Icons.Default.Archive, null) },
+                                    enabled = onlyZip,
+                                    onClick = { viewModel.requestZipExtract(); selMenuOpen = false },
+                                )
                             }
                         } else {
                             // タイトル (内部ストレージ名等) を埋もれさせないため、常時表示は検索と
@@ -510,9 +527,18 @@ fun FileBrowserScreen(
         },
         bottomBar = {
             if (state.canPaste && !state.isSelectionMode) {
-                BottomAppBar {
+                // BottomAppBar (Material3) は高さ 80dp + 余白で縦広いので、Surface + Row で
+                // コンパクト (約 48dp) に。背景は BottomAppBar 相当。
+                androidx.compose.material3.Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 3.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .padding(horizontal = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -521,12 +547,27 @@ fun FileBrowserScreen(
                             is ClipboardOperation.Cut -> "切り取り: ${state.clipboard!!.nodes.size}件"
                             null -> ""
                         }
-                        Text(opLabel, style = MaterialTheme.typography.bodyMedium)
-                        Row {
-                            TextButton(onClick = { viewModel.clearClipboard() }) { Text("クリア") }
-                            Button(onClick = { viewModel.paste() }) {
-                                Icon(Icons.Default.ContentPaste, contentDescription = null,
-                                    modifier = Modifier.size(18.dp))
+                        Text(
+                            opLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = { viewModel.clearClipboard() },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            ) { Text("クリア") }
+                            Spacer(Modifier.size(4.dp))
+                            Button(
+                                onClick = { viewModel.paste() },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentPaste, contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
                                 Spacer(Modifier.size(4.dp))
                                 Text("貼り付け")
                             }
@@ -645,6 +686,20 @@ fun FileBrowserScreen(
             initial = initial,
             onConfirm = { viewModel.navigateToManualPath(it) },
             onDismiss = { viewModel.dismissPathInput() },
+        )
+    }
+    if (state.pendingZipCompress.isNotEmpty()) {
+        ZipCompressDialog(
+            targets = state.pendingZipCompress,
+            onDismiss = { viewModel.dismissZipCompress() },
+            onConfirm = { name, password -> viewModel.executeZipCompress(name, password) },
+        )
+    }
+    state.pendingZipExtract?.let { req ->
+        ZipExtractDialog(
+            request = req,
+            onDismiss = { viewModel.dismissZipExtract() },
+            onConfirm = { password -> viewModel.executeZipExtract(password) },
         )
     }
     state.pendingApplyViewModeToSubtree?.let { mode ->

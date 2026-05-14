@@ -57,12 +57,16 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                 for (f in children) emit(f.toFileNode(FileUri.Local(f.absolutePath)))
             }
             is FileUri.Saf -> {
+                // SAF: tree URI でも tree-document URI でも fromTreeUri で扱える。
+                // child.uri は `tree/<root>/document/<child>` の tree-document URI で返るので、
+                // 再 listing も同じく fromTreeUri 経由で 0 から N 階層辿れる。
                 val androidUri = Uri.parse(uri.documentUri)
                 val doc = DocumentFile.fromTreeUri(context, androidUri)
-                    ?: DocumentFile.fromSingleUri(context, androidUri)
                     ?: throw IOException("Cannot open SAF URI: ${uri.documentUri}")
+                if (!doc.isDirectory) throw IOException("Not a directory: ${uri.documentUri}")
                 val children = doc.listFiles()
                     .filter { options.showHidden || !it.name.orEmpty().startsWith(".") }
+                    .sortedWith(safComparator(options))
                 for (child in children) {
                     emit(child.toFileNode(FileUri.Saf(child.uri.toString())))
                 }
@@ -101,13 +105,31 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         Result.Success(FileOutputStream(file, mode == WriteMode.APPEND))
                     }
                     is FileUri.Saf -> {
-                        val modeStr = when (mode) {
-                            WriteMode.CREATE_NEW, WriteMode.OVERWRITE -> "wt"
-                            WriteMode.APPEND -> "wa"
+                        // CREATE_NEW のときは「親 (uri.documentUri) の配下に
+                        // pendingChildName という名前のファイルを新規作成」する。
+                        // 既存 (OVERWRITE/APPEND) のときはそのまま openOutputStream。
+                        if (mode == WriteMode.CREATE_NEW) {
+                            val name = uri.pendingChildName
+                                ?: return@withContext Result.Failure(
+                                    StorageError.IoError("SAF CREATE_NEW には親 + 子名が必要です"),
+                                )
+                            val parent = DocumentFile.fromTreeUri(context, Uri.parse(uri.documentUri))
+                                ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                            if (parent.findFile(name) != null) {
+                                return@withContext Result.Failure(StorageError.AlreadyExists(uri))
+                            }
+                            val mime = guessMime(name)
+                            val newDoc = parent.createFile(mime, name)
+                                ?: return@withContext Result.Failure(StorageError.IoError("SAF createFile failed: $name"))
+                            val stream = context.contentResolver.openOutputStream(newDoc.uri, "w")
+                                ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                            Result.Success(stream)
+                        } else {
+                            val modeStr = if (mode == WriteMode.APPEND) "wa" else "wt"
+                            val stream = context.contentResolver.openOutputStream(Uri.parse(uri.documentUri), modeStr)
+                                ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                            Result.Success(stream)
                         }
-                        val stream = context.contentResolver.openOutputStream(Uri.parse(uri.documentUri), modeStr)
-                            ?: return@withContext Result.Failure(StorageError.NotFound(uri))
-                        Result.Success(stream)
                     }
                     is FileUri.Remote -> Result.Failure(StorageError.IoError("Remote not supported"))
                 }
@@ -124,7 +146,27 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         if (ok || file.isDirectory) Result.Success(Unit)
                         else Result.Failure(StorageError.IoError("mkdir failed: ${uri.absolutePath}"))
                     }
-                    else -> Result.Failure(StorageError.IoError("SAF mkdir not supported"))
+                    is FileUri.Saf -> {
+                        // SAF: 親 URI の配下に pendingChildName でディレクトリを作成。
+                        val name = uri.pendingChildName
+                            ?: return@withContext Result.Failure(
+                                StorageError.IoError("SAF mkdir には親 + 子名が必要です"),
+                            )
+                        val parent = DocumentFile.fromTreeUri(context, Uri.parse(uri.documentUri))
+                            ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                        // 既に同名ディレクトリがあれば成功扱い (recursive と同じ感覚)。
+                        val existing = parent.findFile(name)
+                        if (existing != null && existing.isDirectory) return@withContext Result.Success(Unit)
+                        if (existing != null) {
+                            return@withContext Result.Failure(StorageError.AlreadyExists(uri))
+                        }
+                        val newDir = parent.createDirectory(name)
+                            ?: return@withContext Result.Failure(StorageError.IoError("SAF createDirectory failed: $name"))
+                        // newDir.exists() ぐらいの確認はしておく。
+                        if (newDir.exists()) Result.Success(Unit)
+                        else Result.Failure(StorageError.IoError("SAF mkdir succeeded but new dir not visible"))
+                    }
+                    is FileUri.Remote -> Result.Failure(StorageError.IoError("Remote not supported"))
                 }
             }
         }
@@ -141,10 +183,14 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         else Result.Failure(StorageError.IoError("delete failed: ${uri.absolutePath}"))
                     }
                     is FileUri.Saf -> {
-                        val doc = DocumentFile.fromSingleUri(context, Uri.parse(uri.documentUri))
+                        // tree-document URI でも fromTreeUri で開けば delete できる。
+                        // (fromSingleUri は plain content URI 想定で、tree-document URI で
+                        //  delete が効かないケースが Termux 等で見られるため)。
+                        val doc = DocumentFile.fromTreeUri(context, Uri.parse(uri.documentUri))
+                            ?: DocumentFile.fromSingleUri(context, Uri.parse(uri.documentUri))
                             ?: return@withContext Result.Failure(StorageError.NotFound(uri))
                         if (doc.delete()) Result.Success(Unit)
-                        else Result.Failure(StorageError.IoError("SAF delete failed"))
+                        else Result.Failure(StorageError.IoError("SAF delete failed: ${uri.documentUri}"))
                     }
                     is FileUri.Remote -> Result.Failure(StorageError.IoError("Remote not supported"))
                 }
@@ -296,6 +342,27 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
         lastModified = lastModified().takeIf { it > 0 }?.let { Instant.fromEpochMilliseconds(it) },
         permissions = Permissions(readable = canRead(), writable = canWrite()),
     )
+
+    private fun guessMime(name: String): String {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        if (ext.isEmpty()) return "application/octet-stream"
+        return android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+            ?: "application/octet-stream"
+    }
+
+    private fun safComparator(options: ListOptions): Comparator<DocumentFile> {
+        val nameOrder: Comparator<DocumentFile> = Comparator { a, b ->
+            String.CASE_INSENSITIVE_ORDER.compare(a.name.orEmpty(), b.name.orEmpty())
+        }
+        val base: Comparator<DocumentFile> = when (options.sortBy) {
+            SortBy.NAME -> nameOrder
+            SortBy.SIZE -> compareBy<DocumentFile> { it.length() }.then(nameOrder)
+            SortBy.DATE -> compareBy<DocumentFile> { it.lastModified() }.then(nameOrder)
+            SortBy.TYPE -> compareBy<DocumentFile> { it.name.orEmpty().substringAfterLast('.').lowercase() }.then(nameOrder)
+        }
+        val ordered = if (options.sortAscending) base else base.reversed()
+        return compareByDescending<DocumentFile> { it.isDirectory }.then(ordered)
+    }
 
     private fun localComparator(options: ListOptions): Comparator<File> {
         val nameOrder: Comparator<File> = Comparator { a, b -> String.CASE_INSENSITIVE_ORDER.compare(a.name, b.name) }

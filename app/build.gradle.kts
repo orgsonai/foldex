@@ -112,6 +112,9 @@ dependencies {
     implementation(libs.markwon.linkify)
     implementation(libs.juniversalchardet)
 
+    // ZIP 圧縮/解凍 + AES-256 パスワード暗号化 (P7)。
+    implementation(libs.zip4j)
+
     // Application.onCreate で SFTP (Apache MINA SSHD) より先に BC を登録するため app から直接参照する。
     implementation(libs.bouncycastle.bcprov)
 

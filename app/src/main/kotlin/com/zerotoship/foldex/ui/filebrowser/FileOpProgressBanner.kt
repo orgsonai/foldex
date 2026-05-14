@@ -41,23 +41,23 @@ fun FileOpProgressBanner(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text(
                 progress.label,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
-            Spacer(Modifier.fillMaxWidth().padding(2.dp))
+            // weight(1f) で残り幅を Spacer に充てる (旧: Spacer.fillMaxWidth() は隣を押し出してた)。
+            Spacer(Modifier.weight(1f))
             Text(
                 "${progress.currentIndex} / ${progress.totalCount}   $percent",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.padding(start = 8.dp),
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         Text(
             progress.currentName.ifEmpty { "—" },
             style = MaterialTheme.typography.bodySmall,
@@ -70,7 +70,7 @@ fun FileOpProgressBanner(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
         if (fraction >= 0f) {
             LinearProgressIndicator(
                 progress = { fraction },

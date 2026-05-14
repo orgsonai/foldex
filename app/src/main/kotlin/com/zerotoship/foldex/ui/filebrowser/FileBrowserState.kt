@@ -22,6 +22,9 @@ data class SnackbarEvent(
 /** ACTION_SEND / ACTION_SEND_MULTIPLE で外部アプリから受け取ったファイル。 */
 data class SharedIncomingFile(val sourceUri: String, val name: String)
 
+/** ZIP 解凍ダイアログのリクエスト。`needsPassword` が true ならパスワード入力を求める。 */
+data class ZipExtractRequest(val node: FileNode, val needsPassword: Boolean, val initialError: String? = null)
+
 /**
  * コピー / 移動 / 共有保存などの長時間ファイル操作の進捗。
  * 全体のうち [currentIndex]/[totalCount] 件目を処理中、現在ファイル名は [currentName]。
@@ -71,6 +74,10 @@ data class FileBrowserState(
     val propertiesTarget: FileNode? = null,
     // パス手動入力ダイアログの初期文字列 (null = 非表示)。
     val pendingPathInput: String? = null,
+    // ZIP 圧縮ダイアログ: 圧縮対象ノード一覧 (空 = 非表示)。
+    val pendingZipCompress: List<FileNode> = emptyList(),
+    // ZIP 解凍ダイアログ: 対象 zip と「パスワード要否」 (null = 非表示)。
+    val pendingZipExtract: ZipExtractRequest? = null,
 ) {
     val currentUri: FileUri? get() = breadcrumbs.lastOrNull()?.uri
     val canGoUp: Boolean get() = breadcrumbs.size > 1

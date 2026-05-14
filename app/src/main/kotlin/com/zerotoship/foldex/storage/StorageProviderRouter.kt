@@ -213,10 +213,14 @@ class StorageProviderRouter @Inject constructor(
         }
     }
 
-    /** [parent] ディレクトリ配下に [name] という子要素を持つ URI を組み立てる。SAF は未対応。 */
+    /**
+     * [parent] ディレクトリ配下に [name] という子要素を持つ URI を組み立てる。
+     * SAF はまだ存在しない子の URI を解決できないので、`pendingChildName` を持つ
+     * 「擬似 URI」を返す: mkdir/openOutput(CREATE_NEW) はこれを見て親に createDocument する。
+     */
     private fun childUri(parent: FileUri, name: String): FileUri? = when (parent) {
         is FileUri.Local -> FileUri.Local("${parent.absolutePath.trimEnd('/')}/$name")
-        is FileUri.Saf -> null
+        is FileUri.Saf -> FileUri.Saf(parent.documentUri, pendingChildName = name)
         is FileUri.Remote -> FileUri.Remote(
             protocol = parent.protocol,
             connectionId = parent.connectionId,
