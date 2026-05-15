@@ -295,8 +295,21 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
 
     private fun statSaf(uri: FileUri.Saf): Result<FileNode, StorageError> {
         val androidUri = Uri.parse(uri.documentUri)
-        val doc = DocumentFile.fromSingleUri(context, androidUri)
+        val pending = uri.pendingChildName
+        // pendingChildName 付きは「親 URI + これから作る子の名前」。
+        // 親側で findFile(name) して存在を判定する。`fromSingleUri` は何も検証せず
+        // wrapper を返してしまうので、ここを通すと「常に存在する」誤判定になる。
+        if (pending != null) {
+            val parent = DocumentFile.fromTreeUri(context, androidUri)
+                ?: return Result.Failure(StorageError.NotFound(uri))
+            val child = parent.findFile(pending)
+                ?: return Result.Failure(StorageError.NotFound(uri))
+            return Result.Success(child.toFileNode(uri))
+        }
+        val doc = DocumentFile.fromTreeUri(context, androidUri)
+            ?: DocumentFile.fromSingleUri(context, androidUri)
             ?: return Result.Failure(StorageError.NotFound(uri))
+        if (!doc.exists()) return Result.Failure(StorageError.NotFound(uri))
         return Result.Success(doc.toFileNode(uri))
     }
 
