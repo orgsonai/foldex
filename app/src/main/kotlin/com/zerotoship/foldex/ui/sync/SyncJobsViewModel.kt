@@ -10,6 +10,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -22,14 +25,29 @@ class SyncJobsViewModel @Inject constructor(
     private val scheduler: SyncScheduler,
 ) : ViewModel() {
 
-    data class UiState(val jobs: List<SyncJob> = emptyList())
+    data class UiState(
+        val jobs: List<SyncJob> = emptyList(),
+        /** 各ジョブ ID → 現在の状態 (実行中 / キュー中 / IDLE)。WorkManager から購読。 */
+        val statuses: Map<String, SyncScheduler.JobRunStatus> = emptyMap(),
+    )
 
     sealed interface Event {
         data class Message(val text: String) : Event
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val state: StateFlow<UiState> = repository.observeAll()
-        .map { UiState(jobs = it) }
+        .flatMapLatest { jobs ->
+            if (jobs.isEmpty()) {
+                flowOf(UiState(jobs = emptyList()))
+            } else {
+                // 各ジョブの状態 Flow を結合して、ジョブ一覧 + 状態マップを 1 つの UiState に。
+                val statusFlows = jobs.map { job -> scheduler.observeStatus(job.id).map { job.id to it } }
+                combine(statusFlows) { pairs ->
+                    UiState(jobs = jobs, statuses = pairs.toMap())
+                }
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
     private val _events = Channel<Event>(Channel.BUFFERED)

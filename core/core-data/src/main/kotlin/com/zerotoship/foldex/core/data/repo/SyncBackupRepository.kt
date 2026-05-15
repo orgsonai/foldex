@@ -88,14 +88,19 @@ class SyncBackupRepository @Inject constructor(
         generationId: String,
         relativePath: String,
         targetRoot: File,
+        overwrite: Boolean = false,
     ): Boolean = withContext(Dispatchers.IO) {
         val source = File(File(File(jobDir(jobId), generationId), "local"), relativePath.trimStart('/'))
         if (!source.isFile) return@withContext false
         val target = File(targetRoot, relativePath.trimStart('/'))
-        if (target.exists()) return@withContext false
+        if (target.exists() && !overwrite) return@withContext false
         target.parentFile?.mkdirs()
-        runCatching { source.copyTo(target, overwrite = false) }.isSuccess
+        runCatching { source.copyTo(target, overwrite = overwrite) }.isSuccess
     }
+
+    /** バックアップ済みファイルの実体パスを返す (リモート復元用の入力ストリームを開くため)。 */
+    fun backupFile(jobId: String, generationId: String, side: String, relativePath: String): File =
+        File(File(File(jobDir(jobId), generationId), side), relativePath.trimStart('/'))
 
     suspend fun deleteGeneration(jobId: String, generationId: String) = withContext(Dispatchers.IO) {
         File(jobDir(jobId), generationId).deleteRecursively(); Unit

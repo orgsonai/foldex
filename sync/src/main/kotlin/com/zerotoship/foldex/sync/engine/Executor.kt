@@ -50,7 +50,11 @@ internal class Executor(
     private val tracker: ProgressTracker,
     private val backup: BackupConfig? = null,
     private val now: () -> Long = System::currentTimeMillis,
+    /** 各アクション完了時に呼ばれるロガー。SyncEngine が AppLogger に流すために使う。 */
+    private val onAction: (message: String, level: ActionLevel) -> Unit = { _, _ -> },
 ) {
+
+    enum class ActionLevel { INFO, ERROR }
 
     /** delete 同期で削除前にファイルを退避する設定。null なら退避しない。 */
     class BackupConfig(
@@ -99,18 +103,36 @@ internal class Executor(
                                 is Done.Transfer -> {
                                     bytes.addAndGet(done.bytes)
                                     when (done.kind) {
-                                        TransferKind.UPLOAD -> uploaded.incrementAndGet()
-                                        TransferKind.DOWNLOAD -> downloaded.incrementAndGet()
-                                        TransferKind.CONFLICT -> conflicts.incrementAndGet()
+                                        TransferKind.UPLOAD -> {
+                                            uploaded.incrementAndGet()
+                                            onAction("Upload: ${action.path} (${done.bytes}B)", ActionLevel.INFO)
+                                        }
+                                        TransferKind.DOWNLOAD -> {
+                                            downloaded.incrementAndGet()
+                                            onAction("Download: ${action.path} (${done.bytes}B)", ActionLevel.INFO)
+                                        }
+                                        TransferKind.CONFLICT -> {
+                                            conflicts.incrementAndGet()
+                                            onAction("両側更新→転送: ${action.path} (${done.bytes}B)", ActionLevel.INFO)
+                                        }
                                     }
                                 }
-                                Done.Delete -> deleted.incrementAndGet()
+                                Done.Delete -> {
+                                    deleted.incrementAndGet()
+                                    val side = when (action) {
+                                        is SyncAction.DeleteRemote -> "remote"
+                                        is SyncAction.DeleteLocal -> "local"
+                                        else -> "?"
+                                    }
+                                    onAction("Delete($side): ${action.path}", ActionLevel.INFO)
+                                }
                             }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             failed.incrementAndGet()
                             errors.add(SyncResult.ActionError(action.path, e.message ?: e.toString()))
+                            onAction("失敗: ${action.path} — ${e.message}", ActionLevel.ERROR)
                         }
                         tracker.actionCompleted()
                     }

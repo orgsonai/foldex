@@ -62,6 +62,27 @@ class SyncScheduler @Inject constructor(
         workManager.enqueueUniquePeriodicWork(periodicName(job.id), ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
+    /**
+     * 指定ジョブの「いまの実行状態」を観測する Flow。
+     * WorkManager のタグ単位で各 WorkInfo を取り、優先度の高い RUNNING / ENQUEUED を抽出する。
+     */
+    fun observeStatus(jobId: String): kotlinx.coroutines.flow.Flow<JobRunStatus> {
+        return workManager.getWorkInfosByTagFlow(tagFor(jobId)).let { src ->
+            kotlinx.coroutines.flow.flow {
+                src.collect { infos ->
+                    val status = when {
+                        infos.any { it.state == androidx.work.WorkInfo.State.RUNNING } -> JobRunStatus.RUNNING
+                        infos.any { it.state == androidx.work.WorkInfo.State.ENQUEUED } -> JobRunStatus.ENQUEUED
+                        else -> JobRunStatus.IDLE
+                    }
+                    emit(status)
+                }
+            }
+        }
+    }
+
+    enum class JobRunStatus { IDLE, ENQUEUED, RUNNING }
+
     /** いますぐ 1 回だけ同期する (手動同期)。 */
     fun runNow(job: SyncJob) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()

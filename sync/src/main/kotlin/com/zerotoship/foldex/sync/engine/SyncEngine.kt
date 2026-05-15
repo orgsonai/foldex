@@ -32,6 +32,7 @@ class SyncEngine @Inject constructor(
     private val stateRepository: SyncStateRepository,
     private val settingsRepository: SettingsRepository,
     private val backupRepository: SyncBackupRepository,
+    private val appLogger: com.zerotoship.foldex.core.data.log.AppLogger,
 ) {
 
     suspend fun run(
@@ -105,6 +106,7 @@ class SyncEngine @Inject constructor(
                 null
             }
 
+            val tag = "Sync(${job.name})"
             val report = Executor(
                 direction = job.direction,
                 localProvider = storage,
@@ -116,6 +118,11 @@ class SyncEngine @Inject constructor(
                 jobId = job.id,
                 tracker = tracker,
                 backup = backupConfig,
+                // 各アクションを集約ログに記録 (詳細ログ → 実行ログ画面から確認可能)。
+                onAction = { message, level ->
+                    if (level == Executor.ActionLevel.ERROR) appLogger.error(tag, message)
+                    else appLogger.info(tag, message)
+                },
             ).execute(actions, localTree, remoteTree)
             backupConfig?.let { runCatching { backupRepository.pruneEmpty(it.genDir) } }
 
@@ -136,19 +143,28 @@ class SyncEngine @Inject constructor(
                 errors = report.errors,
             )
             runCatching { jobRepository.updateLastRun(job.id, result.toSummaryLine(), finishedAt) }
+            // 実行サマリを集約ログに記録。個別のエラーは Executor.onAction で既に書き出し済み。
+            appLogger.info(tag, result.toSummaryLine())
             tracker.done()
             result
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            failed(job, startedAt, e.message ?: e.toString(), tracker)
+            failed(job, startedAt, e.message ?: e.toString(), tracker, e)
         }
     }
 
-    private suspend fun failed(job: SyncJob, startedAt: Long, message: String, tracker: ProgressTracker): SyncResult {
+    private suspend fun failed(
+        job: SyncJob,
+        startedAt: Long,
+        message: String,
+        tracker: ProgressTracker,
+        cause: Throwable? = null,
+    ): SyncResult {
         val finishedAt = System.currentTimeMillis()
         val result = SyncResult.failedToScan(job.id, startedAt, finishedAt, message)
         runCatching { jobRepository.updateLastRun(job.id, result.toSummaryLine(), finishedAt) }
+        appLogger.error("Sync(${job.name})", message, cause)
         tracker.done()
         return result
     }

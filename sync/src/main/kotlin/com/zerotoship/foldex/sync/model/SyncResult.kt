@@ -30,7 +30,12 @@ data class SyncResult(
 
     data class ActionError(val path: String, val message: String)
 
-    val transferredCount: Int get() = uploaded + downloaded
+    /**
+     * 実際に転送したファイル件数。`uploaded` / `downloaded` に加え、
+     * 両側変更があってポリシーで解決した [conflicts] も「転送した」に含める
+     * (= 競合は失敗でも別カウントでもなく、勝者側を流した転送)。
+     */
+    val transferredCount: Int get() = uploaded + downloaded + conflicts
 
     /** SyncJob.lastRunResult に格納する 1 行サマリ。 */
     fun toSummaryLine(): String = buildString {
@@ -42,8 +47,8 @@ data class SyncResult(
             },
         )
         append(" / 転送 ").append(transferredCount)
+        if (conflicts > 0) append(" (両側更新 ").append(conflicts).append(")")
         if (deleted > 0) append(" 削除 ").append(deleted)
-        if (conflicts > 0) append(" 競合 ").append(conflicts)
         if (skipped > 0) append(" スキップ ").append(skipped)
         if (failed > 0) append(" 失敗 ").append(failed)
     }

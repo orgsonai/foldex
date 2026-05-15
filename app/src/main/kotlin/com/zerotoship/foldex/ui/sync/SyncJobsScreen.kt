@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -94,6 +95,8 @@ fun SyncJobsScreen(
                 items(state.jobs, key = { it.id }) { job ->
                     SyncJobRow(
                         job = job,
+                        runStatus = state.statuses[job.id]
+                            ?: com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE,
                         onRunNow = { viewModel.runNow(job) },
                         onToggleEnabled = { enabled -> viewModel.setEnabled(job, enabled) },
                         onEdit = { onEdit(job) },
@@ -127,6 +130,7 @@ fun SyncJobsScreen(
 @Composable
 private fun SyncJobRow(
     job: SyncJob,
+    runStatus: com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus,
     onRunNow: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onEdit: () -> Unit,
@@ -136,7 +140,16 @@ private fun SyncJobRow(
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(job.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        job.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    JobStatusChip(runStatus)
+                }
                 Spacer(Modifier.height(2.dp))
                 Text(
                     "${directionShortLabel(job.direction)} ・ ${scheduleLabel(job.schedule)}",
@@ -149,11 +162,44 @@ private fun SyncJobRow(
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onRunNow) { Icon(Icons.Default.Sync, contentDescription = "今すぐ同期") }
+            // 実行中はスピナー、それ以外は通常の Sync アイコン。
+            IconButton(onClick = onRunNow, enabled = runStatus == com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE) {
+                if (runStatus == com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.RUNNING) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp),
+                    )
+                } else {
+                    Icon(Icons.Default.Sync, contentDescription = "今すぐ同期")
+                }
+            }
             IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "編集") }
             IconButton(onClick = onOpenBackups) { Icon(Icons.Default.History, contentDescription = "削除バックアップ") }
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "削除") }
         }
+    }
+}
+
+@Composable
+private fun JobStatusChip(status: com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus) {
+    val (label, container, content) = when (status) {
+        com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.RUNNING ->
+            Triple("実行中", MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
+        com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.ENQUEUED ->
+            Triple("キュー中", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+        com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE -> return
+    }
+    androidx.compose.material3.Surface(
+        color = container,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+        modifier = Modifier.padding(start = 8.dp),
+    ) {
+        Text(
+            label,
+            color = content,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
     }
 }
