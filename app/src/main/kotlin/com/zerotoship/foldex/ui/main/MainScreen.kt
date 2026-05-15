@@ -279,6 +279,7 @@ fun MainScreen(
                 SettingsScreen(
                     onOpenFileTypes = { navController.navigate("settings/open-with") },
                     onOpenTrash = { navController.navigate("settings/trash") },
+                    onOpenLogs = { navController.navigate("settings/logs") },
                 )
             }
             composable("settings/open-with") {
@@ -286,6 +287,9 @@ fun MainScreen(
             }
             composable("settings/trash") {
                 TrashScreen(onBack = { navController.popBackStack() })
+            }
+            composable("settings/logs") {
+                com.zerotoship.foldex.ui.settings.AppLogScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = "media/{kind}",

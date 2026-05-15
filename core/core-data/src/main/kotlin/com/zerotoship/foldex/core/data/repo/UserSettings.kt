@@ -32,4 +32,11 @@ data class UserSettings(
     val syncBackupThresholdMb: Int = 50,
     /** しきい値を超えたファイルの扱い。 */
     val syncBackupPolicyOverThreshold: SyncBackupPolicy = SyncBackupPolicy.ASK,
+    /**
+     * 内蔵テキストエディタで「編集可能」として開く上限 (KB)。
+     * これを超えるテキストは閲覧専用 (LazyColumn) で開かれる。既定は 512KB。
+     * BasicTextField + Gutter は ~4MB クラスでも動くが、巨大ファイルでは
+     * 入力レイテンシが厳しくなる端末があるため、ユーザーが好みで上げ下げできる。
+     */
+    val editorEditableLimitKb: Int = 512,
 )

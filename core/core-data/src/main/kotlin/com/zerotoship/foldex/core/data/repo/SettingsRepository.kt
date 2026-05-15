@@ -46,6 +46,7 @@ class SettingsRepository @Inject constructor(
             syncBackupThresholdMb = p[KEY_SYNC_BACKUP_THRESHOLD] ?: 50,
             syncBackupPolicyOverThreshold = p[KEY_SYNC_BACKUP_POLICY]
                 ?.let { runCatching { SyncBackupPolicy.valueOf(it) }.getOrNull() } ?: SyncBackupPolicy.ASK,
+            editorEditableLimitKb = p[KEY_EDITOR_LIMIT_KB] ?: 512,
         )
     }
 
@@ -72,6 +73,8 @@ class SettingsRepository @Inject constructor(
     suspend fun setSyncBackupPolicyOverThreshold(policy: SyncBackupPolicy) =
         edit { it[KEY_SYNC_BACKUP_POLICY] = policy.name }
 
+    suspend fun setEditorEditableLimitKb(kb: Int) = edit { it[KEY_EDITOR_LIMIT_KB] = kb }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         ds.edit(block)
     }
@@ -88,5 +91,6 @@ class SettingsRepository @Inject constructor(
         val KEY_SYNC_BACKUP_GENS = intPreferencesKey("sync_backup_generations")
         val KEY_SYNC_BACKUP_THRESHOLD = intPreferencesKey("sync_backup_threshold_mb")
         val KEY_SYNC_BACKUP_POLICY = stringPreferencesKey("sync_backup_policy")
+        val KEY_EDITOR_LIMIT_KB = intPreferencesKey("editor_editable_limit_kb")
     }
 }

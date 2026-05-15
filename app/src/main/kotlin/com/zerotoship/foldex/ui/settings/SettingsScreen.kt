@@ -21,9 +21,18 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,17 +48,26 @@ import com.zerotoship.foldex.core.model.ThemeMode
 fun SettingsScreen(
     onOpenFileTypes: () -> Unit = {},
     onOpenTrash: () -> Unit = {},
+    onOpenLogs: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val cacheBytes by viewModel.cacheBytes.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val versionName = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull() ?: "?"
     }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var pendingClear by remember { mutableStateOf(false) }
+
+    // 画面を開いたタイミングと、クリア完了直後にサイズを再計測する。
+    LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(title = { Text("設定") }) },
     ) { padding ->
         Column(
@@ -192,6 +210,44 @@ fun SettingsScreen(
                 subtitle = "拡張子ごとに内蔵ビューア / 毎回選択 / 外部アプリ を指定",
                 onClick = onOpenFileTypes,
             )
+            SettingRow(
+                title = "テキストエディタの編集可能上限",
+                subtitle = "これを超えるテキストは閲覧専用で開きます (端末性能に合わせて調整)",
+                wide = true,
+            ) {
+                ChipsControl {
+                    listOf(128, 256, 512, 1024, 2048, 4096, 8192).forEach { kb ->
+                        FilterChip(
+                            selected = settings.editorEditableLimitKb == kb,
+                            onClick = { viewModel.setEditorEditableLimitKb(kb) },
+                            label = { Text(if (kb >= 1024) "${kb / 1024}MB" else "${kb}KB") },
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider()
+            SettingsSectionHeader("ログ")
+            SettingRow(
+                title = "実行ログ",
+                subtitle = "同期 / サーバ起動失敗 / クラッシュ等の集約ログを確認・共有",
+                onClick = onOpenLogs,
+            )
+
+            HorizontalDivider()
+            SettingsSectionHeader("ストレージ")
+            SettingRow(
+                title = "キャッシュをクリア",
+                subtitle = buildString {
+                    append("内蔵ビューア / 圧縮・解凍 の一時ファイルを削除します")
+                    val bytes = cacheBytes
+                    if (bytes != null) {
+                        append("\n現在の使用量: ")
+                        append(formatBytes(bytes))
+                    }
+                },
+                onClick = { pendingClear = true },
+            )
 
             HorizontalDivider()
             SettingsSectionHeader("詳細")
@@ -200,6 +256,37 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
         }
     }
+
+    if (pendingClear) {
+        AlertDialog(
+            onDismissRequest = { pendingClear = false },
+            title = { Text("キャッシュをクリア") },
+            text = {
+                Text(
+                    "内蔵ビューア用のダウンロードキャッシュや圧縮・解凍の一時ファイルを削除します。" +
+                        "サーバ/同期ジョブ・接続情報・ゴミ箱・同期バックアップは消えません。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingClear = false
+                    viewModel.clearCache { freed ->
+                        scope.launch { snackbar.showSnackbar("${formatBytes(freed)} を解放しました") }
+                    }
+                }) { Text("クリア") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingClear = false }) { Text("キャンセル") }
+            },
+        )
+    }
+}
+
+private fun formatBytes(b: Long): String = when {
+    b >= 1_000_000_000 -> "%.2f GB".format(b / 1_000_000_000.0)
+    b >= 1_000_000 -> "%.1f MB".format(b / 1_000_000.0)
+    b >= 1_000 -> "%.0f KB".format(b / 1_000.0)
+    else -> "$b B"
 }
 
 private val ThemeMode.displayName: String
