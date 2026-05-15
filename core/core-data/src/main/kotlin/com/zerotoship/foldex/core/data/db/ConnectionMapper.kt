@@ -19,6 +19,7 @@ internal fun ConnectionEntity.toModel(): Connection {
             share = smbShare ?: error("smbShare missing for SMB connection $id"),
             domain = smbDomain,
             charset = charset,
+            initialPath = initialPath.orEmpty(),
         )
         Protocol.SFTP -> Connection.Sftp(
             id = id,
@@ -29,6 +30,7 @@ internal fun ConnectionEntity.toModel(): Connection {
             authMethod = auth,
             hostKeyFingerprint = sftpHostKeyFingerprint,
             charset = charset,
+            initialPath = initialPath.orEmpty(),
         )
         Protocol.FTP -> Connection.Ftp(
             id = id,
@@ -40,6 +42,7 @@ internal fun ConnectionEntity.toModel(): Connection {
             useTls = ftpUseTls,
             passiveMode = ftpPassiveMode,
             charset = charset,
+            initialPath = initialPath.orEmpty(),
         )
         Protocol.WEBDAV -> Connection.WebDav(
             id = id,
@@ -76,6 +79,7 @@ internal fun Connection.toEntity(
     webdavUseHttps = (this as? Connection.WebDav)?.useHttps ?: true,
     ftpUseTls = (this as? Connection.Ftp)?.useTls ?: false,
     ftpPassiveMode = (this as? Connection.Ftp)?.passiveMode ?: true,
+    initialPath = initialPath.takeIf { it.isNotBlank() },
     credentialRef = credentialRef,
     charset = charset,
     createdAt = createdAt,

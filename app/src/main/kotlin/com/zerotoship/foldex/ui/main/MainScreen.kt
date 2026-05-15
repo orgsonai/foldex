@@ -184,12 +184,13 @@ fun MainScreen(
                         }
                     },
                     onOpenConnection = { conn ->
-                        // 4 種別の Remote を FileBrowser で開く。SMB だけ専用ヘルパがあるので使う。
+                        // 4 種別の Remote を FileBrowser で開く。initialPath があればそこへ navigate。
+                        val initial = conn.initialPath.ifBlank { "/" }
                         when (conn) {
                             is com.zerotoship.foldex.core.model.Connection.Smb ->
-                                browserViewModel.openSmbConnection(conn.id, conn.name)
+                                browserViewModel.openSmbConnection(conn.id, conn.name, initial)
                             else -> browserViewModel.open(
-                                com.zerotoship.foldex.core.model.FileUri.Remote(conn.protocol, conn.id, "/"),
+                                com.zerotoship.foldex.core.model.FileUri.Remote(conn.protocol, conn.id, initial),
                                 displayName = conn.name,
                             )
                         }
@@ -209,10 +210,22 @@ fun MainScreen(
                 ConnectionsScreen(
                     onBack = { selectTab(TopTab.FILES) },
                     onOpen = { connection ->
-                        if (connection is Connection.Smb) {
-                            browserViewModel.openSmbConnection(connection.id, connection.name)
-                            selectTab(TopTab.FILES)
+                        // 全プロトコルを開けるようにする。SMB は専用ヘルパ、
+                        // それ以外は Remote URI で initialPath (なければ "/") を開く。
+                        val initial = connection.initialPath.ifBlank { "/" }
+                        when (connection) {
+                            is Connection.Smb ->
+                                browserViewModel.openSmbConnection(connection.id, connection.name, initial)
+                            else -> browserViewModel.open(
+                                com.zerotoship.foldex.core.model.FileUri.Remote(
+                                    connection.protocol,
+                                    connection.id,
+                                    initial,
+                                ),
+                                displayName = connection.name,
+                            )
                         }
+                        selectTab(TopTab.FILES)
                     },
                 )
             }

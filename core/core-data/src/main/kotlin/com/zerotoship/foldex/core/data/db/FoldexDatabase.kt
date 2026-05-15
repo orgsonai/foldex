@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
         SyncJobEntity::class,
         SyncStateEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class FoldexDatabase : RoomDatabase() {

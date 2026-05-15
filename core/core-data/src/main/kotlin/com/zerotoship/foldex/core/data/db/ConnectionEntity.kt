@@ -21,6 +21,13 @@ data class ConnectionEntity(
     val ftpUseTls: Boolean = false,
     val ftpPassiveMode: Boolean = true,
 
+    /**
+     * 接続を開いた直後にこのサブパスへ自動 navigate する (任意)。
+     * SMB は share 配下の相対パス、SFTP/FTP は root からの絶対/相対パス。
+     * 空ならルート ("/") を開く。Room v4→v5 は destructive migration で吸収。
+     */
+    val initialPath: String? = null,
+
     val credentialRef: String? = null,
 
     val charset: String = "UTF-8",

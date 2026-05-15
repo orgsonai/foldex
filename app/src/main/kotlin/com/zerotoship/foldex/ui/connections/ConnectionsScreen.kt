@@ -384,6 +384,17 @@ private fun SmbExtraFields(
         onValueChange = { v -> onUpdate { it.copy(share = v) } },
         label = { Text("共有名") },
         singleLine = true,
+        supportingText = { Text("share 単体 (例: public)。フォルダパスは下の「初期パス」へ") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.initialPath,
+        onValueChange = { v -> onUpdate { it.copy(initialPath = v) } },
+        label = { Text("初期パス (任意)") },
+        singleLine = true,
+        placeholder = { Text("/sub/folder") },
+        supportingText = { Text("接続を開いた直後にここへ自動移動") },
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(8.dp))
@@ -482,6 +493,15 @@ private fun SftpExtraFields(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.initialPath,
+        onValueChange = { v -> onUpdate { it.copy(initialPath = v) } },
+        label = { Text("初期パス (任意)") },
+        singleLine = true,
+        placeholder = { Text("/home/user") },
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
@@ -527,6 +547,15 @@ private fun FtpExtraFields(
         onValueChange = { v -> onUpdate { it.copy(charset = v) } },
         label = { Text("文字コード (UTF-8 / Shift_JIS / EUC-JP など)") },
         singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = state.initialPath,
+        onValueChange = { v -> onUpdate { it.copy(initialPath = v) } },
+        label = { Text("初期パス (任意)") },
+        singleLine = true,
+        placeholder = { Text("/pub") },
         modifier = Modifier.fillMaxWidth(),
     )
 }

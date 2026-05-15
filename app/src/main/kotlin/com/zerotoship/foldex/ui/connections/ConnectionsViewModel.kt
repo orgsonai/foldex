@@ -79,6 +79,7 @@ class ConnectionsViewModel @Inject constructor(
                 charset = connection.charset,
                 basePath = "/",
                 useHttps = true,
+                initialPath = connection.initialPath,
                 sftpAuthMode = SftpAuthMode.PASSWORD,
                 sftpPrivateKeyPem = "",
                 sftpPublicKeyOpenSsh = "",
@@ -101,6 +102,7 @@ class ConnectionsViewModel @Inject constructor(
                 charset = connection.charset,
                 basePath = "/",
                 useHttps = true,
+                initialPath = connection.initialPath,
                 sftpAuthMode = if (connection.authMethod == AuthMethod.PUBLIC_KEY) {
                     SftpAuthMode.PUBLIC_KEY
                 } else {
@@ -127,6 +129,7 @@ class ConnectionsViewModel @Inject constructor(
                 charset = connection.charset,
                 basePath = "/",
                 useHttps = true,
+                initialPath = connection.initialPath,
                 sftpAuthMode = SftpAuthMode.PASSWORD,
                 sftpPrivateKeyPem = "",
                 sftpPublicKeyOpenSsh = "",
@@ -308,6 +311,16 @@ class ConnectionsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val authMethod = if (draft.anonymous) AuthMethod.ANONYMOUS else AuthMethod.PASSWORD
+            // 「共有名」フィールドに `share/sub/path` 形式で入力されたら、先頭セグメントが share、
+            // 残りを initialPath として分解する (SMB プロトコル仕様: share は単一の名前)。
+            val rawShare = draft.share.trim().trim('/')
+            val firstSlash = rawShare.indexOf('/')
+            val parsedShare = if (firstSlash >= 0) rawShare.substring(0, firstSlash) else rawShare
+            val parsedSub = if (firstSlash >= 0) rawShare.substring(firstSlash) else ""
+            val initialPath = listOf(parsedSub, draft.initialPath.trim())
+                .firstOrNull { it.isNotBlank() }
+                ?.let { normalizeInitialPath(it) }
+                ?: ""
             val connection = Connection.Smb(
                 id = draft.id,
                 name = draft.name.trim(),
@@ -315,8 +328,9 @@ class ConnectionsViewModel @Inject constructor(
                 port = draft.effectivePort(),
                 username = draft.username.trim().ifBlank { null },
                 authMethod = authMethod,
-                share = draft.share.trim(),
+                share = parsedShare,
                 domain = draft.domain.trim().ifBlank { null },
+                initialPath = initialPath,
             )
             val credential: Credential? = when {
                 draft.anonymous -> Credential.Anonymous
@@ -341,6 +355,7 @@ class ConnectionsViewModel @Inject constructor(
                 useTls = draft.useTls,
                 passiveMode = draft.passiveMode,
                 charset = draft.charset.trim().ifBlank { "UTF-8" },
+                initialPath = normalizeInitialPath(draft.initialPath),
             )
             val credential: Credential? = when {
                 draft.anonymous -> Credential.Anonymous
@@ -385,6 +400,7 @@ class ConnectionsViewModel @Inject constructor(
                 username = draft.username.trim(),
                 authMethod = authMethod,
                 hostKeyFingerprint = draft.hostKeyFingerprint.trim().ifBlank { null },
+                initialPath = normalizeInitialPath(draft.initialPath),
             )
             val credential: Credential? = when {
                 draft.sftpAuthMode == SftpAuthMode.PUBLIC_KEY && draft.sftpPrivateKeyPem.isNotBlank() ->
@@ -425,6 +441,12 @@ class ConnectionsViewModel @Inject constructor(
         _events.trySend(event)
     }
 
+    /** "/" 始まりに揃え、末尾スラッシュは取る。空白入力は "" を返す。 */
+    private fun normalizeInitialPath(raw: String): String {
+        val trimmed = raw.trim().trim('/')
+        return if (trimmed.isEmpty()) "" else "/$trimmed"
+    }
+
     /** SFTP の認証方式 UI 選択。 */
     enum class SftpAuthMode { PASSWORD, PUBLIC_KEY }
 
@@ -446,6 +468,8 @@ class ConnectionsViewModel @Inject constructor(
         val charset: String,
         val basePath: String,
         val useHttps: Boolean,
+        /** SMB/SFTP/FTP の「接続を開いた直後に開くサブパス」(任意)。空ならルートから。 */
+        val initialPath: String = "",
         // SFTP 専用: 認証方式 + 生成済み鍵ペア (UI 表示・保存用)。
         val sftpAuthMode: SftpAuthMode = SftpAuthMode.PASSWORD,
         val sftpPrivateKeyPem: String = "",
