@@ -28,15 +28,17 @@ internal class SftpSessionPool @Inject constructor(
 
     suspend fun acquire(connectionId: String): SFTPClient {
         mutex.withLock {
-            cache[connectionId]?.let { holder ->
-                if (holder.client.isConnected) return holder.sftp
-                close(holder)
-                cache.remove(connectionId)
-            }
             val connection = repository.findById(connectionId)
                 ?: error("Connection not found: $connectionId")
             require(connection is Connection.Sftp) {
                 "SftpSessionPool only handles Connection.Sftp (got ${connection::class.simpleName})"
+            }
+            cache[connectionId]?.let { holder ->
+                // 接続が生きていて、かつキャッシュ時の host/port/username/authMethod/fingerprint が
+                // 現在と一致するなら再利用。それ以外は張り直し (編集後即時反映)。
+                if (holder.client.isConnected && holder.matches(connection)) return holder.sftp
+                close(holder)
+                cache.remove(connectionId)
             }
             val credential = repository.loadCredential(connectionId) ?: Credential.Anonymous
             val holder = open(connection, credential)
@@ -70,7 +72,12 @@ internal class SftpSessionPool @Inject constructor(
             client.connect(connection.host, connection.port)
             authenticate(client, connection, credential)
             val sftp = client.newSFTPClient()
-            return Holder(client = client, sftp = sftp, capturedFingerprint = capturedFingerprint)
+            return Holder(
+                spec = connection,
+                client = client,
+                sftp = sftp,
+                capturedFingerprint = capturedFingerprint,
+            )
         } catch (t: Throwable) {
             runCatching { client.disconnect() }
             throw t
@@ -120,10 +127,19 @@ internal class SftpSessionPool @Inject constructor(
     }
 
     private data class Holder(
+        /** プール時点の接続設定。再利用判定に使う。 */
+        val spec: Connection.Sftp,
         val client: SSHClient,
         val sftp: SFTPClient,
         val capturedFingerprint: String?,
-    )
+    ) {
+        fun matches(current: Connection.Sftp): Boolean =
+            spec.host == current.host &&
+                spec.port == current.port &&
+                spec.username == current.username &&
+                spec.authMethod == current.authMethod &&
+                spec.hostKeyFingerprint == current.hostKeyFingerprint
+    }
 
     private class OneShotPasswordFinder(private val chars: CharArray) : PasswordFinder {
         override fun reqPassword(resource: Resource<*>?): CharArray = chars.copyOf()

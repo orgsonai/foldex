@@ -20,18 +20,23 @@ internal class WebDavSessionStore @Inject constructor(
     private val repository: ConnectionRepository,
 ) {
     private val mutex = Mutex()
-    private val cache = mutableMapOf<String, Session>()
+    private val cache = mutableMapOf<String, Holder>()
 
     suspend fun resolve(connectionId: String): Session = mutex.withLock {
-        cache.getOrPut(connectionId) {
-            val connection = repository.findById(connectionId)
-                ?: error("Connection not found: $connectionId")
-            require(connection is Connection.WebDav) {
-                "WebDavSessionStore only handles Connection.WebDav (got ${connection::class.simpleName})"
-            }
-            val credential = repository.loadCredential(connectionId) ?: Credential.Anonymous
-            buildSession(connection, credential)
+        val connection = repository.findById(connectionId)
+            ?: error("Connection not found: $connectionId")
+        require(connection is Connection.WebDav) {
+            "WebDavSessionStore only handles Connection.WebDav (got ${connection::class.simpleName})"
         }
+        cache[connectionId]?.let { holder ->
+            // host/port/useHttps/basePath/username が変わっていなければ再利用。
+            // 変わっていれば作り直し (= 編集後即時反映)。
+            if (holder.matches(connection)) return@withLock holder.session
+        }
+        val credential = repository.loadCredential(connectionId) ?: Credential.Anonymous
+        val session = buildSession(connection, credential)
+        cache[connectionId] = Holder(spec = connection, session = session)
+        session
     }
 
     suspend fun invalidate(connectionId: String) {
@@ -67,6 +72,18 @@ internal class WebDavSessionStore @Inject constructor(
             is Credential.SshPrivateKey -> error("SSH private key is not valid for WebDAV")
         }
         return Session(baseUrl = baseUrl, authHeader = authHeader)
+    }
+
+    private data class Holder(
+        val spec: Connection.WebDav,
+        val session: Session,
+    ) {
+        fun matches(current: Connection.WebDav): Boolean =
+            spec.host == current.host &&
+                spec.port == current.port &&
+                spec.useHttps == current.useHttps &&
+                spec.basePath == current.basePath &&
+                spec.username == current.username
     }
 
     data class Session(val baseUrl: HttpUrl, val authHeader: String?) {
