@@ -31,6 +31,7 @@ coil                = "3.0.4"
 media3              = "1.4.1"
 markwon             = "4.6.2"
 zip4j               = "2.11.5"
+sora-editor         = "0.23.5"
 
 [libraries]
 # AndroidX Core
@@ -128,6 +129,9 @@ markwon-linkify             = { group = "io.noties.markwon",       name = "linki
 
 # ZIP 圧縮/解凍 + AES 暗号化 (P7) — zip4j
 zip4j                       = { group = "net.lingala.zip4j",       name = "zip4j",                  version.ref = "zip4j" }
+
+# テキストエディタ (P7) — Sora Editor (Canvas 描画 + 仮想化、コードエディタ向け)
+sora-editor                 = { group = "io.github.Rosemoe.sora-editor", name = "editor",           version.ref = "sora-editor" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }
