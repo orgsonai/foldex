@@ -44,6 +44,7 @@ class FtpServerManager @Inject constructor(
     private val networkResolver: NetworkBindingResolver,
     private val logger: ServerLogger,
     private val ftpsCertManager: FtpsCertManager,
+    private val appLogger: com.zerotoship.foldex.core.data.log.AppLogger,
 ) {
     private val mutex = Mutex()
     private val running: MutableMap<String, FtpServer> = mutableMapOf()
@@ -77,6 +78,7 @@ class FtpServerManager @Inject constructor(
                     details = "type=FTP,reason=${result.error.message}",
                 )
             }
+            appLogger.error("Server/FTP", msg)
         }
         result
     }

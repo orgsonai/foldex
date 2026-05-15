@@ -25,6 +25,9 @@ class FoldexApplication : Application(), Configuration.Provider, SingletonImageL
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
+    @Inject
+    lateinit var appLogger: com.zerotoship.foldex.core.data.log.AppLogger
+
     override fun onCreate() {
         super.onCreate()
         // Android には "user.home" システムプロパティが無く、Apache MINA SSHD が
@@ -81,6 +84,8 @@ class FoldexApplication : Application(), Configuration.Provider, SingletonImageL
                     throwable.printStackTrace(w)
                 }
                 Log.e(TAG, "Uncaught exception on ${thread.name}", throwable)
+                // 集約ログにも書き出す (設定→実行ログから後追い)。
+                runCatching { appLogger.error("Crash", "Uncaught on ${thread.name}", throwable) }
             }
             // Apache MINA / Apache FtpServer のワーカで Error 系 (CoderMalfunctionError 等) が
             // 漏れるとプロセス全体が死ぬが、サーバ側セッションを失うだけで他機能は継続できる。

@@ -45,6 +45,7 @@ class SftpServerManager @Inject constructor(
     private val hasher: Argon2idHasher,
     private val networkResolver: NetworkBindingResolver,
     private val logger: ServerLogger,
+    private val appLogger: com.zerotoship.foldex.core.data.log.AppLogger,
 ) {
     private val mutex = Mutex()
     private val running: MutableMap<String, SshServer> = mutableMapOf()
@@ -81,6 +82,7 @@ class SftpServerManager @Inject constructor(
                     details = "type=SFTP,reason=${result.error.message}",
                 )
             }
+            appLogger.error("Server/SFTP", msg)
         }
         result
     }
