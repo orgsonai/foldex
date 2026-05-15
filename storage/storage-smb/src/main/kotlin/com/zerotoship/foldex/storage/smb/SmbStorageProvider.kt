@@ -99,6 +99,25 @@ class SmbStorageProvider @Inject internal constructor(
             }
         }
 
+    override suspend fun openInputRange(uri: FileUri, offset: Long): Result<InputStream, StorageError> =
+        withContext(Dispatchers.IO) {
+            runCatching(uri) {
+                val remote = uri.asRemote()
+                    ?: return@runCatching Result.Failure(StorageError.IoError("Not an SMB URI"))
+                val share = pool.acquire(remote.connectionId)
+                val file = share.openFile(
+                    SmbPath.toSmb(remote.path),
+                    EnumSet.of(AccessMask.GENERIC_READ),
+                    EnumSet.noneOf(FileAttributes::class.java),
+                    SMB2ShareAccess.ALL,
+                    SMB2CreateDisposition.FILE_OPEN,
+                    EnumSet.noneOf(SMB2CreateOptions::class.java),
+                )
+                // SMB2 READ は fileOffset 指定可能なので位置指定 InputStream で返す。
+                Result.Success(SmbRangeInputStream(file, startOffset = offset) as InputStream)
+            }
+        }
+
     override suspend fun openOutput(uri: FileUri, mode: WriteMode): Result<OutputStream, StorageError> =
         withContext(Dispatchers.IO) {
             runCatching(uri) {

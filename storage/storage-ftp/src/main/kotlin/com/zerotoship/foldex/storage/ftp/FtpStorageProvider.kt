@@ -95,6 +95,26 @@ class FtpStorageProvider @Inject internal constructor(
             }
         }
 
+    override suspend fun openInputRange(uri: FileUri, offset: Long): Result<InputStream, StorageError> =
+        withContext(Dispatchers.IO) {
+            runCatching(uri) {
+                val remote = uri.asRemote()
+                    ?: return@runCatching Result.Failure(StorageError.IoError("Not an FTP URI"))
+                if (offset <= 0L) return@runCatching openInput(uri)
+                val client = pool.acquire(remote.connectionId)
+                // FTP REST <offset> で次の retrieve をその位置から開始させる (BINARY mode 前提)。
+                client.setRestartOffset(offset)
+                val stream = try {
+                    client.retrieveFileStream(FtpPath.normalize(remote.path))
+                } finally {
+                    // REST は次の 1 リクエストにだけ効く設定だが、明示的に 0 に戻して状態を清算。
+                    client.setRestartOffset(0L)
+                }
+                if (stream == null) return@runCatching Result.Failure(translateReply(uri, client))
+                Result.Success(FtpInputStream(client, stream) as InputStream)
+            }
+        }
+
     override suspend fun openOutput(uri: FileUri, mode: WriteMode): Result<OutputStream, StorageError> =
         withContext(Dispatchers.IO) {
             runCatching(uri) {

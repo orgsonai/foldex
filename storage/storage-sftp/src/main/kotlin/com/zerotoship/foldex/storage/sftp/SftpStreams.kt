@@ -9,8 +9,15 @@ import java.io.OutputStream
  */
 internal class SftpInputStream(
     private val file: RemoteFile,
+    fileOffset: Long = 0L,
 ) : InputStream() {
-    private val delegate: InputStream = file.RemoteFileInputStream()
+    // sshj は RemoteFileInputStream(long fileOffset) で位置指定ストリームを作れる。
+    // 0 のときは無引数版に揃える (オーバーヘッドを避けるため)。
+    private val delegate: InputStream = if (fileOffset > 0L) {
+        file.RemoteFileInputStream(fileOffset)
+    } else {
+        file.RemoteFileInputStream()
+    }
 
     override fun read(): Int = delegate.read()
     override fun read(b: ByteArray, off: Int, len: Int): Int = delegate.read(b, off, len)

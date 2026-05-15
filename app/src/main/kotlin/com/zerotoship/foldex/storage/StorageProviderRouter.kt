@@ -84,6 +84,9 @@ class StorageProviderRouter @Inject constructor(
     override suspend fun openInput(uri: FileUri): Result<InputStream, StorageError> =
         pick(uri).openInput(uri)
 
+    override suspend fun openInputRange(uri: FileUri, offset: Long): Result<InputStream, StorageError> =
+        pick(uri).openInputRange(uri, offset)
+
     override suspend fun openOutput(uri: FileUri, mode: WriteMode): Result<OutputStream, StorageError> =
         pick(uri).openOutput(uri, mode)
 

@@ -90,6 +90,18 @@ class SftpStorageProvider @Inject internal constructor(
             }
         }
 
+    override suspend fun openInputRange(uri: FileUri, offset: Long): Result<InputStream, StorageError> =
+        withContext(Dispatchers.IO) {
+            runCatching(uri) {
+                val remote = uri.asRemote()
+                    ?: return@runCatching Result.Failure(StorageError.IoError("Not an SFTP URI"))
+                val sftp = pool.acquire(remote.connectionId)
+                val file = sftp.open(SftpPath.normalize(remote.path), EnumSet.of(OpenMode.READ))
+                // sshj は RemoteFileInputStream(offset) で位置指定読み取りに対応。
+                Result.Success(SftpInputStream(file, fileOffset = offset) as InputStream)
+            }
+        }
+
     override suspend fun openOutput(uri: FileUri, mode: WriteMode): Result<OutputStream, StorageError> =
         withContext(Dispatchers.IO) {
             runCatching(uri) {

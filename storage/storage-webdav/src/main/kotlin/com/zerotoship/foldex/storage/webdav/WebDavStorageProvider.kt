@@ -115,6 +115,35 @@ class WebDavStorageProvider @Inject internal constructor(
             }
         }
 
+    override suspend fun openInputRange(uri: FileUri, offset: Long): Result<InputStream, StorageError> =
+        withContext(Dispatchers.IO) {
+            runCatching(uri) {
+                val remote = uri.asRemote()
+                    ?: return@runCatching Result.Failure(StorageError.IoError("Not a WebDAV URI"))
+                if (offset <= 0L) return@runCatching openInput(uri)
+                val session = sessions.resolve(remote.connectionId)
+                // HTTP Range ヘッダで位置指定読み取り。サーバが Range を実装していない場合は 200 OK で全体を
+                // 返してくるので、その場合は skip-based のフォールバック (default 実装) に切替える。
+                val request = baseRequest(session, session.resolve(remote.path))
+                    .addHeader("Range", "bytes=$offset-")
+                    .get()
+                    .build()
+                val response = client.newCall(request).execute()
+                if (response.code == 206) {
+                    // Partial Content。期待通り offset から先のバイトが流れる。
+                    Result.Success(WebDavInputStream(response) as InputStream)
+                } else if (response.isSuccessful) {
+                    // Range 非対応サーバ: 200 OK で全体が返るので、デフォルト挙動 (skip) で代用。
+                    response.close()
+                    super.openInputRange(uri, offset)
+                } else {
+                    val err = translateResponse(uri, response)
+                    response.close()
+                    Result.Failure(err)
+                }
+            }
+        }
+
     override suspend fun openOutput(uri: FileUri, mode: WriteMode): Result<OutputStream, StorageError> =
         withContext(Dispatchers.IO) {
             runCatching(uri) {
