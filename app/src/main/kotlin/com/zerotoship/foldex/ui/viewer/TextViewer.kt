@@ -178,6 +178,8 @@ private fun SoraEditor(file: File, initial: String, charset: Charset, modifier: 
             isWordwrap = true
             // 行番号: Sora の API は setLineNumberEnabled
             setLineNumberEnabled(true)
+            // カーソルブリンクを少し遅くする (= 描画頻度減)。0 で完全停止だが視認性が下がる。
+            setCursorBlinkPeriod(750)
         }
     }
 
@@ -191,13 +193,25 @@ private fun SoraEditor(file: File, initial: String, charset: Charset, modifier: 
     }
 
     // 編集イベントを購読して Undo/Redo の有効状態を反映。
+    // 毎キーストロークで Compose state を書くとスナップショット書込みのオーバーヘッドで
+    // 入力レイテンシが出るので、150ms debounce してまとめて反映 (人間の連続タイプには十分短い)。
     DisposableEffect(editor) {
+        var pendingJob: kotlinx.coroutines.Job? = null
         val sub = editor.subscribeAlways(ContentChangeEvent::class.java) { _ ->
-            canUndo = editor.canUndo()
-            canRedo = editor.canRedo()
-            status = null
+            pendingJob?.cancel()
+            pendingJob = scope.launch {
+                kotlinx.coroutines.delay(150)
+                val newCanUndo = editor.canUndo()
+                val newCanRedo = editor.canRedo()
+                if (canUndo != newCanUndo) canUndo = newCanUndo
+                if (canRedo != newCanRedo) canRedo = newCanRedo
+                if (status != null) status = null
+            }
         }
-        onDispose { sub.unsubscribe() }
+        onDispose {
+            sub.unsubscribe()
+            pendingJob?.cancel()
+        }
     }
 
     // テーマ色の動的更新。Material 色を Sora の ColorScheme に流す。
