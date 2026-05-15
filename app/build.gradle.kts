@@ -118,6 +118,9 @@ dependencies {
     // 大容量テキスト編集向け: Canvas 描画 + 仮想化のコードエディタ (P7 ポリッシュ)。
     implementation(libs.sora.editor)
 
+    // HOME タイルのドラッグ並び替え (LazyVerticalGrid 対応)。
+    implementation(libs.reorderable)
+
     // Application.onCreate で SFTP (Apache MINA SSHD) より先に BC を登録するため app から直接参照する。
     implementation(libs.bouncycastle.bcprov)
 

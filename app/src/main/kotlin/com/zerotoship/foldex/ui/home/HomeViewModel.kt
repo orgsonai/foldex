@@ -124,7 +124,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { repo.setHidden(id, hidden) }
     }
 
-    /** 表示中タイルのうち id を 1 つ上 / 下に動かして並び順を保存する。 */
+    /** 表示中タイルのうち id を 1 つ上 / 下に動かして並び順を保存する (アクセシビリティ用)。 */
     fun moveUp(id: String) = move(id, delta = -1)
     fun moveDown(id: String) = move(id, delta = +1)
 
@@ -140,6 +140,30 @@ class HomeViewModel @Inject constructor(
             // 表示中だけだと非表示分の位置情報が落ちるので、非表示タイルを末尾に保持しつつ保存。
             val hidden = hiddenShortcuts.value.map { it.id }
             repo.setOrder(current + hidden.filter { it !in current })
+        }
+    }
+
+    /**
+     * ドラッグ並び替え用: 表示中タイルの from インデックスを to インデックスへ移動。
+     * Compose 側で楽観更新したい場合に備えて、内部状態は次の orderIds 反映で同期する。
+     */
+    fun moveTo(fromIndex: Int, toIndex: Int) {
+        viewModelScope.launch {
+            val current = shortcuts.value.map { it.id }.toMutableList()
+            if (fromIndex !in current.indices || toIndex !in current.indices) return@launch
+            if (fromIndex == toIndex) return@launch
+            val id = current.removeAt(fromIndex)
+            current.add(toIndex, id)
+            val hidden = hiddenShortcuts.value.map { it.id }
+            repo.setOrder(current + hidden.filter { it !in current })
+        }
+    }
+
+    /** ドラッグ完了時に呼ぶ: 表示中タイルの完全な並び順を保存する。 */
+    fun applyOrder(visibleIds: List<String>) {
+        viewModelScope.launch {
+            val hidden = hiddenShortcuts.value.map { it.id }
+            repo.setOrder(visibleIds + hidden.filter { it !in visibleIds })
         }
     }
 

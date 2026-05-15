@@ -32,6 +32,7 @@ media3              = "1.4.1"
 markwon             = "4.6.2"
 zip4j               = "2.11.5"
 sora-editor         = "0.23.5"
+reorderable         = "2.4.2"
 
 [libraries]
 # AndroidX Core
@@ -132,6 +133,9 @@ zip4j                       = { group = "net.lingala.zip4j",       name = "zip4j
 
 # テキストエディタ (P7) — Sora Editor (Canvas 描画 + 仮想化、コードエディタ向け)
 sora-editor                 = { group = "io.github.Rosemoe.sora-editor", name = "editor",           version.ref = "sora-editor" }
+
+# Compose ドラッグ並び替え (LazyColumn / LazyVerticalGrid 両対応)
+reorderable                 = { group = "sh.calvin.reorderable",   name = "reorderable",            version.ref = "reorderable" }
 
 [plugins]
 android-application = { id = "com.android.application",                 version.ref = "agp" }

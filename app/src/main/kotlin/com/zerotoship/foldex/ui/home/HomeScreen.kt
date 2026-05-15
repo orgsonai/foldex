@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -84,6 +86,8 @@ import com.zerotoship.foldex.core.model.home.HomeShortcut
 import com.zerotoship.foldex.ui.components.AppDrawerContent
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyGridState
 
 /**
  * HOME 画面 (アプリ起動時の最初の画面)。
@@ -175,38 +179,54 @@ fun HomeScreen(
                 }
             },
         ) { inner ->
+            // ドラッグ中はローカル変数 liveOrder に楽観更新。ドロップ時に ViewModel に確定保存する。
+            // ViewModel の StateFlow を毎フレーム更新するとドラッグ位置と競合してチラつくため。
+            var liveOrder by remember(shortcuts) { mutableStateOf(shortcuts) }
+            val gridState = rememberLazyGridState()
+            val reorderState = rememberReorderableLazyGridState(gridState) { from, to ->
+                liveOrder = liveOrder.toMutableList().apply {
+                    add(to.index, removeAt(from.index))
+                }
+            }
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Adaptive(minSize = 112.dp),
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize().padding(inner),
             ) {
-                items(shortcuts, key = { it.id }) { sc ->
+                items(liveOrder, key = { it.id }) { sc ->
                     val canRemove = !sc.id.startsWith("builtin_")
-                    val idx = shortcuts.indexOfFirst { it.id == sc.id }
-                    ShortcutTile(
-                        sc = sc,
-                        onClick = {
-                            when (sc) {
-                                is HomeShortcut.LocalFolder -> onOpenLocalFolder(sc.path)
-                                is HomeShortcut.SafFolder -> onOpenUri(FileUri.Saf(sc.documentUri), sc.label)
-                                is HomeShortcut.RemoteConnection -> {
-                                    connections.firstOrNull { it.id == sc.connectionId }
-                                        ?.let(onOpenConnection)
+                    ReorderableItem(reorderState, key = sc.id) { isDragging ->
+                        val dragHandle = Modifier.longPressDraggableHandle(
+                            onDragStopped = {
+                                val newIds = liveOrder.map { it.id }
+                                val originalIds = shortcuts.map { it.id }
+                                if (newIds != originalIds) viewModel.applyOrder(newIds)
+                            },
+                        )
+                        ShortcutTile(
+                            sc = sc,
+                            isDragging = isDragging,
+                            dragHandleModifier = dragHandle,
+                            onClick = {
+                                when (sc) {
+                                    is HomeShortcut.LocalFolder -> onOpenLocalFolder(sc.path)
+                                    is HomeShortcut.SafFolder -> onOpenUri(FileUri.Saf(sc.documentUri), sc.label)
+                                    is HomeShortcut.RemoteConnection -> {
+                                        connections.firstOrNull { it.id == sc.connectionId }
+                                            ?.let(onOpenConnection)
+                                    }
+                                    is HomeShortcut.Function -> onOpenFunction(sc.kind)
                                 }
-                                is HomeShortcut.Function -> onOpenFunction(sc.kind)
-                            }
-                        },
-                        canMoveUp = idx > 0,
-                        canMoveDown = idx in 0 until shortcuts.lastIndex,
-                        canRemove = canRemove,
-                        onMoveUp = { viewModel.moveUp(sc.id) },
-                        onMoveDown = { viewModel.moveDown(sc.id) },
-                        onHide = { viewModel.setHidden(sc.id, true) },
-                        onRemove = { pendingRemove = sc },
-                        onRename = { pendingRename = sc },
-                    )
+                            },
+                            canRemove = canRemove,
+                            onHide = { viewModel.setHidden(sc.id, true) },
+                            onRemove = { pendingRemove = sc },
+                            onRename = { pendingRename = sc },
+                        )
+                    }
                 }
             }
         }
@@ -313,11 +333,10 @@ private fun RenameShortcutDialog(current: String, onDismiss: () -> Unit, onConfi
 private fun ShortcutTile(
     sc: HomeShortcut,
     onClick: () -> Unit,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
+    isDragging: Boolean,
+    /** ReorderableItem スコープで作成された Modifier.longPressDraggableHandle(...)。 */
+    dragHandleModifier: Modifier,
     canRemove: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
     onHide: () -> Unit,
     onRemove: () -> Unit,
     onRename: () -> Unit,
@@ -357,11 +376,20 @@ private fun ShortcutTile(
     Box {
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                // ドラッグ中は前景タイルを少し強調 (Material elevation 風)。
+                containerColor = if (isDragging) {
+                    MaterialTheme.colorScheme.secondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
             ),
+            // 長押し = ドラッグ開始 (reorderable の dragHandleModifier)。
+            // タップ = タイルの本来動作 (フォルダ/接続を開く等)。
+            // メニュー (改名・隠す・削除) は右上の ⋮ ボタンへ。
             modifier = Modifier
                 .aspectRatio(1f)
-                .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true }),
+                .then(dragHandleModifier)
+                .combinedClickable(onClick = onClick, onLongClick = null),
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -390,6 +418,21 @@ private fun ShortcutTile(
                 }
             }
         }
+        // 右上の ⋮ ボタン (改名/隠す/削除) — 長押しがドラッグになったのでメニューはここから。
+        IconButton(
+            onClick = { menuOpen = true },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(2.dp)
+                .size(28.dp),
+        ) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "メニュー",
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
                 text = { Text("名前を変更") },
@@ -400,18 +443,6 @@ private fun ShortcutTile(
                 text = { Text("隠す") },
                 leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
                 onClick = { onHide(); menuOpen = false },
-            )
-            DropdownMenuItem(
-                text = { Text("上へ移動") },
-                leadingIcon = { Icon(Icons.Default.ArrowUpward, null) },
-                enabled = canMoveUp,
-                onClick = { onMoveUp(); menuOpen = false },
-            )
-            DropdownMenuItem(
-                text = { Text("下へ移動") },
-                leadingIcon = { Icon(Icons.Default.ArrowDownward, null) },
-                enabled = canMoveDown,
-                onClick = { onMoveDown(); menuOpen = false },
             )
             if (canRemove) {
                 DropdownMenuItem(
