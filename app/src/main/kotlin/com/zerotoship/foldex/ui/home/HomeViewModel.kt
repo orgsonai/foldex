@@ -1,5 +1,6 @@
 package com.zerotoship.foldex.ui.home
 
+import android.content.Context
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,7 @@ import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.home.HomeFunction
 import com.zerotoship.foldex.core.model.home.HomeShortcut
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -28,6 +30,7 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repo: HomeShortcutRepository,
     private val connections: ConnectionRepository,
 ) : ViewModel() {
@@ -41,15 +44,21 @@ class HomeViewModel @Inject constructor(
         repo.customShortcuts,
         connections.observeAll(),
         repo.orderIds,
-    ) { custom, conns, order ->
+        repo.labelOverrides,
+    ) { custom, conns, order, overrides ->
         val byId = conns.associateBy { it.id }
+        // リモートタイルは接続名と自動同期する。それ以外は labelOverrides を優先 (ユーザーのリネーム)。
         val refreshed = custom.map { sc ->
             if (sc is HomeShortcut.RemoteConnection) {
                 val name = byId[sc.connectionId]?.name
                 if (name != null && name != sc.label) sc.copy(label = name) else sc
             } else sc
         }
-        applyOrder(BUILT_IN + refreshed, order)
+        val merged = (BUILT_IN + refreshed).map { sc ->
+            val override = overrides[sc.id]
+            if (override != null && override != sc.label) sc.withLabel(override) else sc
+        }
+        applyOrder(merged, order)
     }
 
     /** HOME のタイル一覧 (表示分)。組み込みも含めて非表示 id は除外する。 */
@@ -66,6 +75,36 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { repo.addLocalFolder(label, path) }
     }
 
+    fun addSafFolder(label: String, documentUri: String) {
+        viewModelScope.launch { repo.addSafFolder(label, documentUri) }
+    }
+
+    /**
+     * これまで Foldex に SAF 経由でアクセス許可を与えた tree URI 一覧を返す。
+     * HOME の「追加」ダイアログで提示し、ユーザーが選択すれば 1 タップで HOME に固定できる。
+     */
+    fun persistedSafTrees(): List<SafTree> = runCatching {
+        context.contentResolver.persistedUriPermissions
+            .filter { it.isReadPermission && it.uri.toString().contains("/tree/") }
+            .map { perm ->
+                val raw = perm.uri.toString()
+                // tree URI の最後のセグメント (例: primary:Pictures, com.termux:home) を表示名候補に
+                val tail = raw.substringAfterLast("/tree/")
+                    .let { java.net.URLDecoder.decode(it, "UTF-8") }
+                SafTree(label = tail.substringAfterLast('/').ifEmpty { tail }, documentUri = raw)
+            }
+            .distinctBy { it.documentUri }
+    }.getOrElse { emptyList() }
+
+    data class SafTree(val label: String, val documentUri: String)
+
+    private fun HomeShortcut.withLabel(newLabel: String): HomeShortcut = when (this) {
+        is HomeShortcut.LocalFolder -> copy(label = newLabel)
+        is HomeShortcut.SafFolder -> copy(label = newLabel)
+        is HomeShortcut.RemoteConnection -> copy(label = newLabel)
+        is HomeShortcut.Function -> copy(label = newLabel)
+    }
+
     fun addRemoteConnection(connectionId: String) {
         viewModelScope.launch {
             val name = allConnections.value.firstOrNull { it.id == connectionId }?.name ?: connectionId
@@ -75,6 +114,10 @@ class HomeViewModel @Inject constructor(
 
     fun remove(id: String) {
         viewModelScope.launch { repo.remove(id) }
+    }
+
+    fun rename(id: String, newLabel: String) {
+        viewModelScope.launch { repo.rename(id, newLabel) }
     }
 
     fun setHidden(id: String, hidden: Boolean) {

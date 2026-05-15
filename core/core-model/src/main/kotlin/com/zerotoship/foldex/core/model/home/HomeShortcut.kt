@@ -18,6 +18,16 @@ sealed class HomeShortcut {
         val path: String,
     ) : HomeShortcut()
 
+    /**
+     * SAF tree document URI を HOME に固定する (Termux, SD カードのような
+     * Foldex の UID から直接読めないが SAF 経由ならアクセスできる領域用)。
+     */
+    data class SafFolder(
+        override val id: String,
+        override val label: String,
+        val documentUri: String,
+    ) : HomeShortcut()
+
     /** 接続タブに登録済みの個別のリモートサーバを HOME に固定するためのショートカット。 */
     data class RemoteConnection(
         override val id: String,

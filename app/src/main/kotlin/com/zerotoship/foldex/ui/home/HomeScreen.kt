@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
@@ -120,6 +122,7 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var showAdd by remember { mutableStateOf(false) }
     var pendingRemove by remember { mutableStateOf<HomeShortcut?>(null) }
+    var pendingRename by remember { mutableStateOf<HomeShortcut?>(null) }
     var showHiddenDialog by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -187,6 +190,7 @@ fun HomeScreen(
                         onClick = {
                             when (sc) {
                                 is HomeShortcut.LocalFolder -> onOpenLocalFolder(sc.path)
+                                is HomeShortcut.SafFolder -> onOpenUri(FileUri.Saf(sc.documentUri), sc.label)
                                 is HomeShortcut.RemoteConnection -> {
                                     connections.firstOrNull { it.id == sc.connectionId }
                                         ?.let(onOpenConnection)
@@ -201,6 +205,7 @@ fun HomeScreen(
                         onMoveDown = { viewModel.moveDown(sc.id) },
                         onHide = { viewModel.setHidden(sc.id, true) },
                         onRemove = { pendingRemove = sc },
+                        onRename = { pendingRename = sc },
                     )
                 }
             }
@@ -208,14 +213,41 @@ fun HomeScreen(
     }
 
     if (showAdd) {
+        // SAF tree picker。完了すると documentUri が返るので、表示名は末尾セグメントから自動生成。
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val safPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+        ) { uri ->
+            if (uri != null) {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
+                val tail = java.net.URLDecoder.decode(
+                    uri.toString().substringAfterLast("/tree/"),
+                    "UTF-8",
+                ).substringAfterLast('/').ifEmpty { uri.toString() }
+                viewModel.addSafFolder(tail, uri.toString())
+                showAdd = false
+            }
+        }
         AddShortcutDialog(
             presets = remember { viewModel.candidatePresets() },
+            persistedSafTrees = remember { viewModel.persistedSafTrees() },
             connections = connections,
             onDismiss = { showAdd = false },
             onAddLocal = { label, path ->
                 viewModel.addLocalFolder(label, path)
                 showAdd = false
             },
+            onAddSaf = { label, uri ->
+                viewModel.addSafFolder(label, uri)
+                showAdd = false
+            },
+            onPickSaf = { safPicker.launch(null) },
             onAddRemote = { connectionId ->
                 viewModel.addRemoteConnection(connectionId)
                 showAdd = false
@@ -239,6 +271,41 @@ fun HomeScreen(
             onRestore = { id -> viewModel.setHidden(id, false) },
         )
     }
+    pendingRename?.let { target ->
+        RenameShortcutDialog(
+            current = target.label,
+            onDismiss = { pendingRename = null },
+            onConfirm = { newName ->
+                viewModel.rename(target.id, newName)
+                pendingRename = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun RenameShortcutDialog(current: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var text by remember { mutableStateOf(current) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("表示名を変更") },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                label = { Text("表示名") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (text.isNotBlank()) onConfirm(text) },
+                enabled = text.isNotBlank() && text != current,
+            ) { Text("変更") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -253,6 +320,7 @@ private fun ShortcutTile(
     onMoveDown: () -> Unit,
     onHide: () -> Unit,
     onRemove: () -> Unit,
+    onRename: () -> Unit,
 ) {
     val icon: ImageVector
     val tint = MaterialTheme.colorScheme.primary
@@ -261,6 +329,10 @@ private fun ShortcutTile(
         is HomeShortcut.LocalFolder -> {
             icon = Icons.Outlined.FolderOpen
             subtitle = sc.path
+        }
+        is HomeShortcut.SafFolder -> {
+            icon = Icons.Outlined.FolderOpen
+            subtitle = "SAF"
         }
         is HomeShortcut.RemoteConnection -> {
             icon = Icons.Default.Cloud
@@ -320,6 +392,11 @@ private fun ShortcutTile(
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
+                text = { Text("名前を変更") },
+                leadingIcon = { Icon(Icons.Default.Edit, null) },
+                onClick = { onRename(); menuOpen = false },
+            )
+            DropdownMenuItem(
                 text = { Text("隠す") },
                 leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
                 onClick = { onHide(); menuOpen = false },
@@ -351,9 +428,12 @@ private fun ShortcutTile(
 @Composable
 private fun AddShortcutDialog(
     presets: List<HomeViewModel.PresetPath>,
+    persistedSafTrees: List<HomeViewModel.SafTree>,
     connections: List<Connection>,
     onDismiss: () -> Unit,
     onAddLocal: (label: String, path: String) -> Unit,
+    onAddSaf: (label: String, documentUri: String) -> Unit,
+    onPickSaf: () -> Unit,
     onAddRemote: (connectionId: String) -> Unit,
 ) {
     var mode by remember { mutableStateOf(AddMode.LOCAL) }
@@ -365,21 +445,65 @@ private fun AddShortcutDialog(
         title = { Text("HOME にタイルを追加") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                // 種別の切替: ローカル / リモート
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 種別の切替: ローカル / SAF / リモート。AlertDialog の本文幅では
+                // 3 つを横並びにすると 3 つ目 (リモート) が見切れるため、FlowRow で折り返す。
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     FilterChip(
                         selected = mode == AddMode.LOCAL,
                         onClick = { mode = AddMode.LOCAL },
-                        label = { Text("ローカルフォルダ") },
+                        label = { Text("ローカル") },
+                    )
+                    FilterChip(
+                        selected = mode == AddMode.SAF,
+                        onClick = { mode = AddMode.SAF },
+                        label = { Text("SAF") },
                     )
                     FilterChip(
                         selected = mode == AddMode.REMOTE,
                         onClick = { mode = AddMode.REMOTE },
-                        label = { Text("リモート接続") },
+                        label = { Text("リモート") },
                     )
                 }
                 Spacer(Modifier.height(12.dp))
                 when (mode) {
+                    AddMode.SAF -> {
+                        Text(
+                            "Termux / SD カードなどはアプリの UID から直接読めないため、" +
+                                "SAF で許可した tree URI を経由します。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = onPickSaf, modifier = Modifier.fillMaxWidth()) {
+                            Text("SAF からフォルダを選ぶ")
+                        }
+                        if (persistedSafTrees.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("許可済みの SAF tree:", style = MaterialTheme.typography.labelMedium)
+                            Spacer(Modifier.height(4.dp))
+                            persistedSafTrees.forEach { tree ->
+                                TextButton(
+                                    onClick = { onAddSaf(tree.label, tree.documentUri) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
+                                        Text(tree.label, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            tree.documentUri,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     AddMode.LOCAL -> {
                         OutlinedTextField(
                             value = label, onValueChange = { label = it },
@@ -470,7 +594,7 @@ private fun AddShortcutDialog(
     )
 }
 
-private enum class AddMode { LOCAL, REMOTE }
+private enum class AddMode { LOCAL, SAF, REMOTE }
 
 @Composable
 private fun RemoveConfirmDialog(label: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {

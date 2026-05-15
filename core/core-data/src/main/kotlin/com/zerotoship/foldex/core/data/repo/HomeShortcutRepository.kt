@@ -59,6 +59,18 @@ class HomeShortcutRepository @Inject constructor(
         }
     }
 
+    suspend fun addSafFolder(label: String, documentUri: String) {
+        val sc = HomeShortcut.SafFolder(
+            id = UUID.randomUUID().toString(),
+            label = label.trim().ifEmpty { documentUri.substringAfterLast('/') },
+            documentUri = documentUri,
+        )
+        ds.edit {
+            it[KEY_ITEMS] = (it[KEY_ITEMS] ?: emptySet()) + encode(sc)
+            it[KEY_ORDER] = appendToOrder(it[KEY_ORDER], sc.id)
+        }
+    }
+
     suspend fun addRemoteConnection(label: String, connectionId: String) {
         val sc = HomeShortcut.RemoteConnection(
             id = UUID.randomUUID().toString(),
@@ -69,6 +81,44 @@ class HomeShortcutRepository @Inject constructor(
             it[KEY_ITEMS] = (it[KEY_ITEMS] ?: emptySet()) + encode(sc)
             it[KEY_ORDER] = appendToOrder(it[KEY_ORDER], sc.id)
         }
+    }
+
+    /** 既存ショートカットの表示名 (label) を更新する。組み込みタイルも対象。 */
+    suspend fun rename(id: String, newLabel: String) {
+        val trimmed = newLabel.trim()
+        if (trimmed.isEmpty()) return
+        // 組み込みタイル: customShortcuts には居ないので別途オーバーライドを保持する。
+        // ここでは KEY_LABEL_OVERRIDES に id=label の連結文字列で保存し、
+        // 読み出し側 (HomeViewModel) で BUILT_IN にマージする。
+        ds.edit { prefs ->
+            // カスタム側
+            val cur = prefs[KEY_ITEMS] ?: emptySet()
+            val updated = cur.map { raw ->
+                val sc = decode(raw)
+                if (sc != null && sc.id == id) {
+                    val renamed = when (sc) {
+                        is HomeShortcut.LocalFolder -> sc.copy(label = trimmed)
+                        is HomeShortcut.SafFolder -> sc.copy(label = trimmed)
+                        is HomeShortcut.RemoteConnection -> sc.copy(label = trimmed)
+                        is HomeShortcut.Function -> sc.copy(label = trimmed)
+                    }
+                    encode(renamed)
+                } else raw
+            }.toSet()
+            prefs[KEY_ITEMS] = updated
+            // 組み込みタイル用 label オーバーライド
+            val existing = prefs[KEY_LABEL_OVERRIDES] ?: emptySet()
+            val withoutOld = existing.filterNot { it.startsWith("$id=") }.toSet()
+            prefs[KEY_LABEL_OVERRIDES] = withoutOld + "$id=$trimmed"
+        }
+    }
+
+    /** 組み込みタイル等の表示名オーバーライド (id -> label)。 */
+    val labelOverrides: Flow<Map<String, String>> = ds.data.map { p ->
+        (p[KEY_LABEL_OVERRIDES] ?: emptySet()).mapNotNull { entry ->
+            val eq = entry.indexOf('=')
+            if (eq < 0) null else entry.substring(0, eq) to entry.substring(eq + 1)
+        }.toMap()
     }
 
     suspend fun remove(id: String) {
@@ -109,6 +159,12 @@ class HomeShortcutRepository @Inject constructor(
             put("label", sc.label)
             put("path", sc.path)
         }.toString()
+        is HomeShortcut.SafFolder -> JSONObject().apply {
+            put("kind", "saf")
+            put("id", sc.id)
+            put("label", sc.label)
+            put("documentUri", sc.documentUri)
+        }.toString()
         is HomeShortcut.RemoteConnection -> JSONObject().apply {
             put("kind", "remote")
             put("id", sc.id)
@@ -129,6 +185,7 @@ class HomeShortcutRepository @Inject constructor(
         val label = o.getString("label")
         when (o.getString("kind")) {
             "local" -> HomeShortcut.LocalFolder(id, label, o.getString("path"))
+            "saf" -> HomeShortcut.SafFolder(id, label, o.getString("documentUri"))
             "remote" -> HomeShortcut.RemoteConnection(id, label, o.getString("connectionId"))
             "fn" -> HomeShortcut.Function(id, label, HomeFunction.valueOf(o.getString("fn")))
             else -> null
@@ -139,5 +196,6 @@ class HomeShortcutRepository @Inject constructor(
         val KEY_ITEMS = stringSetPreferencesKey("home_shortcuts")
         val KEY_HIDDEN = stringSetPreferencesKey("home_hidden")
         val KEY_ORDER = stringPreferencesKey("home_order")
+        val KEY_LABEL_OVERRIDES = stringSetPreferencesKey("home_label_overrides")
     }
 }
