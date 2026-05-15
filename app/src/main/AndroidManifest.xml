@@ -81,7 +81,8 @@
         <activity
             android:name=".ui.viewer.ViewerActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
 
         <!-- 外部アプリへファイルを渡すための FileProvider -->
         <provider

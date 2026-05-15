@@ -17,6 +17,8 @@ sealed interface OpenRequest {
         val category: Category,
         val editable: Boolean,
         val siblings: List<String> = emptyList(),
+        /** テキストエディタで「編集可能」として開く上限 (KB)。ユーザー設定に従う。 */
+        val editableLimitKb: Int = 512,
     ) : OpenRequest
 
     /** 外部アプリで ACTION_VIEW する。[chooser] が true ならアプリ選択ダイアログを毎回出す。 */

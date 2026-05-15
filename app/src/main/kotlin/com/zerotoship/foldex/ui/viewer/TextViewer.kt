@@ -2,35 +2,29 @@
 
 package com.zerotoship.foldex.ui.viewer
 
-import androidx.compose.foundation.ScrollState
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Typeface
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Numbers
@@ -48,37 +42,31 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.zerotoship.foldex.ui.components.FastScrollbar
+import io.github.rosemoe.sora.event.ContentChangeEvent
+import io.github.rosemoe.sora.widget.CodeEditor
+import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
+import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
+import io.github.rosemoe.sora.widget.schemes.SchemeDarcula
+import io.github.rosemoe.sora.widget.schemes.SchemeGitHub
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -87,15 +75,8 @@ import java.nio.charset.Charset
 // 内蔵で開ける上限 (これより大きいと外部アプリ案内のみ)。
 private const val MAX_BYTES = 8L * 1024 * 1024
 
-// 内蔵エディタで編集可能な上限 = MAX_BYTES と一致。
-// 旧設計では「512KB 超は閲覧専用」を区切りにしていたが、巨大テキストでも
-// 軽快に動かすため Gutter / LineCount の再計算を throttle 化したので一律編集可能に。
-private const val EDITABLE_MAX_BYTES = MAX_BYTES
-
-// フォントサイズの上下限 (ピンチズーム時)。
-private const val MIN_FONT_SP = 8f
-private const val MAX_FONT_SP = 32f
-private const val DEFAULT_FONT_SP = 13f
+// 編集可能の既定上限 (KB)。Sora の Canvas 描画 + 仮想化により ~4MB まで快適。
+private const val DEFAULT_EDITABLE_LIMIT_KB = 2048
 
 private sealed interface TextLoad {
     data object Loading : TextLoad
@@ -104,9 +85,20 @@ private sealed interface TextLoad {
     data class Failed(val message: String) : TextLoad
 }
 
-/** 等幅フォントの簡易テキストビューア/エディタ。文字コードは自動判定。[editable] が true なら上書き保存できる。 */
+/**
+ * 内蔵テキストビューア/エディタ。Sora-editor を AndroidView で埋め込む。
+ *
+ * - 文字コードは [TextDecoding.detect] で自動判定 (BOM / NUL の頻度 / juniversalchardet)
+ * - [editable] が true で [editableLimitKb] KB 以下のときだけ編集可能なエディタを起動
+ * - 上限を超えるテキストは [ReadOnlyText] (LazyColumn) で表示
+ */
 @Composable
-fun TextViewer(file: File, editable: Boolean = false, modifier: Modifier = Modifier) {
+fun TextViewer(
+    file: File,
+    editable: Boolean = false,
+    editableLimitKb: Int = DEFAULT_EDITABLE_LIMIT_KB,
+    modifier: Modifier = Modifier,
+) {
     val state by produceState<TextLoad>(TextLoad.Loading, file) {
         value = withContext(Dispatchers.IO) {
             runCatching {
@@ -119,6 +111,8 @@ fun TextViewer(file: File, editable: Boolean = false, modifier: Modifier = Modif
         }
     }
 
+    val editableLimitBytes = editableLimitKb.toLong() * 1024L
+
     when (val s = state) {
         TextLoad.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -129,79 +123,153 @@ fun TextViewer(file: File, editable: Boolean = false, modifier: Modifier = Modif
         )
         is TextLoad.Failed -> CenterMessage(modifier, s.message)
         is TextLoad.Loaded ->
-            if (editable && s.sizeBytes <= EDITABLE_MAX_BYTES) {
-                TextEditor(file, s.content, s.charset, modifier)
+            if (editable && s.sizeBytes <= editableLimitBytes) {
+                SoraEditor(file, s.content, s.charset, modifier)
             } else {
                 ReadOnlyText(
                     content = s.content,
                     charset = s.charset,
-                    hint = if (editable) "編集するには大きいため閲覧のみ (外部アプリで編集できます)" else null,
+                    hint = if (editable)
+                        "編集するには大きいため閲覧のみ (上限: ${editableLimitKb}KB / 設定で変更可)"
+                    else null,
                     modifier = modifier,
                 )
             }
     }
 }
 
-// ---- 編集モード ----
+// ---- 編集モード (Sora-editor) ----
 
 @Composable
-private fun TextEditor(file: File, initial: String, charset: Charset, modifier: Modifier) {
-    val scope = rememberCoroutineScope()
-    val textState = rememberTextFieldState(initial)
+private fun SoraEditor(file: File, initial: String, charset: Charset, modifier: Modifier) {
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-    var fontSizeSp by remember { mutableFloatStateOf(DEFAULT_FONT_SP) }
+    // テーマ色を Compose 側から取って Sora の ColorScheme に流し込む。
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val onSurface = MaterialTheme.colorScheme.onSurface.toArgb()
+    val surface = MaterialTheme.colorScheme.surface.toArgb()
+    val primary = MaterialTheme.colorScheme.primary.toArgb()
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant.toArgb()
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+    val selection = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f).toArgb()
+
+    // 編集状態
     var wordWrap by remember { mutableStateOf(true) }
     var showLineNumbers by remember { mutableStateOf(true) }
     var searchOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var matchCount by remember { mutableIntStateOf(0) }
     var matchIndex by remember { mutableIntStateOf(0) }
+    var canUndo by remember { mutableStateOf(false) }
+    var canRedo by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
 
-    val transformState = rememberTransformableState { zoomChange, _, _ ->
-        fontSizeSp = (fontSizeSp * zoomChange).coerceIn(MIN_FONT_SP, MAX_FONT_SP)
+    // CodeEditor インスタンスを Composable のライフサイクルで保持。
+    val editor = remember {
+        CodeEditor(context).apply {
+            // 補完ポップアップ等は非コード用途なので無効化。
+            getComponent(EditorAutoCompletion::class.java).isEnabled = false
+            // 等幅 + 13sp 既定。サイズは Sora 内部で px なので sp→px 変換。
+            typefaceText = Typeface.MONOSPACE
+            setTextSize(13f)
+            // 既定の値: ワードラップ ON、行番号 ON、選択行ハイライト ON
+            isWordwrap = true
+            // 行番号: Sora の API は setLineNumberEnabled
+            setLineNumberEnabled(true)
+        }
     }
 
-    // 検索結果 (char index 範囲)。テキスト or クエリ変更で再計算するが、200ms debounce で
-    // 入力中の毎キーストロークで全文検索を走らせない。
-    val matches: List<IntRange> by produceState(initialValue = emptyList(), searchQuery, searchOpen, textState) {
-        if (!searchOpen || searchQuery.isEmpty()) { value = emptyList(); return@produceState }
-        snapshotFlow { textState.text.length }
-            .distinctUntilChanged()
-            .collectLatest {
-                kotlinx.coroutines.delay(200)
-                val text = withContext(Dispatchers.Default) { textState.text.toString() }
-                value = withContext(Dispatchers.Default) { findMatches(text, searchQuery) }
+    // 初期テキスト + 文字コードの設定。引数 (file) が変わったら再ロード。
+    LaunchedEffect(file) {
+        // ContentCreator を使うと巨大テキストでもメモリ効率良くロード可能。ここでは直接 setText で OK。
+        editor.setText(initial)
+        // ロード直後は undo スタックが空。
+        canUndo = false
+        canRedo = false
+    }
+
+    // 編集イベントを購読して Undo/Redo の有効状態を反映。
+    DisposableEffect(editor) {
+        val sub = editor.subscribeAlways(ContentChangeEvent::class.java) { _ ->
+            canUndo = editor.canUndo()
+            canRedo = editor.canRedo()
+            status = null
+        }
+        onDispose { sub.unsubscribe() }
+    }
+
+    // テーマ色の動的更新。Material 色を Sora の ColorScheme に流す。
+    LaunchedEffect(isDark, onSurface, surface, primary, surfaceVariant) {
+        val scheme: EditorColorScheme = if (isDark) SchemeDarcula() else SchemeGitHub()
+        // Sora の主要色を上書き
+        scheme.setColor(EditorColorScheme.WHOLE_BACKGROUND, surface)
+        scheme.setColor(EditorColorScheme.TEXT_NORMAL, onSurface)
+        scheme.setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, surfaceVariant)
+        scheme.setColor(EditorColorScheme.LINE_NUMBER, onSurfaceVariant)
+        scheme.setColor(EditorColorScheme.LINE_DIVIDER, onSurfaceVariant)
+        scheme.setColor(EditorColorScheme.SELECTION_INSERT, primary)
+        scheme.setColor(EditorColorScheme.SELECTION_HANDLE, primary)
+        scheme.setColor(EditorColorScheme.SELECTED_TEXT_BACKGROUND, selection)
+        scheme.setColor(EditorColorScheme.CURRENT_LINE, surfaceVariant)
+        editor.colorScheme = scheme
+    }
+
+    // 折り返しトグル
+    LaunchedEffect(wordWrap) { editor.isWordwrap = wordWrap }
+    // 行番号トグル
+    LaunchedEffect(showLineNumbers) { editor.setLineNumberEnabled(showLineNumbers) }
+
+    // 検索: クエリ変更時に編集中のエディタへ検索を反映。
+    LaunchedEffect(searchOpen, searchQuery) {
+        if (searchOpen && searchQuery.isNotEmpty()) {
+            runCatching {
+                // SearchOptions(type, caseInsensitive) — type = NORMAL/REGEX、caseInsensitive=true で大小区別なし。
+                editor.searcher.search(
+                    searchQuery,
+                    io.github.rosemoe.sora.widget.EditorSearcher.SearchOptions(
+                        io.github.rosemoe.sora.widget.EditorSearcher.SearchOptions.TYPE_NORMAL,
+                        /* caseInsensitive = */ true,
+                    ),
+                )
+                matchCount = editor.searcher.matchedPositionCount
                 matchIndex = 0
             }
-    }
-
-    // 検索ヒットへキャレットを移動 → BasicTextField がそこへスクロールする。
-    LaunchedEffect(matchIndex, matches) {
-        if (matchIndex !in matches.indices) return@LaunchedEffect
-        val range = matches[matchIndex]
-        runCatching { textState.edit { selection = TextRange(range.first, range.last + 1) } }
-    }
-
-    Column(modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f).fillMaxWidth().transformable(transformState)) {
-            EditorBody(
-                state = textState,
-                fontSizeSp = fontSizeSp,
-                wordWrap = wordWrap,
-                showLineNumbers = showLineNumbers,
-            )
+        } else {
+            runCatching { editor.searcher.stopSearch() }
+            matchCount = 0
+            matchIndex = 0
         }
+    }
+
+    Column(modifier.fillMaxSize().imePadding()) {
+        // 編集本体: Sora の CodeEditor をそのまま埋め込む。weight(1f) で残り高さを占有。
+        AndroidView(
+            factory = { editor },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            update = { /* 状態反映は LaunchedEffect 側で行う */ },
+        )
 
         if (searchOpen) {
             HorizontalDivider()
             SearchBar(
                 query = searchQuery,
                 onQueryChange = { searchQuery = it },
-                matchCount = matches.size,
+                matchCount = matchCount,
                 currentIndex = matchIndex,
-                onNext = { if (matches.isNotEmpty()) matchIndex = (matchIndex + 1) % matches.size },
-                onPrev = { if (matches.isNotEmpty()) matchIndex = (matchIndex - 1 + matches.size) % matches.size },
+                onNext = {
+                    if (matchCount > 0) {
+                        matchIndex = (matchIndex + 1) % matchCount
+                        runCatching { editor.searcher.gotoNext() }
+                    }
+                },
+                onPrev = {
+                    if (matchCount > 0) {
+                        matchIndex = (matchIndex - 1 + matchCount) % matchCount
+                        runCatching { editor.searcher.gotoPrevious() }
+                    }
+                },
                 onClose = { searchOpen = false; searchQuery = "" },
             )
         }
@@ -209,24 +277,33 @@ private fun TextEditor(file: File, initial: String, charset: Charset, modifier: 
         HorizontalDivider()
         EditorBottomBar(
             charsetName = charset.name(),
-            fontSizeSp = fontSizeSp,
             status = status,
-            canUndo = textState.undoState.canUndo,
-            canRedo = textState.undoState.canRedo,
+            canUndo = canUndo,
+            canRedo = canRedo,
             saving = saving,
             wordWrap = wordWrap,
             showLineNumbers = showLineNumbers,
             searchOpen = searchOpen,
+            onPaste = {
+                val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                val text = cb?.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                if (text.isNotEmpty()) {
+                    editor.pasteText(text)
+                } else {
+                    status = "クリップボードが空です"
+                }
+            },
             onToggleWrap = { wordWrap = !wordWrap },
             onToggleGutter = { showLineNumbers = !showLineNumbers },
             onSearch = { searchOpen = !searchOpen; if (!searchOpen) searchQuery = "" },
-            onUndo = { status = null; textState.undoState.undo() },
-            onRedo = { status = null; textState.undoState.redo() },
+            onUndo = { editor.undo() },
+            onRedo = { editor.redo() },
             onSave = {
                 saving = true
                 scope.launch {
+                    val text = editor.text.toString()
                     val ok = withContext(Dispatchers.IO) {
-                        runCatching { file.writeBytes(textState.text.toString().toByteArray(charset)) }.isSuccess
+                        runCatching { file.writeBytes(text.toByteArray(charset)) }.isSuccess
                     }
                     status = if (ok) "保存しました" else "保存に失敗しました"
                     saving = false
@@ -236,242 +313,15 @@ private fun TextEditor(file: File, initial: String, charset: Charset, modifier: 
     }
 }
 
-/**
- * 編集本体。BasicTextField の `scrollState` を Gutter と共有することで
- * スクロール位置を完全同期させ、Gutter は BasicTextField の [TextLayoutResult] を
- * 元に Canvas で行番号を描画する (= ワードラップ時も論理行と差分なしで揃う)。
- *
- * パフォーマンス対策:
- *  - `state.text.toString()` を毎 recomposition で呼ぶと 4MB 級では数十 ms かかる
- *    のでフレームスキップ要因になる。代わりに「論理行の先頭 char offset」を
- *    [snapshotFlow] + 200ms `debounce` で background 計算し、Gutter に渡す。
- *  - GutterCanvas は表示中の visual line だけ走査し、`tl.getLineForVerticalPosition`
- *    で開始位置を二分検索 (= O(log N))。論理行番号も IntArray の binarySearch で求める。
- */
-@Composable
-private fun EditorBody(
-    state: TextFieldState,
-    fontSizeSp: Float,
-    wordWrap: Boolean,
-    showLineNumbers: Boolean,
-) {
-    val color = LocalContentColor.current
-    val gutterColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-    val mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = fontSizeSp.sp, color = color)
-    val gutterStyle = mono.copy(color = gutterColor, textAlign = TextAlign.End)
-    val measurer = rememberTextMeasurer()
-
-    val sharedScroll = rememberScrollState()
-    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-
-    // 論理行の先頭 offset を IntArray で保持。debounce で 200ms 入力が落ち着いてから更新。
-    var lineStarts by remember { mutableStateOf(intArrayOf(0)) }
-    LaunchedEffect(state) {
-        snapshotFlow { state.text.length }
-            .distinctUntilChanged()
-            .collectLatest { _ ->
-                kotlinx.coroutines.delay(200)
-                val snapshot = state.text.toString()
-                val computed = withContext(Dispatchers.Default) { computeLineStarts(snapshot) }
-                lineStarts = computed
-            }
-    }
-
-    val logicalLineCount = lineStarts.size
-    val density = LocalDensity.current
-    val gutterWidth: Dp = remember(fontSizeSp, logicalLineCount) {
-        // 等幅フォントの 1 文字幅は概ね fontSize × 0.6 sp。+ 左右パディング。
-        val digits = logicalLineCount.toString().length.coerceAtLeast(2)
-        with(density) {
-            (fontSizeSp.sp.toPx() * 0.62f * digits).toDp() + 12.dp
-        }
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxSize()) {
-            if (showLineNumbers) {
-                GutterCanvas(
-                    lineStarts = lineStarts,
-                    textLayout = textLayout,
-                    scrollOffsetPx = sharedScroll.value,
-                    style = gutterStyle,
-                    measurer = measurer,
-                    modifier = Modifier.fillMaxHeight().width(gutterWidth)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                )
-            }
-            val editorModifier = Modifier.fillMaxSize().padding(horizontal = if (showLineNumbers) 6.dp else 12.dp, vertical = 4.dp)
-            if (wordWrap) {
-                BasicTextField(
-                    state = state,
-                    textStyle = mono,
-                    lineLimits = TextFieldLineLimits.MultiLine(),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    onTextLayout = { getResult -> textLayout = getResult() },
-                    scrollState = sharedScroll,
-                    modifier = editorModifier,
-                )
-            } else {
-                // 折り返し OFF: 横スクロール可。縦スクロールは sharedScroll で gutter と同期。
-                Box(editorModifier.horizontalScroll(rememberScrollState())) {
-                    BasicTextField(
-                        state = state,
-                        textStyle = mono,
-                        lineLimits = TextFieldLineLimits.MultiLine(),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        onTextLayout = { getResult -> textLayout = getResult() },
-                        scrollState = sharedScroll,
-                        modifier = Modifier.width(8000.dp),
-                    )
-                }
-            }
-        }
-        // 右端の縦スクロールバー (スクロール可能なときだけ表示)。
-        if (sharedScroll.maxValue > 0) {
-            EditorScrollbar(
-                scrollState = sharedScroll,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
-        }
-    }
-}
-
-/** テキストを 1 度だけ走査して論理行 (= '\n' 区切り) の先頭 offset を IntArray で返す。 */
-private fun computeLineStarts(text: String): IntArray {
-    // 最初は 0 から始まる。容量は `text.length / 30 + 1` 程度の概算。
-    val initial = (text.length / 30 + 1).coerceAtLeast(8)
-    var arr = IntArray(initial)
-    arr[0] = 0
-    var size = 1
-    for (i in text.indices) {
-        if (text[i] == '\n') {
-            if (size == arr.size) arr = arr.copyOf(arr.size * 2)
-            arr[size++] = i + 1
-        }
-    }
-    return arr.copyOf(size)
-}
-
-/** BasicTextField の縦スクロールに追従する操作可能スクロールバー。
- *
- * 右端 28dp 幅の透明な当たり判定エリアをドラッグで掴め、つまみを動かすと
- * 対応する位置まで `scrollState.scrollTo` で飛ばす。FastScrollbar と同じ流儀。
- */
-@Composable
-private fun EditorScrollbar(scrollState: androidx.compose.foundation.ScrollState, modifier: Modifier) {
-    val primary = MaterialTheme.colorScheme.primary
-    val scope = rememberCoroutineScope()
-    var dragging by remember { mutableStateOf(false) }
-    val visibleNow = remember { mutableStateOf(false) }
-    LaunchedEffect(scrollState.isScrollInProgress, scrollState.value, dragging) {
-        if (scrollState.isScrollInProgress || dragging) {
-            visibleNow.value = true
-        } else if (visibleNow.value) {
-            kotlinx.coroutines.delay(1200)
-            if (!scrollState.isScrollInProgress && !dragging) visibleNow.value = false
-        }
-    }
-    val alpha = if (visibleNow.value || dragging) 0.7f else 0.25f
-
-    fun scrollToFraction(fraction: Float) {
-        val target = (scrollState.maxValue * fraction.coerceIn(0f, 1f)).toInt()
-        scope.launch { scrollState.scrollTo(target) }
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .width(28.dp)
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        dragging = true
-                        val h = size.height.toFloat().coerceAtLeast(1f)
-                        scrollToFraction(offset.y / h)
-                    },
-                    onDrag = { change, _ ->
-                        change.consume()
-                        val h = size.height.toFloat().coerceAtLeast(1f)
-                        scrollToFraction(change.position.y / h)
-                    },
-                    onDragEnd = { dragging = false },
-                    onDragCancel = { dragging = false },
-                )
-            },
-    ) {
-        androidx.compose.foundation.Canvas(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 2.dp)
-                .fillMaxHeight()
-                .width(if (dragging) 10.dp else 4.dp),
-        ) {
-            val total = scrollState.maxValue.toFloat() + size.height
-            if (total <= 0f) return@Canvas
-            val ratio = (size.height / total).coerceIn(0.05f, 1f)
-            val thumbHeight = (size.height * ratio).coerceAtLeast(24.dp.toPx())
-            val track = (size.height - thumbHeight).coerceAtLeast(0f)
-            val pos = if (scrollState.maxValue == 0) 0f
-                      else (scrollState.value.toFloat() / scrollState.maxValue) * track
-            drawRoundRect(
-                color = primary.copy(alpha = if (dragging) 1f else alpha),
-                topLeft = androidx.compose.ui.geometry.Offset(0f, pos),
-                size = androidx.compose.ui.geometry.Size(size.width, thumbHeight),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-            )
-        }
-    }
-}
-
-/**
- * 行番号を Canvas で描画する gutter。
- *
- * 表示中の visual line だけを走査することで、巨大ファイルでもフレームを落とさない:
- *  1. `tl.getLineForVerticalPosition(scrollOffsetPx)` で先頭の visual line を二分検索 (O(log N))。
- *  2. 各 visual line の char start を `tl.getLineStart` で取り、IntArray に対し binarySearch で論理行番号を解決。
- *  3. visual line が論理行の先頭と一致するときだけ番号を描く (= ワードラップで折り返した行は無番号)。
- */
-@Composable
-private fun GutterCanvas(
-    lineStarts: IntArray,
-    textLayout: TextLayoutResult?,
-    scrollOffsetPx: Int,
-    style: TextStyle,
-    measurer: TextMeasurer,
-    modifier: Modifier,
-) {
-    androidx.compose.foundation.Canvas(modifier = modifier.padding(end = 6.dp, top = 4.dp)) {
-        val tl = textLayout ?: return@Canvas
-        val visibleHeight = size.height
-        val visualLineCount = tl.lineCount
-        if (visualLineCount <= 0) return@Canvas
-        // 先頭の visible visual line。getLineForVerticalPosition は O(log N)。
-        val firstVisible = runCatching {
-            tl.getLineForVerticalPosition(scrollOffsetPx.toFloat().coerceAtLeast(0f))
-        }.getOrNull() ?: 0
-
-        var v = firstVisible
-        while (v < visualLineCount) {
-            val top = tl.getLineTop(v) - scrollOffsetPx
-            if (top > visibleHeight) break
-            val charStart = tl.getLineStart(v)
-            // この visual line が「論理行の先頭」と一致しているか?
-            val idx = lineStarts.binarySearch(charStart)
-            if (idx >= 0) {
-                val label = (idx + 1).toString()
-                val layout = measurer.measure(label, style = style)
-                val x = (size.width - layout.size.width).coerceAtLeast(0f)
-                drawText(textLayoutResult = layout, topLeft = Offset(x, top))
-            }
-            v++
-        }
-    }
+/** Sora の CodeEditor にクリップボードのテキストを挿入する拡張。 */
+private fun CodeEditor.pasteText(text: String) {
+    // 選択中の有無に関わらず commitText で OK (Sora 側で既存選択を置換)。
+    commitText(text)
 }
 
 @Composable
 private fun EditorBottomBar(
     charsetName: String,
-    fontSizeSp: Float,
     status: String?,
     canUndo: Boolean,
     canRedo: Boolean,
@@ -479,6 +329,7 @@ private fun EditorBottomBar(
     wordWrap: Boolean,
     showLineNumbers: Boolean,
     searchOpen: Boolean,
+    onPaste: () -> Unit,
     onToggleWrap: () -> Unit,
     onToggleGutter: () -> Unit,
     onSearch: () -> Unit,
@@ -493,25 +344,23 @@ private fun EditorBottomBar(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-            // 薄い status 行 (charset / フォントサイズ / 保存メッセージ)。
+            // 状態行 (charset / 保存メッセージ)。
             Text(
-                text = status ?: "$charsetName  ·  ${fontSizeSp.toInt()}sp",
+                text = status ?: charsetName,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
             )
-            // ボタン行: weight(1f) で均等配置、幅をフルに使う。
+            // ボタン行: 貼付 / 行番号 / 折り返し / 戻す / 進む / 検索 / 保存
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ToolbarButton(
-                    onClick = onSearch,
-                    icon = Icons.Default.Search,
-                    label = "検索",
-                    active = searchOpen,
-                    activeColor = active,
+                    onClick = onPaste,
+                    icon = Icons.Default.ContentPaste,
+                    label = "貼付",
                     inactiveColor = inactive,
                     modifier = Modifier.weight(1f),
                 )
@@ -546,6 +395,15 @@ private fun EditorBottomBar(
                     icon = Icons.AutoMirrored.Filled.Redo,
                     label = "進む",
                     enabled = canRedo,
+                    inactiveColor = inactive,
+                    modifier = Modifier.weight(1f),
+                )
+                ToolbarButton(
+                    onClick = onSearch,
+                    icon = Icons.Default.Search,
+                    label = "検索",
+                    active = searchOpen,
+                    activeColor = active,
                     inactiveColor = inactive,
                     modifier = Modifier.weight(1f),
                 )
@@ -679,20 +537,4 @@ private fun CenterMessage(modifier: Modifier, message: String) {
     Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-}
-
-/** プレーンテキスト検索。case-insensitive で出現位置 (char index 範囲) を全部返す。 */
-internal fun findMatches(text: String, query: String): List<IntRange> {
-    if (query.isEmpty()) return emptyList()
-    val q = query.lowercase()
-    val src = text.lowercase()
-    val out = ArrayList<IntRange>()
-    var i = 0
-    while (true) {
-        val idx = src.indexOf(q, i)
-        if (idx < 0) break
-        out.add(idx until idx + q.length)
-        i = idx + q.length
-    }
-    return out
 }

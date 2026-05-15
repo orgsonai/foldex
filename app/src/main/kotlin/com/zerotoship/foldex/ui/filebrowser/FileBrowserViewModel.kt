@@ -101,6 +101,7 @@ class FileBrowserViewModel @Inject constructor(
         }
         viewModelScope.launch {
             settingsRepo.settings.collect { s ->
+                editorEditableLimitKb = s.editorEditableLimitKb
                 _state.value = _state.value.copy(
                     showExtensionBadge = s.showExtensionBadge,
                     deleteBehavior = s.deleteBehavior,
@@ -341,6 +342,7 @@ class FileBrowserViewModel @Inject constructor(
                         siblings = if (category == Category.IMAGE && node.uri is FileUri.Local) {
                             collectImageSiblings(localFile)
                         } else emptyList(),
+                        editableLimitKb = editorEditableLimitKb,
                     )
                 else -> external(chooser = true)
             }
@@ -400,6 +402,9 @@ class FileBrowserViewModel @Inject constructor(
         val mtimeAtOpen: Long,
     )
     private val pendingEdits = mutableMapOf<String, PendingEdit>()
+
+    /** 設定の「テキストエディタ編集可能上限(KB)」を保持。settings.collect で更新する。 */
+    private var editorEditableLimitKb: Int = 512
 
     private suspend fun downloadToCache(node: FileNode): File? {
         val dir = File(context.cacheDir, "opened").apply { mkdirs() }
@@ -915,6 +920,7 @@ class FileBrowserViewModel @Inject constructor(
                             name = name,
                             category = category,
                             editable = true,
+                            editableLimitKb = editorEditableLimitKb,
                         ),
                     )
                 }

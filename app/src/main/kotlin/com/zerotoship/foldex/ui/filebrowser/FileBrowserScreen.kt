@@ -185,6 +185,7 @@ fun FileBrowserScreen(
                         name = req.name,
                         category = req.category,
                         editable = req.editable,
+                        editableLimitKb = req.editableLimitKb,
                         siblings = req.siblings,
                     )
                 is OpenRequest.External -> {

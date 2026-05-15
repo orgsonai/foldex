@@ -52,6 +52,7 @@ class ViewerActivity : ComponentActivity() {
         val category = runCatching { Category.valueOf(intent.getStringExtra(EXTRA_CATEGORY) ?: "") }
             .getOrDefault(FileTypeRegistry.categorize(name))
         val editable = intent.getBooleanExtra(EXTRA_EDITABLE, false)
+        val editableLimitKb = intent.getIntExtra(EXTRA_EDITABLE_LIMIT_KB, 512)
         val siblings: List<String> = intent.getStringArrayExtra(EXTRA_SIBLINGS)?.toList().orEmpty()
 
         enableEdgeToEdge()
@@ -62,6 +63,7 @@ class ViewerActivity : ComponentActivity() {
                     name = name,
                     category = category,
                     editable = editable,
+                    editableLimitKb = editableLimitKb,
                     siblings = siblings,
                     onBack = { finish() },
                     onOpenExternally = { f -> openExternally(f, f.name) },
@@ -87,6 +89,7 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_NAME = "foldex.viewer.name"
         private const val EXTRA_CATEGORY = "foldex.viewer.category"
         private const val EXTRA_EDITABLE = "foldex.viewer.editable"
+        private const val EXTRA_EDITABLE_LIMIT_KB = "foldex.viewer.editable_limit_kb"
         private const val EXTRA_SIBLINGS = "foldex.viewer.siblings"
 
         fun intent(
@@ -95,6 +98,7 @@ class ViewerActivity : ComponentActivity() {
             name: String,
             category: Category,
             editable: Boolean = false,
+            editableLimitKb: Int = 512,
             siblings: List<String> = emptyList(),
         ): Intent =
             Intent(context, ViewerActivity::class.java)
@@ -102,6 +106,7 @@ class ViewerActivity : ComponentActivity() {
                 .putExtra(EXTRA_NAME, name)
                 .putExtra(EXTRA_CATEGORY, category.name)
                 .putExtra(EXTRA_EDITABLE, editable)
+                .putExtra(EXTRA_EDITABLE_LIMIT_KB, editableLimitKb)
                 .apply {
                     if (siblings.isNotEmpty()) putExtra(EXTRA_SIBLINGS, siblings.toTypedArray())
                 }
@@ -127,6 +132,7 @@ private fun ViewerScreen(
     name: String,
     category: Category,
     editable: Boolean,
+    editableLimitKb: Int,
     siblings: List<String>,
     onBack: () -> Unit,
     onOpenExternally: (File) -> Unit,
@@ -198,11 +204,11 @@ private fun ViewerScreen(
                 )
                 Category.MARKDOWN ->
                     if (previewMode) MarkdownViewer(file, Modifier.fillMaxSize())
-                    else TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
+                    else TextViewer(file, editable = editable, editableLimitKb = editableLimitKb, modifier = Modifier.fillMaxSize())
                 Category.HTML ->
                     if (previewMode) HtmlViewer(file, Modifier.fillMaxSize())
-                    else TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
-                Category.TEXT -> TextViewer(file, editable = editable, modifier = Modifier.fillMaxSize())
+                    else TextViewer(file, editable = editable, editableLimitKb = editableLimitKb, modifier = Modifier.fillMaxSize())
+                Category.TEXT -> TextViewer(file, editable = editable, editableLimitKb = editableLimitKb, modifier = Modifier.fillMaxSize())
                 Category.AUDIO -> AudioPlayer(file, name, Modifier.fillMaxSize())
                 Category.VIDEO -> VideoViewer(
                     file = file,
