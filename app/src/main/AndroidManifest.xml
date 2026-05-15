@@ -95,6 +95,16 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- リモート (SMB/SFTP/FTP/WebDAV) ファイルを content URI として ExoPlayer 等に
+             ストリーミング供給する ContentProvider。pipe + バックグラウンドコピーで
+             全DLを待たずに動画を再生できる。grantUriPermissions=true で外部アプリへ渡せる
+             (ACTION_VIEW フォールバック用)。 -->
+        <provider
+            android:name=".streaming.RemoteStreamProvider"
+            android:authorities="com.zerotoship.foldex.streaming"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <!-- WorkManager は FoldexApplication (Configuration.Provider) で初期化するため、
              androidx.startup による既定の自動初期化を無効化する。 -->
         <provider

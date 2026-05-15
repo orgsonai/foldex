@@ -19,6 +19,12 @@ sealed interface OpenRequest {
         val siblings: List<String> = emptyList(),
         /** テキストエディタで「編集可能」として開く上限 (KB)。ユーザー設定に従う。 */
         val editableLimitKb: Int = 512,
+        /**
+         * リモート動画/音声をストリーミング再生する場合の content:// URI 文字列。
+         * 非 null のときは [localPath] (空文字でも可) より優先され、
+         * VideoViewer / AudioPlayer は ExoPlayer に直接渡して全DLを待たずに再生する。
+         */
+        val streamingMediaUri: String? = null,
     ) : OpenRequest
 
     /** 外部アプリで ACTION_VIEW する。[chooser] が true ならアプリ選択ダイアログを毎回出す。 */

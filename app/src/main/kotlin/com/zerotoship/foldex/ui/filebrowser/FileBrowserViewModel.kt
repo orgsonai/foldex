@@ -310,6 +310,31 @@ class FileBrowserViewModel @Inject constructor(
         val ext = node.name.substringAfterLast('.', "").lowercase()
         viewModelScope.launch {
             val mode = openWithRepo.overrides.first()[ext] ?: OpenWithMode.DEFAULT
+            // ─── 動画 (Remote) はストリーミング: 全DLを待たずに ContentProvider 経由で再生 ───
+            // 全DL→VideoViewer で File 経由、と比べて再生開始までが圧倒的に速い。
+            // pipe ベースで seek 非対応なので、未対応形式は ExoPlayer のエラー→外部アプリ案内に転がる。
+            val isStreamableRemoteVideo =
+                initialCategory == Category.VIDEO &&
+                    node.uri is FileUri.Remote &&
+                    (mode == OpenWithMode.DEFAULT || mode == OpenWithMode.BUILTIN)
+            if (isStreamableRemoteVideo) {
+                val streamingUri = com.zerotoship.foldex.streaming.RemoteStreamProvider.buildUri(
+                    remote = node.uri as FileUri.Remote,
+                    displayName = node.name,
+                    size = node.size,
+                )
+                _openRequests.send(
+                    OpenRequest.Builtin(
+                        localPath = "",
+                        name = node.name,
+                        category = Category.VIDEO,
+                        editable = false,
+                        streamingMediaUri = streamingUri.toString(),
+                    ),
+                )
+                return@launch
+            }
+
             val localFile = resolveLocalFile(node) ?: return@launch
             // 拡張子なし / 不明 のときは先頭バイトを覗いて、テキストっぽければ TEXT 扱いにする
             // (例: `Dockerfile.bak`, `LICENSE`, `Makefile`, シェルスクリプトでも shebang 始まりだが

@@ -45,9 +45,11 @@ class ViewerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val path = intent.getStringExtra(EXTRA_PATH)
-        if (path.isNullOrBlank()) { finish(); return }
-        val file = File(path)
+        val path = intent.getStringExtra(EXTRA_PATH).orEmpty()
+        val streamingMediaUri = intent.getStringExtra(EXTRA_STREAMING_URI)
+        // streaming 経路は localPath=空でも OK (Mediauri から再生)。それ以外は path 必須。
+        if (path.isBlank() && streamingMediaUri.isNullOrBlank()) { finish(); return }
+        val file = if (path.isNotBlank()) File(path) else File(intent.getStringExtra(EXTRA_NAME) ?: "stream")
         val name = intent.getStringExtra(EXTRA_NAME) ?: file.name
         val category = runCatching { Category.valueOf(intent.getStringExtra(EXTRA_CATEGORY) ?: "") }
             .getOrDefault(FileTypeRegistry.categorize(name))
@@ -65,6 +67,7 @@ class ViewerActivity : ComponentActivity() {
                     editable = editable,
                     editableLimitKb = editableLimitKb,
                     siblings = siblings,
+                    streamingMediaUri = streamingMediaUri,
                     onBack = { finish() },
                     onOpenExternally = { f -> openExternally(f, f.name) },
                 )
@@ -91,6 +94,7 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_EDITABLE = "foldex.viewer.editable"
         private const val EXTRA_EDITABLE_LIMIT_KB = "foldex.viewer.editable_limit_kb"
         private const val EXTRA_SIBLINGS = "foldex.viewer.siblings"
+        private const val EXTRA_STREAMING_URI = "foldex.viewer.streaming_uri"
 
         fun intent(
             context: Context,
@@ -100,6 +104,7 @@ class ViewerActivity : ComponentActivity() {
             editable: Boolean = false,
             editableLimitKb: Int = 512,
             siblings: List<String> = emptyList(),
+            streamingMediaUri: String? = null,
         ): Intent =
             Intent(context, ViewerActivity::class.java)
                 .putExtra(EXTRA_PATH, localPath)
@@ -109,6 +114,9 @@ class ViewerActivity : ComponentActivity() {
                 .putExtra(EXTRA_EDITABLE_LIMIT_KB, editableLimitKb)
                 .apply {
                     if (siblings.isNotEmpty()) putExtra(EXTRA_SIBLINGS, siblings.toTypedArray())
+                    if (!streamingMediaUri.isNullOrBlank()) {
+                        putExtra(EXTRA_STREAMING_URI, streamingMediaUri)
+                    }
                 }
     }
 }
@@ -134,6 +142,8 @@ private fun ViewerScreen(
     editable: Boolean,
     editableLimitKb: Int,
     siblings: List<String>,
+    /** リモートストリーミング再生に使う content URI 文字列。VIDEO/AUDIO カテゴリ時のみ参照。 */
+    streamingMediaUri: String?,
     onBack: () -> Unit,
     onOpenExternally: (File) -> Unit,
 ) {
@@ -212,6 +222,8 @@ private fun ViewerScreen(
                 Category.AUDIO -> AudioPlayer(file, name, Modifier.fillMaxSize())
                 Category.VIDEO -> VideoViewer(
                     file = file,
+                    displayName = name,
+                    mediaUri = streamingMediaUri,
                     modifier = Modifier.fillMaxSize(),
                     onOpenExternally = onOpenExternally,
                 )

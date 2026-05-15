@@ -41,15 +41,25 @@ import java.io.File
  * - WMV (`.wmv` / `.asf` の WMV9/VC-1) は Android 標準の MediaCodec / ExoPlayer
  *   が対応していないため、拡張子で予め判定して **外部アプリへ即フォールバック**。
  * - それ以外の形式でも prepare/再生でエラーが出たらオーバーレイで「別のアプリで開く」を案内。
+ * - リモートファイルは [mediaUri] (content://com.zerotoship.foldex.streaming/...) を直接渡し、
+ *   ContentProvider 経由で pipe ストリーミング再生する (全DLを待たない)。
+ *   ローカルファイルは [file] から file URI を組み立てる。
  */
 @Composable
 fun VideoViewer(
     file: File,
     modifier: Modifier = Modifier,
+    /** 表示名 (WMV 等の拡張子判定用)。streaming URI には拡張子情報が無いので別途渡す。 */
+    displayName: String = file.name,
+    /**
+     * 非 null のときはこれを ExoPlayer に渡す (リモートストリーミング)。null のときは
+     * [file] からローカル URI を組み立てる。
+     */
+    mediaUri: String? = null,
     onOpenExternally: (File) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val ext = remember(file) { file.extension.lowercase() }
+    val ext = remember(displayName) { displayName.substringAfterLast('.', "").lowercase() }
     val unsupportedExtension = ext == "wmv" || ext == "asf"
 
     if (unsupportedExtension) {
@@ -61,11 +71,12 @@ fun VideoViewer(
         return
     }
 
-    var playbackError by remember(file.absolutePath) { mutableStateOf<String?>(null) }
+    val playUri = mediaUri ?: file.toURI().toString()
+    var playbackError by remember(playUri) { mutableStateOf<String?>(null) }
 
-    val player = remember(file.absolutePath) {
+    val player = remember(playUri) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(file.toURI().toString()))
+            setMediaItem(MediaItem.fromUri(playUri))
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
                     playbackError = error.message ?: "再生エラー (${error.errorCodeName})"

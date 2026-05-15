@@ -187,6 +187,7 @@ fun FileBrowserScreen(
                         editable = req.editable,
                         editableLimitKb = req.editableLimitKb,
                         siblings = req.siblings,
+                        streamingMediaUri = req.streamingMediaUri,
                     )
                 is OpenRequest.External -> {
                     // 外部アプリで開く: WRITE 権限も付ける (テキスト系の外部エディタが保存
