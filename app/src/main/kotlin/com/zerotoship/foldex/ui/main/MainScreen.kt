@@ -159,6 +159,11 @@ fun MainScreen(
             navController = navController,
             startDestination = TopTab.HOME.route,
             modifier = Modifier.padding(innerPadding),
+            // タブ/サブ画面切替の既定フェードを無効化 (体感を瞬時切替に)。
+            enterTransition = { androidx.compose.animation.EnterTransition.None },
+            exitTransition = { androidx.compose.animation.ExitTransition.None },
+            popEnterTransition = { androidx.compose.animation.EnterTransition.None },
+            popExitTransition = { androidx.compose.animation.ExitTransition.None },
         ) {
             composable(TopTab.HOME.route) {
                 HomeScreen(
