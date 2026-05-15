@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -264,6 +265,9 @@ private fun ConnectionEditDialog(
         Protocol.WEBDAV -> if (state.isNew) "WebDAV 接続を追加" else "WebDAV 接続を編集"
     }
     AlertDialog(
+        // 範囲外タップ / 戻るキーで誤って閉じないようにする (入力済み内容を失うのを防ぐ)。
+        // 閉じるのは「キャンセル」ボタン経由のみ。
+        properties = DialogProperties(dismissOnClickOutside = false, dismissOnBackPress = false),
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
