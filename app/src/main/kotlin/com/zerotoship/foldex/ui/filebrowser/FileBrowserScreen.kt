@@ -82,6 +82,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.rememberDrawerState
@@ -178,7 +179,14 @@ fun FileBrowserScreen(
         viewModel.openRequests.collect { req ->
             val intent = when (req) {
                 is OpenRequest.Builtin ->
-                    ViewerActivity.intent(context, req.localPath, req.name, req.category, req.editable)
+                    ViewerActivity.intent(
+                        context = context,
+                        localPath = req.localPath,
+                        name = req.name,
+                        category = req.category,
+                        editable = req.editable,
+                        siblings = req.siblings,
+                    )
                 is OpenRequest.External -> {
                     // 外部アプリで開く: WRITE 権限も付ける (テキスト系の外部エディタが保存
                     // できないと SecurityException が出るため)。
@@ -272,10 +280,11 @@ fun FileBrowserScreen(
                 onPickFolder = { closeDrawerThen { safLauncher.launch(null) } },
                 onOpenConnection = { conn ->
                     closeDrawerThen {
+                        val initial = conn.initialPath.ifBlank { "/" }
                         when (conn) {
-                            is Connection.Smb -> viewModel.openSmbConnection(conn.id, conn.name)
+                            is Connection.Smb -> viewModel.openSmbConnection(conn.id, conn.name, initial)
                             else -> viewModel.open(
-                                FileUri.Remote(conn.protocol, conn.id, "/"),
+                                FileUri.Remote(conn.protocol, conn.id, initial),
                                 conn.name,
                             )
                         }
@@ -590,6 +599,11 @@ fun FileBrowserScreen(
                 FileOpProgressBanner(p)
                 HorizontalDivider()
             }
+            // バックグラウンド DL (リモート/SAF) の件数 + 直近ファイル名を上端に出す。
+            if (state.activeDownloads.isNotEmpty()) {
+                ActiveDownloadsBanner(state.activeDownloads)
+                HorizontalDivider()
+            }
             // ACTION_SEND で受け取ったファイルがあるとき: バナーで保存先選択を案内する。
             if (state.pendingShares.isNotEmpty()) {
                 ShareReceiveBanner(
@@ -608,41 +622,49 @@ fun FileBrowserScreen(
                 HorizontalDivider()
             }
 
-            when {
-                !state.hasStoragePermission && !state.hasSafRoot -> NoAccessContent(
-                    onRequestPermission = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            context.startActivity(
-                                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                                    Uri.fromParts("package", context.packageName, null))
-                            )
+            // プルダウン更新: 一覧の上から下に引くと現フォルダを再読込する。
+            // PullToRefreshBox が isRefreshing 中に上端スピナーを表示する。
+            PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = { viewModel.pullRefresh() },
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                when {
+                    !state.hasStoragePermission && !state.hasSafRoot -> NoAccessContent(
+                        onRequestPermission = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                        Uri.fromParts("package", context.packageName, null))
+                                )
+                            }
+                        },
+                        onPickFolder = { safLauncher.launch(null) },
+                    )
+                    // opProgress 中はリストを差し替えず、上部バナーだけで進捗を出す。
+                    state.isLoading && state.opProgress == null ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
                         }
-                    },
-                    onPickFolder = { safLauncher.launch(null) },
-                )
-                // opProgress 中はリストを差し替えず、上部バナーだけで進捗を出す。
-                state.isLoading && state.opProgress == null ->
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                state.error != null -> ErrorContent(message = state.error!!, onRetry = { viewModel.refresh() })
-                state.filteredFiles.isEmpty() && state.searchQuery.isNotEmpty() ->
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("「${state.searchQuery}」に一致するファイルはありません",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                state.filteredFiles.isEmpty() -> EmptyContent()
-                else -> FileListContent(
-                    files = state.filteredFiles,
-                    viewMode = state.viewMode,
-                    selectedUris = state.selectedUris,
-                    showBadge = state.showExtensionBadge,
-                    // 安定な関数参照を渡す (毎回新しいラムダを作らない) → スクロール中に
-                    // 行アイテムが無駄に再コンポーズされない。
-                    onFileClick = viewModel::onItemClick,
-                    onFileLongClick = viewModel::onItemLongClick,
-                )
+                    state.error != null -> ErrorContent(message = state.error!!, onRetry = { viewModel.refresh() })
+                    state.filteredFiles.isEmpty() && state.searchQuery.isNotEmpty() ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("「${state.searchQuery}」に一致するファイルはありません",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    state.filteredFiles.isEmpty() -> EmptyContent()
+                    else -> FileListContent(
+                        files = state.filteredFiles,
+                        viewMode = state.viewMode,
+                        selectedUris = state.selectedUris,
+                        showBadge = state.showExtensionBadge,
+                        // 安定な関数参照を渡す (毎回新しいラムダを作らない) → スクロール中に
+                        // 行アイテムが無駄に再コンポーズされない。
+                        onFileClick = viewModel::onItemClick,
+                        onFileLongClick = viewModel::onItemLongClick,
+                    )
+                }
             }
         }
     }

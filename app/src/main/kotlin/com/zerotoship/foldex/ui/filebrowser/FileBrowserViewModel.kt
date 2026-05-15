@@ -156,9 +156,10 @@ class FileBrowserViewModel @Inject constructor(
         navigateTo(FileUri.Saf(treeUri.toString()), displayName = "ストレージ")
     }
 
-    fun openSmbConnection(connectionId: String, displayName: String) {
+    fun openSmbConnection(connectionId: String, displayName: String, initialPath: String = "/") {
         _state.value = _state.value.copy(breadcrumbs = emptyList(), selectedUris = emptySet())
-        navigateTo(FileUri.Remote(Protocol.SMB, connectionId, "/"), displayName = displayName)
+        val path = if (initialPath.isBlank()) "/" else initialPath
+        navigateTo(FileUri.Remote(Protocol.SMB, connectionId, path), displayName = displayName)
     }
 
     fun openLocalRoot() {
@@ -266,6 +267,20 @@ class FileBrowserViewModel @Inject constructor(
         loadFiles(uri)
     }
 
+    /** プルダウン更新。上端スピナーだけ出し、完了後に下げる。 */
+    fun pullRefresh() {
+        val uri = _state.value.currentUri ?: return
+        if (_state.value.isRefreshing) return
+        _state.value = _state.value.copy(isRefreshing = true)
+        viewModelScope.launch {
+            try {
+                loadFilesSync(uri)
+            } finally {
+                _state.value = _state.value.copy(isRefreshing = false)
+            }
+        }
+    }
+
     // --- 一覧アイテムのタップ / 長押し ---
     // 画面側からは安定した関数参照として渡すため、選択モード分岐はここで行う。
 
@@ -317,10 +332,10 @@ class FileBrowserViewModel @Inject constructor(
                         localPath = localFile.absolutePath,
                         name = node.name,
                         category = category,
-                        // ローカル + リモートともに編集可能にする (リモートはキャッシュに編集 →
-                        // FileBrowser に戻ったタイミングで [checkPendingUploads] が変更を検出して
-                        // 元のリモートにアップロードバックする)。SAF は未対応。
-                        editable = node.uri !is FileUri.Saf,
+                        // ローカル / リモート / SAF いずれも編集可能。
+                        // リモート・SAF はキャッシュに編集 → FileBrowser に戻ったタイミングで
+                        // [checkPendingUploads] が変更を検出して元の URI にアップロードバックする。
+                        editable = true,
                         // 画像はスワイプで前後の画像へ遷移できるよう、同フォルダの兄弟画像を集める
                         // (HANDOFF §10-C: 「隣の画像へスワイプ」)。ローカルのみ対応。
                         siblings = if (category == Category.IMAGE && node.uri is FileUri.Local) {
@@ -340,79 +355,132 @@ class FileBrowserViewModel @Inject constructor(
         is FileUri.Remote -> downloadToCache(node)
     }
 
-    /** SAF ノードをキャッシュにコピー (内蔵ビューア用)。書き戻しは未対応 (editable=false で開く)。 */
+    /**
+     * SAF ノードをキャッシュにコピー (内蔵ビューア用)。
+     * 編集後の書き戻し用に [pendingEdits] に登録し、ON_RESUME で
+     * [checkPendingUploads] が mtime 差分を見て元 URI に OVERWRITE する。
+     */
     private suspend fun downloadSafToCache(node: FileNode): File? = withContext(Dispatchers.IO) {
         val u = node.uri as FileUri.Saf
-        runCatching {
-            val out = File(context.cacheDir, "saf_${System.currentTimeMillis()}_${node.name}")
-            when (val r = storage.openInput(u)) {
-                is Result.Success -> r.value.use { ins ->
-                    out.outputStream().use { os -> ins.copyTo(os) }
+        val dir = File(context.cacheDir, "opened").apply { mkdirs() }
+        val safeName = node.name.replace(Regex("[^A-Za-z0-9._\\-]"), "_").ifEmpty { "file" }
+        val out = File(dir, "saf_${u.documentUri.hashCode().toUInt()}_$safeName")
+        val dlId = "saf_${out.absolutePath.hashCode()}_${System.nanoTime()}"
+        val total = node.size.coerceAtLeast(0L)
+        withContext(Dispatchers.Main) { addActiveDownload(ActiveDownload(id = dlId, name = node.name, totalBytes = total)) }
+        try {
+            runCatching {
+                when (val r = storage.openInput(u)) {
+                    is Result.Success -> r.value.use { ins ->
+                        out.outputStream().use { os -> copyWithProgress(ins, os, total, dlId) }
+                    }
+                    is Result.Failure -> {
+                        emit(SnackbarEvent("読み込み失敗: ${r.error.message}"))
+                        return@withContext null
+                    }
                 }
-                is Result.Failure -> {
-                    emit(SnackbarEvent("読み込み失敗: ${r.error.message}"))
-                    return@withContext null
-                }
+                pendingEdits[out.absolutePath] = PendingEdit(u, out.lastModified())
+                out
+            }.getOrElse {
+                emit(SnackbarEvent("読み込み失敗: ${it.message}"))
+                null
             }
-            out
-        }.getOrElse {
-            emit(SnackbarEvent("読み込み失敗: ${it.message}"))
-            null
+        } finally {
+            withContext(Dispatchers.Main) { removeActiveDownload(dlId) }
         }
     }
 
     /**
-     * 外部アプリ or 内蔵エディタに渡したキャッシュファイル → 元のリモート URI。
+     * 外部アプリ or 内蔵エディタに渡したキャッシュファイル → 元の (Remote/SAF) URI。
      * 編集が終わってユーザーが Foldex に戻ったとき [checkPendingUploads] で更新を検出して
      * アップロードバックする。
      */
-    private data class PendingRemoteEdit(
-        val remoteUri: FileUri.Remote,
+    private data class PendingEdit(
+        val sourceUri: FileUri,
         val mtimeAtOpen: Long,
     )
-    private val pendingRemoteEdits = mutableMapOf<String, PendingRemoteEdit>()
+    private val pendingEdits = mutableMapOf<String, PendingEdit>()
 
     private suspend fun downloadToCache(node: FileNode): File? {
-        emit(SnackbarEvent("ダウンロード中…"))
         val dir = File(context.cacheDir, "opened").apply { mkdirs() }
         val safeName = node.name.replace(Regex("[^A-Za-z0-9._\\-]"), "_").ifEmpty { "file" }
         val out = File(dir, "${node.uri.toStorageString().hashCode().toUInt()}_$safeName")
-        return when (val r = storage.openInput(node.uri)) {
-            is Result.Success -> withContext(Dispatchers.IO) {
-                runCatching {
-                    r.value.use { input -> out.outputStream().use { input.copyTo(it) } }
-                    // 編集後のアップロードバック用に DL 直後の mtime を控える。
-                    val remote = node.uri as? FileUri.Remote
-                    if (remote != null) {
-                        pendingRemoteEdits[out.absolutePath] = PendingRemoteEdit(remote, out.lastModified())
-                    }
-                    out
-                }.getOrElse { emit(SnackbarEvent("ダウンロード失敗: ${it.message}")); null }
+        val dlId = "dl_${out.absolutePath.hashCode()}_${System.nanoTime()}"
+        val total = node.size.coerceAtLeast(0L)
+        addActiveDownload(ActiveDownload(id = dlId, name = node.name, totalBytes = total))
+        return try {
+            when (val r = storage.openInput(node.uri)) {
+                is Result.Success -> withContext(Dispatchers.IO) {
+                    runCatching {
+                        r.value.use { input ->
+                            out.outputStream().use { os ->
+                                copyWithProgress(input, os, total, dlId)
+                            }
+                        }
+                        val remote = node.uri as? FileUri.Remote
+                        if (remote != null) {
+                            pendingEdits[out.absolutePath] = PendingEdit(remote, out.lastModified())
+                        }
+                        out
+                    }.getOrElse { emit(SnackbarEvent("読み込み失敗: ${it.message}")); null }
+                }
+                is Result.Failure -> { emit(SnackbarEvent("読み込み失敗: ${r.error.message}")); null }
             }
-            is Result.Failure -> { emit(SnackbarEvent("ダウンロード失敗: ${r.error.message}")); null }
+        } finally {
+            removeActiveDownload(dlId)
+        }
+    }
+
+    private fun addActiveDownload(d: ActiveDownload) {
+        _state.value = _state.value.copy(activeDownloads = _state.value.activeDownloads + d)
+    }
+
+    private fun removeActiveDownload(id: String) {
+        _state.value = _state.value.copy(
+            activeDownloads = _state.value.activeDownloads.filterNot { it.id == id },
+        )
+    }
+
+    /** 64KB バッファでコピーしつつ、80ms スロットルで activeDownloads の進捗を更新する。 */
+    private fun copyWithProgress(input: java.io.InputStream, output: java.io.OutputStream, total: Long, dlId: String) {
+        val buf = ByteArray(DEFAULT_BUFFER_SIZE)
+        var transferred = 0L
+        var lastUpdate = 0L
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            output.write(buf, 0, n)
+            transferred += n
+            val now = System.currentTimeMillis()
+            if (now - lastUpdate > 80) {
+                lastUpdate = now
+                val cur = _state.value.activeDownloads
+                val updated = cur.map { if (it.id == dlId) it.copy(bytesTransferred = transferred, totalBytes = total) else it }
+                _state.value = _state.value.copy(activeDownloads = updated)
+            }
         }
     }
 
     /**
      * 外部アプリ/内蔵エディタから戻ってきたタイミングで、キャッシュファイルが
-     * DL 時より新しければ元のリモートにアップロードバックする。
+     * DL 時より新しければ元 (Remote / SAF) にアップロードバックする。
      */
     fun checkPendingUploads() {
-        if (pendingRemoteEdits.isEmpty()) return
+        if (pendingEdits.isEmpty()) return
         viewModelScope.launch {
-            val snapshot = pendingRemoteEdits.toMap()
+            val snapshot = pendingEdits.toMap()
             var uploaded = 0
             var failed = 0
             for ((path, info) in snapshot) {
                 val f = File(path)
                 if (!f.exists()) {
-                    pendingRemoteEdits.remove(path)
+                    pendingEdits.remove(path)
                     continue
                 }
                 if (f.lastModified() <= info.mtimeAtOpen) continue // 編集されていない
                 val ok = withContext(Dispatchers.IO) {
                     runCatching {
-                        when (val r = storage.openOutput(info.remoteUri, com.zerotoship.foldex.core.model.WriteMode.OVERWRITE)) {
+                        when (val r = storage.openOutput(info.sourceUri, com.zerotoship.foldex.core.model.WriteMode.OVERWRITE)) {
                             is Result.Success -> r.value.use { out ->
                                 f.inputStream().use { it.copyTo(out) }
                             }
@@ -423,14 +491,17 @@ class FileBrowserViewModel @Inject constructor(
                 }
                 if (ok) {
                     uploaded++
-                    pendingRemoteEdits[path] = info.copy(mtimeAtOpen = f.lastModified())
+                    pendingEdits[path] = info.copy(mtimeAtOpen = f.lastModified())
                 } else {
                     failed++
                 }
             }
             if (uploaded > 0 || failed > 0) {
                 val msg = buildString {
-                    if (uploaded > 0) append("${uploaded} 件をリモートに保存しました")
+                    if (uploaded > 0) {
+                        val tag = if (snapshot.values.any { it.sourceUri is FileUri.Saf }) "" else "リモートに"
+                        append("${uploaded} 件を${tag}保存しました")
+                    }
                     if (failed > 0) {
                         if (uploaded > 0) append(" / ")
                         append("${failed} 件は失敗")

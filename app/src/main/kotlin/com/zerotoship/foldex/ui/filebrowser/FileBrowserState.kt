@@ -22,6 +22,17 @@ data class SnackbarEvent(
 /** ACTION_SEND / ACTION_SEND_MULTIPLE で外部アプリから受け取ったファイル。 */
 data class SharedIncomingFile(val sourceUri: String, val name: String)
 
+/**
+ * バックグラウンドで実行中のリモート/SAF ダウンロード 1 件分の進捗。
+ * UI 上部に「DL中 N件」のバナーを出すために使う。
+ */
+data class ActiveDownload(
+    val id: String,
+    val name: String,
+    val bytesTransferred: Long = 0,
+    val totalBytes: Long = 0,
+)
+
 /** ZIP 解凍ダイアログのリクエスト。`needsPassword` が true ならパスワード入力を求める。 */
 data class ZipExtractRequest(val node: FileNode, val needsPassword: Boolean, val initialError: String? = null)
 
@@ -43,6 +54,8 @@ data class FileBrowserState(
     val breadcrumbs: List<BreadcrumbItem> = emptyList(),
     val files: List<FileNode> = emptyList(),
     val isLoading: Boolean = false,
+    /** プルダウン更新中。`isLoading` と違って全画面 CircularProgressIndicator は出さず、上端のスピナーのみ。 */
+    val isRefreshing: Boolean = false,
     val error: String? = null,
     val viewMode: ViewMode = ViewMode.LIST,
     val hasStoragePermission: Boolean = false,
@@ -74,6 +87,8 @@ data class FileBrowserState(
     val propertiesTarget: FileNode? = null,
     // パス手動入力ダイアログの初期文字列 (null = 非表示)。
     val pendingPathInput: String? = null,
+    /** 現在ダウンロード中のリモート/SAFファイル一覧 (バックグラウンドDLバナー用)。 */
+    val activeDownloads: List<ActiveDownload> = emptyList(),
     // ZIP 圧縮ダイアログ: 圧縮対象ノード一覧 (空 = 非表示)。
     val pendingZipCompress: List<FileNode> = emptyList(),
     // ZIP 解凍ダイアログ: 対象 zip と「パスワード要否」 (null = 非表示)。
