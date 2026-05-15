@@ -172,32 +172,48 @@ docs: P1 達成サマリ
 
 ## 7. P7 — UI洗練 / エラーハンドリング / テスト配布
 
-> P7 進行中の追加修正依頼は `docs/P7-REVISIONS.md` に整理 (スクロール性能・双方向同期・スケジュール拡張・同期削除バックアップ・AppBar 整理・内蔵ビューア/サムネ/既定アプリ設定・ゴミ箱)。確定したらここと HANDOFF へ反映する。
+> P7 進行中の追加修正依頼は `docs/P7-REVISIONS.md` に整理 (§A〜§G まで)。確定したらここと HANDOFF へ反映する。
 
 ### 達成条件
 - [x] 設定画面 (`FOLDEX-HANDOFF.md §11-H` フラット構成)
 - [x] 動的カラー (Material You) + Forest Green フォールバック
 - [x] ダーク/ライト/システム追従
 - [x] 拡張子バッジ
-- [ ] アクセシビリティ最低ライン (TalkBack / 48dp / コントラスト)
-- [ ] 同期途中再開
-- [ ] エラーメッセージの日本語化
+- [ ] アクセシビリティ最低ライン (TalkBack / 48dp / コントラスト) ← **P7 残**
+- [ ] 同期途中再開 ← **P7 残** (リモートの完全動作を見届けた後に着手)
+- [ ] エラーメッセージの日本語化 (`StorageError` / `SyncError`) ← **P7 残**
 - [x] ゴミ箱機能 (ゴミ箱へ/完全削除/毎回確認 + ゴミ箱画面)
-- [ ] PDF内蔵ビューア (任意)
-- [ ] テスト配布用 APK ビルド (内輪向け)
+- [x] PDF 内蔵ビューア (PdfRenderer + LRU ページキャッシュ + 専用スクロールバー)
+- [x] テスト配布用 APK ビルド (debug `.debug` 共存 / release 自己署名 / `./gradlew :app:assembleRelease`)
 
-#### P7 で前倒し対応した追加機能 (`docs/P7-REVISIONS.md`)
-- [x] 一覧の逐次表示 + ファストスクローラ
-- [x] 内蔵ビューア (画像/テキスト編集/Markdown/HTML/音声) + 外部アプリ連携 + APK インストール + サムネ
-- [x] 拡張子→既定アプリ設定
-- [x] AppBar の整理 (検索 + ⋮)
-- [x] 同期スケジュール拡張 (毎日/毎週/毎月/日時指定)
+#### P7 で前倒し対応した追加機能 (`docs/P7-REVISIONS.md` §A〜§G)
+- [x] 一覧の逐次表示 + ファストスクローラ + プルダウン更新
+- [x] 内蔵ビューア (画像/テキスト編集/Markdown/HTML/音声/動画/PDF) + 外部アプリ連携 + APK インストール + サムネ
+- [x] **テキストエディタを Sora-editor に置換** (~8MB まで軽快、検索/折返し/行番号/Undo/Redo)
+- [x] **動画リモートストリーミング** (`StorageManager.openProxyFileDescriptor` + 各プロバイダ範囲指定 openInput → seek 対応)
+- [x] 拡張子→既定アプリ設定 / フォルダ別の表示モード記憶
+- [x] AppBar の整理 (検索 + ⋮、ファイル選択モード時の overflow メニュー)
+- [x] 同期スケジュール拡張 (毎日/毎週/毎月/日時指定) + 実行状態チップ (RUNNING/ENQUEUED/IDLE)
 - [x] 同期ジョブ追加画面の整理
-- [x] delete 同期の削除前バックアップ (世代管理 + 容量しきい値設定)
+- [x] delete 同期の削除前バックアップ (世代管理 + 容量しきい値設定 + L/R 一括復元)
 - [x] **双方向同期 (`SyncDirection.BIDIRECTIONAL`)** ← 元 P8 から前倒し
+- [x] **HOME 画面** (組み込みタイル / カスタム / ドラッグ並べ替え / 名前変更 / 非表示 / SAF tree も固定可)
+- [x] **App Shortcuts** + ACTION_SEND 共有受信 (`*/*` の単一・複数ファイル)
+- [x] **接続編集** (URL ワンライナー入力、ポート空欄許可、SFTP 公開鍵認証 + 鍵生成、SMB 共有名/初期パス分離)
+- [x] **接続セッションプール**: 編集後の即時反映 (host/port/共有名/auth 等の signature 比較で再接続)
+- [x] **FTP サーバー** を NIO ベースの NativeFileSystemFactory 自前実装に置換 (書き込み失敗の修正)
+- [x] **SAF (Termux 等) 完全対応** (`FileUri.Saf.pendingChildName` + DocumentFile.createFile/createDirectory)
+- [x] **ZIP** 圧縮/解凍 (zip4j 2.11.5 + AES-256 パスワード)
+- [x] **メディア横断ビュー** (画像/動画を MediaStore から横断クエリ、フォルダグルーピング + 選択モード)
+- [x] **実行ログ** 機能 (`AppLogger` + 設定→実行ログ、Crash / Server / Sync を集約)
+- [x] **キャッシュクリア** (設定の「ストレージ」セクション)
+- [x] **アプリアイコン** 差し替え
+- [x] **タブ/画面切替の即時化** (NavHost の enter/exit transition を `None` に)
+- [x] **DB マイグレーション失敗時の自動復旧** (`deleteDatabase` + 再構築フォールバック)
 
 ### スコープ外
 - F-Droid / Play 配布 (P8)
+- LICENSE 確定 (P8)
 
 ---
 
@@ -205,6 +221,8 @@ docs: P1 達成サマリ
 
 ### 達成条件
 - [x] 双方向同期 (`SyncDirection.BIDIRECTIONAL`) — P7 で前倒し実装済み
+- [x] 動画リモートストリーミング — P7 で前倒し実装済み (ProxyFileDescriptor + range openInput)
+- [x] HOME 画面・ドラッグ並べ替え — P7 で前倒し実装済み
 - [ ] エクスポート/インポート (要設計)
 - [ ] F-Droid 用 metadata
 - [ ] Reproducible Build
@@ -212,6 +230,7 @@ docs: P1 達成サマリ
 - [ ] プライバシーポリシー (Play 向けに準備)
 - [ ] GitHub リリースワークフロー
 - [ ] `v1.0.0` タグ
+- [ ] P7 残課題の消化 (アクセシビリティ / エラーメッセージ日本語化 / 同期途中再開)
 
 ---
 
@@ -225,4 +244,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-05-07 (初版)
+最終更新: 2026-05-16 (P7 終盤の現状を反映、§7 / §8 を更新)

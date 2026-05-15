@@ -969,13 +969,13 @@ app/ui/viewer/
 
 | 項目 | 決定 |
 |---|---|
-| 動画プレーヤー | 外部呼び出しのみ。音声は簡易内蔵 (Media3) を P7 で追加 + 外部も可 |
-| PDFビューア | 初期は外部、P7以降に内蔵検討 |
-| テキストエディタ | 簡易編集まで (シンタックスハイライトなし) |
-| Markdownプレビュー | Markwon で内蔵 |
-| 圧縮ファイル | 中身プレビュー + 展開 + 作成 |
-| RAR | 読みのみ対応 (junrar) |
-| パスワード付きZIP | zip4j で対応 |
+| 動画プレーヤー | Media3 ExoPlayer で内蔵 (P7)。**リモートも `StorageManager.openProxyFileDescriptor` + 範囲指定 `openInput` で seek 対応ストリーミング**。WMV/.asf は外部アプリ案内 |
+| PDFビューア | PdfRenderer で内蔵 (P7、LRU ページキャッシュ + 専用スクロールバー) |
+| テキストエディタ | **Sora-editor (Canvas 描画 + 仮想化、`sora-editor:0.23.5`)** に置換 (P7 後期)。検索/折返し/行番号/Undo/Redo、編集上限はユーザー設定 (128KB〜8MB) |
+| Markdownプレビュー | Markwon で内蔵 (tables/strikethrough/tasklist/linkify プラグイン) |
+| 圧縮ファイル | ZIP の圧縮/解凍を P7 で実装 (zip4j 2.11.5、AES-256 パスワード対応)。7z/tar.xz/RAR は未着手 |
+| RAR | 未着手 (将来 junrar を検討) |
+| パスワード付きZIP | zip4j で対応 (AES-256 / PKCS#5) |
 | EXIF削除 | オプション提供、デフォルトオフ (P7以降) |
 | エンコーディング判定 | juniversalchardet 自動判定 |
 | 画像サムネ | Coil 3 |
@@ -1503,18 +1503,20 @@ AppBar の🔍タップで検索モード:
 
 ## 13. 開発ロードマップ
 
-| フェーズ | 内容 |
-|---|---|
-| **P1** | プロジェクトスケルトン、build.gradle.kts、Hilt設定、最低限のActivity |
-| **P2** | ローカルファイルブラウザ (read-only)、SAF対応 |
-| **P3** | ローカル操作 (CRUD)、権限ハンドリング、StorageProvider抽象 |
-| **P4** | SMB対応 (smbj統合) — 1プロトコルで実証 |
-| **P5** | SFTP / FTP / WebDAV を順次追加 |
-| **P6** | 自機SFTP/FTPサーバー (ForegroundService、Argon2id認証、ホスト鍵生成) + 同期エンジン (片方向) |
-| **P7** | UI洗練、同期途中再開、エラーハンドリング、テスト配布 |
-| **P8** | 双方向同期、エクスポート/インポート、F-Droid/Play配布 |
+| フェーズ | 内容 | 状況 |
+|---|---|---|
+| **P1** | プロジェクトスケルトン、build.gradle.kts、Hilt設定、最低限のActivity | ✅ 完了 |
+| **P2** | ローカルファイルブラウザ (read-only)、SAF対応 | ✅ 完了 |
+| **P3** | ローカル操作 (CRUD)、権限ハンドリング、StorageProvider抽象 | ✅ 完了 |
+| **P4** | SMB対応 (smbj統合) — 1プロトコルで実証 | ✅ 完了 |
+| **P5** | SFTP / FTP / WebDAV を順次追加 | ✅ 完了 |
+| **P6** | 自機SFTP/FTPサーバー (ForegroundService、Argon2id認証、ホスト鍵生成) + 同期エンジン (片方向) | ✅ 完了 |
+| **P7** | UI洗練、エラーハンドリング、テスト配布 + P8 から前倒し (双方向同期 / リモート動画ストリーミング / HOME 画面 / Sora エディタ / ZIP) | 🚧 大半完了。残: アクセシビリティ、エラーメッセージ日本語化、同期途中再開 |
+| **P8** | エクスポート/インポート、F-Droid/Play配布、`v1.0.0` | ⏳ 未着手 |
 
 各フェーズは1〜3週間程度を想定。スマホポチポチ開発のペース。
+
+P7 で前倒し実装したものを含む詳細な進捗は `docs/PHASES.md` §7 と `docs/P7-REVISIONS.md` を参照。
 
 ---
 
@@ -1543,7 +1545,9 @@ AppBar の🔍タップで検索モード:
 | SSH秘密鍵 | DBにBLOB暗号化保存 |
 | インポート機能 | 見送り (将来Roomマイグレーション) |
 | バックアップ | `allowBackup=false` のみ |
-| 双方向同期 | P7 で実装 (BIDIRECTIONAL) |
+| 双方向同期 | P7 で実装 (`SyncDirection.BIDIRECTIONAL`) |
+| 削除前バックアップ | 世代管理 + 容量しきい値設定 + L/R 一括復元 (P7 実装) |
+| 同期実行状態の可視化 | `JobStatusChip` (RUNNING/ENQUEUED/IDLE) + `AppLogger` 経由の詳細ログ |
 | 削除アクション | デフォルトオフ (オプトイン) |
 | state DB | `core-data` に統合 |
 | フィルタ | glob パターンのみ |
@@ -1559,13 +1563,13 @@ AppBar の🔍タップで検索モード:
 | デフォルトポート | SFTP=2022, FTP=2121 |
 | FTPS | Explicit TLS、自己署名証明書自動生成 |
 | ホスト鍵 (SFTP) | Ed25519、初回自動生成、再生成可 |
-| 動画プレーヤー | 外部呼び出しのみ。音声は簡易内蔵 (Media3) を P7 で追加 + 外部も可 |
-| PDFビューア | 初期は外部、P7以降に内蔵検討 |
-| テキストエディタ | 簡易編集まで (シンタックスハイライトなし) |
-| Markdownプレビュー | Markwon で内蔵 |
-| 圧縮ファイル | 中身プレビュー + 展開 + 作成 |
-| RAR | 読みのみ対応 (junrar) |
-| パスワード付きZIP | zip4j で対応 |
+| 動画プレーヤー | Media3 ExoPlayer で内蔵 (P7)。**リモートも `StorageManager.openProxyFileDescriptor` + 範囲指定 openInput で seek 対応ストリーミング** (P7 後期)。WMV/.asf は外部アプリ案内 |
+| PDFビューア | PdfRenderer で内蔵 (P7、LRU ページキャッシュ + 専用スクロールバー) |
+| テキストエディタ | **Sora-editor (Canvas 描画 + 仮想化、`sora-editor:0.23.5`)** に置換 (P7 後期、~8MB まで軽快)。検索/折返し/行番号/Undo/Redo、編集上限はユーザー設定 (128KB〜8MB) |
+| Markdownプレビュー | Markwon で内蔵 (P7、tables/strikethrough/tasklist/linkify プラグイン) |
+| 圧縮ファイル | ZIP の圧縮 + 解凍を P7 で実装 (zip4j 2.11.5)。7z/tar.xz/RAR は未着手 |
+| RAR | 未着手 (将来 junrar を検討) |
+| パスワード付きZIP | zip4j で対応 (AES-256 / PKCS#5) |
 | EXIF削除 | オプション提供、デフォルトオフ (P7以降) |
 | エンコーディング判定 | juniversalchardet 自動判定 |
 | 画像サムネ | Coil 3 |
@@ -1584,41 +1588,67 @@ AppBar の🔍タップで検索モード:
 | 設定画面階層 | フラット (1画面) |
 | ナビゲーション | 下部固定NavigationBar (5タブ) |
 | 表示モード | List/Detailed/Grid、フォルダごとに記憶 |
-| 長押し | 即・選択モード (Material Files流) |
-| コピー/移動 | 操作モード方式 (X-plore流) |
-| お気に入り (ピン留め) | MVP搭載 |
+| 長押し | 即・選択モード (Material Files流)。HOME タイルだけは長押し=ドラッグ並べ替え |
+| コピー/移動 | 操作モード方式 (X-plore流) + 進捗バナー (件数 + バイト + 80ms スロットル) |
+| お気に入り (ピン留め) | HOME 画面に統合 (LocalFolder / SafFolder / RemoteConnection の 3 種類のタイル、ドラッグで並べ替え可能) |
 | 「上へ」ボタン | 設置しない (パンくずで代替) |
 | タブレット2ペイン | P7以降 |
 | ファイルタップ | 内蔵可は内蔵、他は外部Intent |
 | 検索 | 部分一致 + glob、再帰可 |
+| HOME 画面 | 起動時の最初の画面 (P7 後期実装)、ドラッグ並べ替え (`sh.calvin.reorderable`)、非表示・改名、画像/動画の横断ビュータイル付き |
+| 接続編集 | URL ワンライナー入力対応、ポート空欄許可、SFTP 公開鍵認証 (鍵生成内蔵)、SMB 共有名/初期パス分離。編集後はセッションプール (signature 比較) で即時反映 |
+| App Shortcuts | Files / Connections / Servers / Trash (静的)。ACTION_SEND 共有受信対応 |
+| 実行ログ | `AppLogger` で Crash / Server / Sync を集約 (256KB × 2 世代ローテ)。設定→実行ログから確認・共有・消去 |
+| ContentProvider | `${applicationId}.fileprovider` (外部アプリへのファイル受け渡し) + `${applicationId}.streaming` (リモート動画の seek 対応ストリーミング) |
 
 ---
 
 ## 15. 残っている設計論点
 
-未着手の設計論点:
+P7 終盤での消化状況を ✅ / ⏳ で示す。
 
 1. **サーバー機能の拡張 (P7以降)**
-   - レート制限・自動ブロック (fail2ban相当)
-   - QRコードでホスト鍵フィンガープリント表示・読み取り
-   - 複数マウント (公開ルートを複数登録)
-   - WebDAV サーバー機能 (要件外だが将来検討)
+   - ⏳ レート制限・自動ブロック (fail2ban相当)
+   - ⏳ QRコードでホスト鍵フィンガープリント表示・読み取り
+   - ⏳ 複数マウント (公開ルートを複数登録)
+   - ⏳ WebDAV サーバー機能 (要件外だが将来検討)
+   - ✅ サーバ起動失敗の可視化 (`AppLogger.error("Server/SFTP"|"Server/FTP", ...)`)
+   - ✅ FTP サーバの書き込み信頼性向上 (NIO `NativeFileSystemFactory` 自前実装 / PASV ポート固定)
 
 2. **ファイル操作の高度な機能 (P7以降)**
-   - ゴミ箱機能 (削除済みファイルの保管・自動削除)
-   - EXIF削除オプション (共有時の自動GPS削除)
-   - PDF内蔵ビューア
-   - リモート画像の部分ダウンロードサムネ
+   - ✅ ゴミ箱機能 (P7、TRASH/PERMANENT/ASK + 自動削除 + 一覧画面)
+   - ⏳ EXIF削除オプション (共有時の自動GPS削除)
+   - ✅ PDF内蔵ビューア (P7、PdfRenderer + LRU ページキャッシュ + 専用スクロールバー)
+   - ⏳ リモート画像の部分ダウンロードサムネ
+   - ✅ ZIP 圧縮/解凍 (P7、AES-256 パスワード対応)
+   - ✅ 拡張子なしテキストの自動判定で内蔵エディタ開く (P7)
 
 3. **タブレット・大画面対応 (P7以降)**
-   - 2ペインレイアウト (フォルダツリー + ファイル一覧)
-   - NavigationRail (横画面・タブレットでの代替ナビ)
-   - ドラッグ&ドロップ操作
+   - ⏳ 2ペインレイアウト (フォルダツリー + ファイル一覧)
+   - ⏳ NavigationRail (横画面・タブレットでの代替ナビ)
+   - ⏳ ドラッグ&ドロップ操作 (HOME タイルのドラッグ並べ替えのみ実装、ファイル間 D&D は未対応)
 
 4. **配布関連 (P8以降)**
-   - F-Droid 用ビルド設定 (Reproducible Build対応)
-   - Google Play 審査用 デモ動画・プライバシーポリシー
-   - GitHub リリースワークフロー
+   - ⏳ F-Droid 用ビルド設定 (Reproducible Build対応)
+   - ⏳ Google Play 審査用 デモ動画・プライバシーポリシー
+   - ⏳ GitHub リリースワークフロー
+   - ✅ release 自己署名 (`isMinifyEnabled=false` / `signingConfig=debug`、24MB) で内輪配布可
+   - ✅ debug `.debug` applicationIdSuffix で release と共存可能
+
+5. **P7 で消化された設計論点** (HANDOFF / PHASES に反映済み)
+   - ✅ HOME 画面 (元々想定外、P7 で追加)
+   - ✅ 動画リモートストリーミング (元々「外部呼び出しのみ」だったが seek 対応で内蔵)
+   - ✅ テキストエディタ刷新 (BasicTextField → Sora editor、~8MB まで軽快)
+   - ✅ 接続編集の即時反映 (セッションプールの signature 比較)
+   - ✅ SAF (Termux 等) 完全対応 (`pendingChildName` + DocumentFile)
+   - ✅ DB マイグレーション失敗の自動復旧
+
+6. **次フェーズ (P8) で扱う残課題**
+   - ⏳ アクセシビリティ最低ライン (TalkBack ラベル / 48dp タップ領域 / コントラスト 4.5:1)
+   - ⏳ エラーメッセージ完全日本語化 (`StorageError` / `SyncError` の `message`)
+   - ⏳ 同期途中再開 (リモートが完全動作してから着手)
+   - ⏳ `ServerService.foregroundServiceType` (DATA_SYNC は Android 14+ で 6h 制限 / SPECIAL_USE 化検討)
+   - ⏳ FTP の `CoderMalfunctionError` (日本語フォルダ名 CWD で発火) の根治: 現在は `UncaughtExceptionHandler` で握り潰し中。Apache FtpServer の encoder 差し替えが必要
 
 ---
 
@@ -1675,4 +1705,4 @@ Foldex は Zero to Ship シリーズ初の本格 Kotlin/Compose アプリ。Kura
 新しい設計判断が確定したら、該当セクションに追記または更新。
 将来的な変更履歴は Git の履歴で追えるので、ファイル内に「いつ変えた」は書かない。
 
-最終更新: 2026-05-07 (UI設計を追加、章番号繰り上げ、コア設計完了)
+最終更新: 2026-05-16 (P7 終盤の進捗を反映: §13 ロードマップ / §14 確定済み設計判断 / §15 残っている設計論点 を更新)

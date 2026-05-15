@@ -173,6 +173,96 @@
 
 ---
 
+## G. P7 終盤の追加修正 (2026-05-13 〜 2026-05-16)
+
+実機検証を進めながら出てきた追加修正を時系列で記録。§A〜§F より新しい内容はここに追記する。HANDOFF / PHASES の確定事項にぶつかるものはコメントで明示する。
+
+### G-1. 起動時クラッシュ系
+- [x] **DB v3→v4 / v4→v5 マイグレーション失敗時の自動復旧** (`CoreDataModule.provideDatabase`): `Room.databaseBuilder().build()` 直後に `openHelper.writableDatabase` を強制オープン。`IllegalStateException` が出たら `context.deleteDatabase(...)` で物理削除→再構築する保険を追加。`fallbackToDestructiveMigration(dropAllTables=true)` でも一部端末・ビルド汚染で発火しないケースに対応。
+- [x] **SFTP `IllegalArgumentException("No user home")`** → `FoldexApplication.onCreate` で `System.setProperty("user.home", filesDir.path)` を必ず先に設定。
+- [x] **SFTP `KeyExchangeFactories not set`** → BouncyCastle のフル版を `Application.onCreate` で `Security.removeProvider("BC"); Security.addProvider(BouncyCastleProvider())`。`SshServer.setUpDefaultServer()` の各 default が空のときは `ServerBuilder.setUpDefault*(true)` で defensive 再構築。
+- [x] **UncaughtExceptionHandler**: スタックに `org.apache.mina|sshd|ftpserver` を含む例外 (FTP の `CoderMalfunctionError` 等) はプロセスを殺さず握り潰す。クラッシュは `externalFilesDir/crash/crash_*.txt` に 5 件ローテで保存。
+
+### G-2. 接続編集 / セッションプール
+- [x] **接続編集に「URL から入力」フィールド**: `sftp://user@host:22/path` / `smb://host/share/sub` / `webdavs://...` をパースして各欄に分解。ポート空欄許可 (`portText: String` + `effectivePort()` フォールバック)。
+- [x] **SFTP 公開鍵認証**: `SftpAuthMode { PASSWORD, PUBLIC_KEY }`、`SshClientKeyHelper.generate()` で RSA 3072 + PKCS#8 PEM + OpenSSH 公開鍵を生成 (Android 標準 JCA のみ依存)。UI に「鍵を生成」+「公開鍵をコピー」。
+- [x] **SMB の「共有名」と「初期パス」を分離**: `Connection.initialPath: String` を追加 (Room v4→v5 destructive)。「共有名」フィールドに `share/sub/path` が入っても自動で先頭セグメント=share、残り=initialPath に分解。
+- [x] **編集ダイアログを範囲外タップ/戻るキーで閉じない**: `AlertDialog(properties = DialogProperties(dismissOnClickOutside=false, dismissOnBackPress=false))`。「キャンセル」ボタン経由でのみ閉じる。
+- [x] **接続編集の即時反映**: `SmbSessionPool` / `SftpSessionPool` / `FtpClientPool` / `WebDavSessionStore` が `connectionId` だけでキャッシュを返してしまい、共有名や認証情報を変更してもアプリ再起動するまで反映されなかった。各 Holder に「プール時点の Connection 設定」を保持させ、`acquire` 時に signature (host / port / share / username / authMethod / fingerprint / basePath 等) を比較。一致しなければ close → 再接続。
+
+### G-3. FTP まわり
+- [x] **FTP 書き込み失敗の診断**: `FoldexFtpDiagnosticFtplet` を新設し、書き込み系コマンド (STOR/APPE/MKD/DELE/RNFR/RNTO) の 5xx 応答を `ServerLogEvent.FILE_OP_FAILED` に流す。`DataConnectionConfigurationFactory.passiveAddress / passiveExternalAddress` を listener と同じ host に明示し、`passivePorts = "30000-30100"` で固定。
+- [x] **FTP `NioFileSystemFactory`**: Apache FtpServer のデフォルト `NativeFileSystemFactory` (java.io.File / RandomAccessFile) を自前 NIO ベース実装に置換。`Files.newByteChannel(WRITE, CREATE, TRUNCATE_EXISTING)` を使う `NioFtpFile` + `NioFileSystemView`。
+- [x] **FTP `setRestartOffset` で範囲指定 read** (G-9 で追加、ストリーミング seek 用)。
+
+### G-4. ファイルブラウザ
+- [x] **タイトル長押し → パスをクリップボードへコピー / タップ → `PathInputDialog` で手動入力**: ローカル `/storage/...` / リモート `scheme://connId/path` / SAF `documentUri` を切り替え。
+- [x] **コピー/移動/共有保存の進捗バナー**: `FileBrowserState.opProgress: FileOpProgress?` + `FileOpProgressBanner.kt` (LinearProgressIndicator + 件数 + バイト + 現在ファイル名、80ms スロットル)。
+- [x] **DL バナー**: 「ダウンロード中…」snackbar を廃止し、上部に `ActiveDownloadsBanner` を常駐表示。
+- [x] **ペーストフッターをコンパクト化** (80dp → 48dp、`Surface + Row`)。
+- [x] **PullToRefreshBox** で一覧を引き下げ更新。
+- [x] **ソート / 隠しファイル切替** (`KEY_SORT_BY / KEY_SORT_ASC / KEY_SHOW_HIDDEN` に永続化、フォルダごとに表示モードも記憶)。
+- [x] **選択モードの overflow**: 共有 / 別アプリで開く / プロパティ / HOME に追加 / ZIP 圧縮 / ZIP 解凍。
+- [x] **ファイル作成**: `CreateFolderDialog` → `CreateDialog`、`CreateKind { FOLDER, FILE }` のセグメンテッドボタンで切替。新規ファイル作成後に内蔵対応カテゴリなら自動オープン。
+- [x] **コピー貼付の上書き確認**: 衝突時に `PasteOverwriteDialog` でユーザー確認。
+
+### G-5. HOME 画面
+- [x] **HOME 画面骨格** (新規モジュール `ui/home/`): 組み込みタイル (Files / Trash / Servers / Sync / Settings / Permissions / SAF / 画像 / 動画) + カスタム (LocalFolder / SafFolder / RemoteConnection)。BottomNav 先頭に追加、startDestination を `home` に変更。
+- [x] **タイル長押し → ドラッグで一気に並べ替え**: `sh.calvin.reorderable` を導入。長押しでドラッグ開始 (`longPressDraggableHandle`) → 任意位置でドロップ。タップ = タイル本来の動作。メニュー (改名 / 隠す / 削除) は右上の ⋮ ボタンへ移動。
+- [x] **タイル改名**: `HomeShortcutRepository.rename(id, label)` + 組み込みタイル用 `KEY_LABEL_OVERRIDES`。
+- [x] **非表示タイルの復元** (HOME 右上の ⋮ から `HiddenShortcutsDialog`)。
+- [x] **SAF tree を HOME に固定**: `HomeShortcut.SafFolder`、HOME +ボタンの追加ダイアログを `FlowRow` で「ローカル / SAF / リモート」3 モード対応 (3 つ目が見切れる問題も解決)。
+- [x] **画像 / 動画の横断ビュー** (HOME の組み込みタイル → `MediaCollectionScreen`): MediaStore を `DATE_MODIFIED DESC` で横断クエリ、`GridCells.Adaptive(110dp)` で Coil サムネ表示、フォルダグルーピング + 長押し選択 (削除/共有/外部/場所を開く)。
+
+### G-6. ビューア (画像 / PDF / Markdown / テキスト / 動画)
+- [x] **画像スワイプ**: `Modifier.transformable` が 1 指 pan も消費して HorizontalPager のスワイプを阻害する問題。`awaitEachGesture` + `awaitFirstDown(requireUnconsumed=false)` の自前実装で「ポインタが 2 本以上のとき」だけ zoom/pan を消費。1 指は Pager に渡す。
+- [x] **PDF**: `produceState` の `awaitDispose` でレンダラインスタンスを正しく close (`DisposableEffect(rendererState) { onDispose { rendererState?.close() } }` が delegate の現値を見るため null→new に切り替わった瞬間 new を即 close するクラッシュを解消)。`PdfBitmapCache` (LRU 12 ページ) + 専用 `EditorScrollbar` (28dp 当たり判定 + ドラッグでスクロール)。
+- [x] **テキストエディタを Sora-editor (0.23.5) に置換**: `BasicTextField` を撤廃し `CodeEditor` (AndroidView)。検索 / 折返し / 行番号 / Undo/Redo / 保存 / 貼付 のフッター。`EditorColorScheme` を Material 色から組み立て。編集上限を 8MB まで拡大 + ユーザー設定 (128KB〜8MB) を `editorEditableLimitKb` で導通。
+- [x] **エディタ入力ラグ軽減**: `ContentChangeEvent` ハンドラを 150ms debounce + 値変化時のみ Compose state 更新。`setCursorBlinkPeriod(750)` で描画頻度を下げる。
+- [x] **エディタフッターを IME 上に**: `AndroidManifest` の `ViewerActivity` に `windowSoftInputMode="adjustResize"` + Column に `imePadding()`。
+- [x] **動画**: WMV / `.asf` (VC-1/WMV9) は MediaCodec 非対応なので拡張子で予め判定し外部アプリ案内オーバーレイへ即フォールバック。`Player.Listener.onPlayerError` で再生エラー時も同じオーバーレイ。
+- [x] **Markdown**: テーブル / strikethrough / tasklist / linkify プラグイン追加。
+- [x] **拡張子なしテキスト自動判定**: `looksLikeText(file)` で先頭 8KB 走査 (NUL バイト / 制御文字 5% 超でバイナリ判定)。LICENSE / Dockerfile / Makefile / shebang スクリプトを内蔵エディタで開けるように。
+
+### G-7. SAF (Termux) 完全対応
+- [x] **`FileUri.Saf.pendingChildName` を追加**: 親 URI + これから作る子の名前を擬似 URI で表現。`mkdir` / `openOutput(CREATE_NEW)` は `DocumentFile.fromTreeUri(parent).createDirectory/createFile(name)` で実体生成。
+- [x] **`statSaf` を `fromTreeUri + findFile(name)` ベースに**: `fromSingleUri` は wrapper を返すだけで「常に存在」誤判定するバグを解消。
+- [x] **`list` を `fromTreeUri` 統一**: `fromSingleUri` ではサブフォルダ listing 不能だった。
+- [x] **`StorageProviderRouter.childUri` も SAF 対応**: cross-copy / paste / saveSharedFilesHere / createDialog すべて SAF 宛に動く。
+- [x] **`downloadSafToCache` で SAF ファイルを内蔵ビューアで開く / 編集後の書き戻し**: `PendingRemoteEdit` を `PendingEdit(sourceUri, mtimeAtOpen)` に一般化。`ON_RESUME` で `checkPendingUploads` が Remote / SAF 両方を見て `openOutput(OVERWRITE)`。
+
+### G-8. ZIP / 共有受信 / App Shortcuts
+- [x] **ZIP 圧縮/解凍** (zip4j 2.11.5): `ZipOps.compress/extract`、AES-256 / PKCS#5 パスワード対応。選択モード overflow から起動。リモート / SAF 宛でも `copyTreeIntoStorage` で書ける。`ZipExtractDialog` は password なしで試行→ `WrongPassword` 例外で再ダイアログ。
+- [x] **ACTION_SEND / SEND_MULTIPLE 共有受信**: AndroidManifest に intent-filter (`mimeType="*/*"`)。MainActivity が EXTRA_STREAM から複数 Uri を読み、表示名を `OpenableColumns.DISPLAY_NAME` で問い合わせ、`FileBrowserState.pendingShares` に積んで `ShareReceiveBanner` を表示。「ここに保存」で `openOutput(CREATE_NEW)`、同名は ` (N)` でユニーク化。
+- [x] **App Shortcuts** (`res/xml/shortcuts.xml`): Files / Connections / Servers / Trash の 4 つ。MainActivity の launchMode を `singleTask` に、intent extra `foldex.shortcut` を MainScreen が受けて `selectTab(...)`。
+
+### G-9. リモート動画ストリーミング (seek 対応)
+- [x] **`RemoteStreamProvider` (ContentProvider)** を新設。authority は `${applicationId}.streaming` (debug/release が共存可能)。
+- [x] **第1段階**: `ParcelFileDescriptor.createPipe()` + バックグラウンドで `StorageProviderRouter.openInput()` のストリームを write 側にフィード。再生開始は早いが seek 不可 (ExoPlayer のシークバー操作で停止)。
+- [x] **第2段階**: `StorageManager.openProxyFileDescriptor` + `ProxyFileDescriptorCallback` に置換。`onRead(offset, size, data)` ごとに `StorageProvider.openInputRange(uri, offset)` を呼び、連続位置のときは前回ストリームを使い回し、seek 時のみ閉じて再オープン。
+- [x] **`StorageProvider.openInputRange(uri, offset)` を追加**:
+  - SFTP: `RemoteFile.RemoteFileInputStream(fileOffset)`
+  - SMB: `SmbRangeInputStream` (`File.read(buf, fileOffset, ...)` 使用)
+  - FTP: `client.setRestartOffset(offset)` + `retrieveFileStream`
+  - WebDAV: HTTP `Range` ヘッダ (`206 Partial Content`)、非対応サーバは skip フォールバック
+  - 既定実装は `openInput()` + `skip()` (低速だが正しく動く)
+- [x] **VideoViewer**: `mediaUri: String?` パラメータを追加。非 null のときは ExoPlayer に直接渡し、ローカルファイルは `file.toURI()` を使う既存経路を維持。
+
+### G-10. その他の細かい改善
+- [x] **タブ / 画面遷移の即時化**: `NavHost(enterTransition = { EnterTransition.None }, exitTransition = { ExitTransition.None }, popEnterTransition = ..., popExitTransition = ...)`。フェードを撤廃。
+- [x] **同期 "競合" 表記の改善**: `SyncResult.toSummaryLine` を「転送 N (両側更新 M)」に書き換え、`transferredCount = uploaded + downloaded + conflicts` に修正 (競合は失敗ではなく解決済み転送として扱う)。
+- [x] **削除バックアップ拡張**: `SyncBackupRepository.restoreLocalFile(overwrite)` + `backupFile()` (リモート復元用ストリーム)。`SyncBackupViewModel.requestBatchRestore` で衝突チェック → ダイアログ → ローカル + リモート同時復元。世代に L/R chip + ファイル詳細表示。
+- [x] **同期ジョブの実行中チップ**: `SyncScheduler.observeStatus(jobId): Flow<JobRunStatus>` (WorkInfo タグから判定)。`SyncJobsScreen` の各行に「実行中」緑 / 「キュー中」橙の `JobStatusChip`。実行中は今すぐボタンをスピナーに置換 + 無効化。
+- [x] **詳細実行ログ**: `Executor.onAction(message, level)` コールバックを追加し、SyncEngine が各アクションを `AppLogger` に流す。
+- [x] **`AppLogger` 基盤**: Singleton、`externalFilesDir/logs/app.log` 256KB / 2 世代ローテ。`info` / `warn` / `error` (例外スタックも記録)。設定 → 実行ログから一覧 / フィルタ / 共有 / 消去。
+- [x] **サーバ起動失敗ログ**: `SftpServerManager` / `FtpServerManager` の `start()` Result.Failure 時に `AppLogger.error(...)` を呼ぶ。snackbar を見逃してもログから後追い可能。
+- [x] **キャッシュクリア** (設定の「ストレージ」): `cacheDir` + `externalCacheDir` を再帰削除、容量表示。
+- [x] **エディタ編集可能上限の設定** (128KB / 256KB / 512KB / 1MB / 2MB / 4MB / 8MB)。
+- [x] **アプリアイコン** 差し替え (mipmap-{m,h,xh,xxh,xxxh}dpi)。
+- [x] **ContentProvider authority を `${applicationId}.streaming` に**: debug / release 共存対応 (`INSTALL_FAILED_CONFLICTING_PROVIDER` の回避)。
+
+---
+
 ## 影響範囲・要確認まとめ
 
 | # | 内容 | HANDOFF/PHASES との整合 | 要確認 |
