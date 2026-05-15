@@ -319,6 +319,7 @@ class FileBrowserViewModel @Inject constructor(
                     (mode == OpenWithMode.DEFAULT || mode == OpenWithMode.BUILTIN)
             if (isStreamableRemoteVideo) {
                 val streamingUri = com.zerotoship.foldex.streaming.RemoteStreamProvider.buildUri(
+                    context = context,
                     remote = node.uri as FileUri.Remote,
                     displayName = node.name,
                     size = node.size,

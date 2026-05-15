@@ -101,7 +101,7 @@
              (ACTION_VIEW フォールバック用)。 -->
         <provider
             android:name=".streaming.RemoteStreamProvider"
-            android:authorities="com.zerotoship.foldex.streaming"
+            android:authorities="${applicationId}.streaming"
             android:exported="false"
             android:grantUriPermissions="true" />
 

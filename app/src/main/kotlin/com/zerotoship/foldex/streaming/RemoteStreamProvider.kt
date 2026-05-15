@@ -153,7 +153,8 @@ class RemoteStreamProvider : ContentProvider() {
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
 
     companion object {
-        const val AUTHORITY = "com.zerotoship.foldex.streaming"
+        /** AndroidManifest の `<provider android:authorities="${applicationId}.streaming">` と一致させる。 */
+        private const val AUTHORITY_SUFFIX = ".streaming"
         const val PATH = "stream"
         const val PARAM_PROTO = "proto"
         const val PARAM_CONN = "conn"
@@ -163,11 +164,14 @@ class RemoteStreamProvider : ContentProvider() {
 
         private const val BUFFER_SIZE = 64 * 1024
 
+        /** 実行時の applicationId (debug 版は `.debug` 付き) から authority を組み立てる。 */
+        fun authority(context: Context): String = context.packageName + AUTHORITY_SUFFIX
+
         /** [FileUri.Remote] を content URI に変換 (省略可: name / size をクエリパラメータに埋める)。 */
-        fun buildUri(remote: FileUri.Remote, displayName: String, size: Long? = null): Uri =
+        fun buildUri(context: Context, remote: FileUri.Remote, displayName: String, size: Long? = null): Uri =
             Uri.Builder()
                 .scheme("content")
-                .authority(AUTHORITY)
+                .authority(authority(context))
                 .appendPath(PATH)
                 .appendQueryParameter(PARAM_PROTO, remote.protocol.name.lowercase())
                 .appendQueryParameter(PARAM_CONN, remote.connectionId)
