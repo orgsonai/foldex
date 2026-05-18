@@ -12,8 +12,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -97,6 +102,12 @@ fun TextViewer(
     file: File,
     editable: Boolean = false,
     editableLimitKb: Int = DEFAULT_EDITABLE_LIMIT_KB,
+    /**
+     * Remote / SAF 経由で開いたファイルを「保存」押下と同時に元 URI へ書き戻すためのフック。
+     * 非 null のとき、エディタは `file.writeBytes()` 直後にこのラムダを await する。
+     * true を返せば「保存しました」、false なら「リモートへの保存に失敗しました」と表示する。
+     */
+    onSaveRemote: (suspend (File) -> Boolean)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by produceState<TextLoad>(TextLoad.Loading, file) {
@@ -124,7 +135,7 @@ fun TextViewer(
         is TextLoad.Failed -> CenterMessage(modifier, s.message)
         is TextLoad.Loaded ->
             if (editable && s.sizeBytes <= editableLimitBytes) {
-                SoraEditor(file, s.content, s.charset, modifier)
+                SoraEditor(file, s.content, s.charset, onSaveRemote, modifier)
             } else {
                 ReadOnlyText(
                     content = s.content,
@@ -141,7 +152,13 @@ fun TextViewer(
 // ---- 編集モード (Sora-editor) ----
 
 @Composable
-private fun SoraEditor(file: File, initial: String, charset: Charset, modifier: Modifier) {
+private fun SoraEditor(
+    file: File,
+    initial: String,
+    charset: Charset,
+    onSaveRemote: (suspend (File) -> Boolean)?,
+    modifier: Modifier,
+) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
@@ -257,11 +274,23 @@ private fun SoraEditor(file: File, initial: String, charset: Charset, modifier: 
         }
     }
 
-    Column(modifier.fillMaxSize().imePadding()) {
+    // ViewerActivity は enableEdgeToEdge() 済みなので、Scaffold 経由で content insets が
+    // 流れてくる前提だが、Sora-editor (AndroidView) はその下に潜って描画されることがあり、
+    // 画面最下段の行番号が 3 ボタンナビ/ジェスチャバーに齧られる問題が報告された。
+    // ここで明示的に navigationBars インセットを当てて、エディタの底が必ずナビバーの上で
+    // 終わるようにする。IME 開閉は imePadding が別途処理。
+    Column(
+        modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+            .imePadding(),
+    ) {
         // 編集本体: Sora の CodeEditor をそのまま埋め込む。weight(1f) で残り高さを占有。
         AndroidView(
             factory = { editor },
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            // 行番号 (gutter) がぴったり画面左端から描画されるとシステムジェスチャ領域 +
+            // 視覚的に詰まって読みにくいので、左端に少し余白を入れる。
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 4.dp),
             update = { /* 状態反映は LaunchedEffect 側で行う */ },
         )
 
@@ -316,10 +345,19 @@ private fun SoraEditor(file: File, initial: String, charset: Charset, modifier: 
                 saving = true
                 scope.launch {
                     val text = editor.text.toString()
-                    val ok = withContext(Dispatchers.IO) {
+                    // 1) まずローカル (キャッシュ or 実体) に書き込む。
+                    val localOk = withContext(Dispatchers.IO) {
                         runCatching { file.writeBytes(text.toByteArray(charset)) }.isSuccess
                     }
-                    status = if (ok) "保存しました" else "保存に失敗しました"
+                    // 2) Remote / SAF キャッシュ編集なら、続けて元 URI へ書き戻す。
+                    //    ここを Activity 終了まで待たないことで、「保存後すぐタスクキル」しても
+                    //    変更がリモートに反映されている状態を作る。
+                    status = when {
+                        !localOk -> "保存に失敗しました"
+                        onSaveRemote == null -> "保存しました"
+                        onSaveRemote(file) -> "保存しました"
+                        else -> "リモートへの保存に失敗しました (再試行してください)"
+                    }
                     saving = false
                 }
             },

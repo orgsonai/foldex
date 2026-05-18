@@ -31,6 +31,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.OpenInNew
@@ -183,6 +185,12 @@ fun MediaCollectionScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        IconButton(onClick = { viewModel.copySelected() }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "コピー")
+                        }
+                        IconButton(onClick = { viewModel.cutSelected() }) {
+                            Icon(Icons.Default.ContentCut, contentDescription = "切り取り")
+                        }
                         IconButton(onClick = { shareSelected(context, state) }) {
                             Icon(Icons.Default.Share, contentDescription = "共有")
                         }

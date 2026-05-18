@@ -32,16 +32,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.FileProvider
+import com.zerotoship.foldex.core.common.Result
+import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.WriteMode
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
+import com.zerotoship.foldex.storage.StorageProviderRouter
 import com.zerotoship.foldex.ui.theme.FoldexTheme
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import javax.inject.Inject
 
 /**
  * 内蔵ビューア用の単独 Activity。呼び出し側 (ファイルブラウザ) は、開く対象が
  * ローカルの実体 (リモートはキャッシュ済み) になった状態でこの Activity を起動する。
+ *
+ * Remote / SAF 由来のキャッシュを編集するときは [EXTRA_SOURCE_URI] に元の URI を渡す。
+ * テキストエディタの「保存」押下時、キャッシュへの書き込みと同期して元 URI への
+ * アップロードバックも即座に行う ([buildRemoteSaver] が返すラムダで実装)。
+ * 押し忘れた場合の保険として FileBrowser 側の ON_RESUME 走査 (checkPendingUploads)
+ * も残っている。
  */
+@AndroidEntryPoint
 class ViewerActivity : ComponentActivity() {
+
+    @Inject lateinit var storage: StorageProviderRouter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +73,8 @@ class ViewerActivity : ComponentActivity() {
         val editable = intent.getBooleanExtra(EXTRA_EDITABLE, false)
         val editableLimitKb = intent.getIntExtra(EXTRA_EDITABLE_LIMIT_KB, 512)
         val siblings: List<String> = intent.getStringArrayExtra(EXTRA_SIBLINGS)?.toList().orEmpty()
+        val sourceUri: FileUri? = intent.getStringExtra(EXTRA_SOURCE_URI)
+            ?.let { FileUri.fromStorageStringOrNull(it) }
 
         enableEdgeToEdge()
         setContent {
@@ -70,8 +89,28 @@ class ViewerActivity : ComponentActivity() {
                     streamingMediaUri = streamingMediaUri,
                     onBack = { finish() },
                     onOpenExternally = { f -> openExternally(f, f.name) },
+                    onSaveRemote = sourceUri?.let { buildRemoteSaver(it) },
                 )
             }
+        }
+    }
+
+    /**
+     * Remote/SAF へキャッシュファイルの内容を OVERWRITE で書き戻すラムダを作る。
+     * `file.writeBytes` で更新したばかりの [cacheFile] の中身を、ここで元 URI に
+     * ストリームコピーする。成功時 true。
+     */
+    private fun buildRemoteSaver(sourceUri: FileUri): suspend (File) -> Boolean = { cacheFile ->
+        withContext(Dispatchers.IO) {
+            runCatching {
+                when (val r = storage.openOutput(sourceUri, WriteMode.OVERWRITE)) {
+                    is Result.Success -> r.value.use { out ->
+                        cacheFile.inputStream().use { it.copyTo(out) }
+                    }
+                    is Result.Failure -> error(r.error.message ?: "openOutput failed")
+                }
+                true
+            }.getOrElse { false }
         }
     }
 
@@ -95,6 +134,7 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_EDITABLE_LIMIT_KB = "foldex.viewer.editable_limit_kb"
         private const val EXTRA_SIBLINGS = "foldex.viewer.siblings"
         private const val EXTRA_STREAMING_URI = "foldex.viewer.streaming_uri"
+        private const val EXTRA_SOURCE_URI = "foldex.viewer.source_uri"
 
         fun intent(
             context: Context,
@@ -105,6 +145,7 @@ class ViewerActivity : ComponentActivity() {
             editableLimitKb: Int = 512,
             siblings: List<String> = emptyList(),
             streamingMediaUri: String? = null,
+            sourceUriString: String? = null,
         ): Intent =
             Intent(context, ViewerActivity::class.java)
                 .putExtra(EXTRA_PATH, localPath)
@@ -116,6 +157,9 @@ class ViewerActivity : ComponentActivity() {
                     if (siblings.isNotEmpty()) putExtra(EXTRA_SIBLINGS, siblings.toTypedArray())
                     if (!streamingMediaUri.isNullOrBlank()) {
                         putExtra(EXTRA_STREAMING_URI, streamingMediaUri)
+                    }
+                    if (!sourceUriString.isNullOrBlank()) {
+                        putExtra(EXTRA_SOURCE_URI, sourceUriString)
                     }
                 }
     }
@@ -146,6 +190,9 @@ private fun ViewerScreen(
     streamingMediaUri: String?,
     onBack: () -> Unit,
     onOpenExternally: (File) -> Unit,
+    /** Remote / SAF 由来のキャッシュ編集時、エディタ「保存」押下で即時アップロードするためのフック。
+     *  ローカル直編集時は null (= file.writeBytes だけで完結)。 */
+    onSaveRemote: (suspend (File) -> Boolean)? = null,
 ) {
     // Markdown / HTML はソース編集をデフォルトにし、プレビューはトグルで切替える
     // (HANDOFF §10-E / §10-F: 「ソース表示とプレビュー表示の切替」)。
@@ -214,11 +261,29 @@ private fun ViewerScreen(
                 )
                 Category.MARKDOWN ->
                     if (previewMode) MarkdownViewer(file, Modifier.fillMaxSize())
-                    else TextViewer(file, editable = editable, editableLimitKb = editableLimitKb, modifier = Modifier.fillMaxSize())
+                    else TextViewer(
+                        file = file,
+                        editable = editable,
+                        editableLimitKb = editableLimitKb,
+                        onSaveRemote = onSaveRemote,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 Category.HTML ->
                     if (previewMode) HtmlViewer(file, Modifier.fillMaxSize())
-                    else TextViewer(file, editable = editable, editableLimitKb = editableLimitKb, modifier = Modifier.fillMaxSize())
-                Category.TEXT -> TextViewer(file, editable = editable, editableLimitKb = editableLimitKb, modifier = Modifier.fillMaxSize())
+                    else TextViewer(
+                        file = file,
+                        editable = editable,
+                        editableLimitKb = editableLimitKb,
+                        onSaveRemote = onSaveRemote,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                Category.TEXT -> TextViewer(
+                    file = file,
+                    editable = editable,
+                    editableLimitKb = editableLimitKb,
+                    onSaveRemote = onSaveRemote,
+                    modifier = Modifier.fillMaxSize(),
+                )
                 Category.AUDIO -> AudioPlayer(file, name, Modifier.fillMaxSize())
                 Category.VIDEO -> VideoViewer(
                     file = file,

@@ -30,6 +30,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.io.File
+import kotlin.math.abs
 
 /**
  * 1 枚版の互換 API。単独表示用に残してある (旧呼び出し元)。
@@ -47,12 +48,11 @@ fun ImageViewer(file: File, modifier: Modifier = Modifier) {
 
 /**
  * 同フォルダの兄弟画像を [paths] で受け取り、左右スワイプで切り替えできるビューア。
- * 各ページ独立に「2 指ピンチでズーム / ダブルタップで拡大」。
+ * 各ページ独立に「ピンチでズーム / ダブルタップで拡大 / 拡大中は 1 指 pan」。
  *
- * 重要: 各ページの zoom/pan は `detectTransformGestures` を使う。
- * これは **2 指以上のジェスチャ** が来るまで反応しないので、1 指の左右ドラッグは
- * 外側の [HorizontalPager] に流れる。旧実装の `Modifier.transformable` は
- * 1 指 pan も検出していたため pager のスワイプを阻害していた。
+ * 拡大中の 1 指 pan は内側 ([ZoomableImage]) が消費する。端まで pan しきった先で
+ * さらに横方向にドラッグすると未消費の差分が外側の [HorizontalPager] に渡って、
+ * 前後の画像へスワイプできる (= ギャラリーアプリ標準挙動)。
  */
 @Composable
 fun ImagePagerViewer(
@@ -74,16 +74,15 @@ fun ImagePagerViewer(
     }
 }
 
-/** 1 枚の画像。2 指ピンチで zoom、拡大中の 1 指 pan、ダブルタップでトグル拡大。
+/** 1 枚の画像。
  *
- * 注意: Compose 標準の `detectTransformGestures` は (公式 KDoc に反して) 1 指 pan も
- * 検出して consume するため、外側の HorizontalPager の左右スワイプが効かなくなる。
- * ここでは `awaitEachGesture` を直接使い、**ポインタが 2 本以上のときだけ** zoom/pan を
- * 適用 + consume する。1 指ジェスチャは consume しないので Pager に届く。
- *
- * scale > 1 (拡大中) のときは 1 指 pan を「画像を動かす」用途に使うのも自然だが、
- * その挙動だと「拡大したまま隣の画像に切り替えたい」が永遠にできなくなるので、
- * 拡大中であっても 1 指ドラッグは Pager に渡す方針にする (拡大は 2 指で続けて pan 可)。
+ * 操作:
+ *  - 2 指ピンチ: zoom 0.5x〜6x。0.5〜1x を許容することで「縮小プレビュー」も可能。
+ *  - 拡大中 (scale > 1) の 1 指ドラッグ: 画像を pan して動かす (画像端で止まる)。
+ *    画像端まで pan しきった「先」の余剰ドラッグは consume せず外側 HorizontalPager に
+ *    渡るので、ページめくりが自然に繋がる。
+ *  - 非拡大時 (scale <= 1) の 1 指ドラッグ: 何も consume せず即 HorizontalPager へ。
+ *  - ダブルタップ: scale 1↔2.5 をトグル。
  */
 @Composable
 private fun ZoomableImage(file: File, modifier: Modifier = Modifier) {
@@ -96,28 +95,54 @@ private fun ZoomableImage(file: File, modifier: Modifier = Modifier) {
             .fillMaxSize()
             .pointerInput(file) {
                 awaitEachGesture {
-                    // 最初の指の down を待つ (consume しない → Pager にも流す)。
                     awaitFirstDown(requireUnconsumed = false)
                     do {
                         val event = awaitPointerEvent()
                         val active = event.changes.count { it.pressed }
-                        if (active >= 2) {
-                            val zoom = event.calculateZoom()
-                            val pan = event.calculatePan()
-                            if (zoom != 1f || pan != Offset.Zero) {
-                                scale = (scale * zoom).coerceIn(1f, 6f)
-                                if (scale > 1f) {
-                                    offsetX += pan.x
-                                    offsetY += pan.y
-                                } else {
-                                    offsetX = 0f
-                                    offsetY = 0f
+                        when {
+                            active >= 2 -> {
+                                // 2 指ジェスチャ: zoom + pan を同時に処理し、必ず consume。
+                                val zoom = event.calculateZoom()
+                                val pan = event.calculatePan()
+                                if (zoom != 1f || pan != Offset.Zero) {
+                                    // 0.5x まで縮小、6x まで拡大を許容。
+                                    scale = (scale * zoom).coerceIn(0.5f, 6f)
+                                    // 拡大時のみ pan を反映 (等倍以下では中央固定)。
+                                    if (scale > 1f) {
+                                        val (maxX, maxY) = maxPan(size.width, size.height, scale)
+                                        offsetX = (offsetX + pan.x).coerceIn(-maxX, maxX)
+                                        offsetY = (offsetY + pan.y).coerceIn(-maxY, maxY)
+                                    } else {
+                                        offsetX = 0f
+                                        offsetY = 0f
+                                    }
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
                                 }
-                                // 2 指のときだけ consume — Pager に流れない。
-                                event.changes.forEach { if (it.positionChanged()) it.consume() }
                             }
+                            active == 1 && scale > 1f -> {
+                                // 拡大中の 1 指ドラッグ: 画像 pan。端で詰まった分は Pager に渡す。
+                                val pan = event.calculatePan()
+                                if (pan != Offset.Zero) {
+                                    val (maxX, maxY) = maxPan(size.width, size.height, scale)
+                                    val newX = (offsetX + pan.x).coerceIn(-maxX, maxX)
+                                    val newY = (offsetY + pan.y).coerceIn(-maxY, maxY)
+                                    val movedX = newX - offsetX
+                                    val movedY = newY - offsetY
+                                    offsetX = newX
+                                    offsetY = newY
+                                    // 画像が動いた = 自分で消化した分。横方向に余剰があるとき
+                                    // (= 画像端を越えるドラッグ) は consume しない → Pager へ流す。
+                                    val absorbedX = abs(movedX) >= abs(pan.x) - 0.5f
+                                    if (absorbedX) {
+                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                    }
+                                    // 縦方向は Pager と干渉しないので、movedY のみで判断する必要はない。
+                                    // 横方向が absorbed なら全体を consume、そうでないなら未 consume のまま
+                                    // 残しておくと Pager が横スワイプとして拾う。
+                                }
+                            }
+                            // 等倍以下の 1 指ドラッグは何も consume しない → Pager がスワイプ判定。
                         }
-                        // 1 指のときは何も consume しない → Pager がスワイプを検出。
                     } while (event.changes.any { it.pressed })
                 }
             }
@@ -148,4 +173,16 @@ private fun ZoomableImage(file: File, modifier: Modifier = Modifier) {
                 ),
         )
     }
+}
+
+/**
+ * ビューポート [width]x[height] (px) に対し、[scale] 倍に拡大したコンテンツが
+ * 画面外にはみ出す最大量 (= 許容される pan 量) を返す。
+ * Pair(maxOffsetX, maxOffsetY)。等倍以下なら (0,0)。
+ */
+private fun maxPan(width: Int, height: Int, scale: Float): Pair<Float, Float> {
+    if (scale <= 1f) return 0f to 0f
+    val mx = width * (scale - 1f) / 2f
+    val my = height * (scale - 1f) / 2f
+    return mx to my
 }

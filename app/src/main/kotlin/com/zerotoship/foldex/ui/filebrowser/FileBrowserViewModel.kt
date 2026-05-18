@@ -45,6 +45,7 @@ class FileBrowserViewModel @Inject constructor(
     private val openWithRepo: OpenWithRepository,
     private val trashRepo: TrashRepository,
     private val homeShortcutRepo: com.zerotoship.foldex.core.data.repo.HomeShortcutRepository,
+    private val sharedClipboard: com.zerotoship.foldex.ui.common.SharedClipboard,
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("foldex_browser", Context.MODE_PRIVATE)
@@ -114,6 +115,13 @@ class FileBrowserViewModel @Inject constructor(
             delay(2_000)
             val days = settingsRepo.settings.first().trashRetentionDays
             runCatching { trashRepo.purgeOlderThan(days) }
+        }
+        // 共有クリップボード (HOME メディアからも積める) を観測して state へ反映。
+        // これで「画像コレクションでコピー → ファイルブラウザで貼り付け」が成立する。
+        viewModelScope.launch {
+            sharedClipboard.state.collect { op ->
+                _state.value = _state.value.copy(clipboard = op)
+            }
         }
     }
 
@@ -360,8 +368,8 @@ class FileBrowserViewModel @Inject constructor(
                         name = node.name,
                         category = category,
                         // ローカル / リモート / SAF いずれも編集可能。
-                        // リモート・SAF はキャッシュに編集 → FileBrowser に戻ったタイミングで
-                        // [checkPendingUploads] が変更を検出して元の URI にアップロードバックする。
+                        // リモート・SAF はキャッシュに編集 → 「保存」押下で即座に元 URI へ書き戻す。
+                        // 押し忘れて Foldex に戻った場合の保険として [checkPendingUploads] も走る。
                         editable = true,
                         // 画像はスワイプで前後の画像へ遷移できるよう、同フォルダの兄弟画像を集める
                         // (HANDOFF §10-C: 「隣の画像へスワイプ」)。ローカルのみ対応。
@@ -369,6 +377,9 @@ class FileBrowserViewModel @Inject constructor(
                             collectImageSiblings(localFile)
                         } else emptyList(),
                         editableLimitKb = editorEditableLimitKb,
+                        // ローカル直編集時 (= FileUri.Local) は localFile == 実体なので
+                        // 即時アップロードは不要。Remote / SAF のときだけ sourceUri を渡す。
+                        sourceUri = node.uri.takeUnless { it is FileUri.Local },
                     )
                 else -> external(chooser = true)
             }
@@ -626,17 +637,20 @@ class FileBrowserViewModel @Inject constructor(
     fun copySelected() {
         val nodes = _state.value.selectedNodes
         if (nodes.isEmpty()) return
-        _state.value = _state.value.copy(clipboard = ClipboardOperation.Copy(nodes), selectedUris = emptySet())
+        // クリップボードは画面横断で共有 (HOME メディア長押し → ここで paste も成立する)。
+        sharedClipboard.set(ClipboardOperation.Copy(nodes))
+        _state.value = _state.value.copy(selectedUris = emptySet())
     }
 
     fun cutSelected() {
         val nodes = _state.value.selectedNodes
         if (nodes.isEmpty()) return
-        _state.value = _state.value.copy(clipboard = ClipboardOperation.Cut(nodes), selectedUris = emptySet())
+        sharedClipboard.set(ClipboardOperation.Cut(nodes))
+        _state.value = _state.value.copy(selectedUris = emptySet())
     }
 
     fun clearClipboard() {
-        _state.value = _state.value.copy(clipboard = null)
+        sharedClipboard.clear()
     }
 
     /**
@@ -747,10 +761,10 @@ class FileBrowserViewModel @Inject constructor(
             }
         }
 
-        val newClipboard = if (clipboard is ClipboardOperation.Cut) null else clipboard
+        // Cut の場合はクリップボードを消す (もう移動済みなので再度貼る意味が無い)。
+        if (clipboard is ClipboardOperation.Cut) sharedClipboard.clear()
         _state.value = _state.value.copy(
             isLoading = false,
-            clipboard = newClipboard,
             opProgress = null,
         )
         loadFilesSync(destDir)

@@ -1,6 +1,7 @@
 package com.zerotoship.foldex.ui.filebrowser
 
 import android.net.Uri
+import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.filetype.Category
 
 /** ファイルブラウザがファイルを「開く」際に画面側へ依頼する操作。Activity 起動が必要なものを表す。 */
@@ -25,6 +26,11 @@ sealed interface OpenRequest {
          * VideoViewer / AudioPlayer は ExoPlayer に直接渡して全DLを待たずに再生する。
          */
         val streamingMediaUri: String? = null,
+        /**
+         * 内蔵エディタで「保存」を押した瞬間に元 URI へ書き戻す対象。
+         * Remote/SAF の編集起動時にのみセットされる。ローカルファイル直編集時は null。
+         */
+        val sourceUri: FileUri? = null,
     ) : OpenRequest
 
     /** 外部アプリで ACTION_VIEW する。[chooser] が true ならアプリ選択ダイアログを毎回出す。 */

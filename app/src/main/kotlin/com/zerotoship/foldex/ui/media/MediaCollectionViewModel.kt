@@ -7,6 +7,12 @@ import android.provider.MediaStore
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.core.model.FileNode
+import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.NodeType
+import com.zerotoship.foldex.core.model.Permissions
+import com.zerotoship.foldex.ui.common.SharedClipboard
+import com.zerotoship.foldex.ui.filebrowser.ClipboardOperation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -17,12 +23,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
+import kotlin.time.Instant
 
 /** HOME の「画像」/「動画」タイルから開かれる横断ビューア用 ViewModel。 */
 @HiltViewModel
 class MediaCollectionViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
+    private val sharedClipboard: SharedClipboard,
 ) : ViewModel() {
 
     val kind: MediaKind = (savedStateHandle.get<String>(ARG_KIND) ?: "image").let {
@@ -94,6 +102,53 @@ class MediaCollectionViewModel @Inject constructor(
 
     fun consumeMessage() {
         _state.value = _state.value.copy(lastMessage = null)
+    }
+
+    /** 選択中アイテムを「コピー」として SharedClipboard に積む。
+     *  ファイルブラウザに戻って好きな場所で「貼り付け」できる。filePath を持たない
+     *  (= 実体パス未取得) アイテムは現状の Storage 抽象では扱えないので除外する。 */
+    fun copySelected() = stageSelectionToClipboard(asCut = false)
+    fun cutSelected() = stageSelectionToClipboard(asCut = true)
+
+    private fun stageSelectionToClipboard(asCut: Boolean) {
+        val keys = _state.value.selectedUris
+        if (keys.isEmpty()) return
+        val nodes = _state.value.items
+            .asSequence()
+            .filter { it.contentUri.toString() in keys }
+            .mapNotNull { item -> item.toLocalFileNode() }
+            .toList()
+        if (nodes.isEmpty()) {
+            _state.value = _state.value.copy(
+                lastMessage = "実体パスが取得できないため、この選択は積めません",
+            )
+            return
+        }
+        sharedClipboard.set(
+            if (asCut) ClipboardOperation.Cut(nodes) else ClipboardOperation.Copy(nodes),
+        )
+        val verb = if (asCut) "切り取り" else "コピー"
+        _state.value = _state.value.copy(
+            selectedUris = emptySet(),
+            lastMessage = "${nodes.size} 件を${verb}しました (ファイルブラウザで貼り付け)",
+        )
+    }
+
+    /** MediaStore 由来の [MediaItem] を、Storage 抽象が扱える [FileNode] に変換する。
+     *  filePath が無いものは null。MediaStore は permissions を返さないので、
+     *  実体ファイルから rwx を読んで埋める。 */
+    private fun MediaItem.toLocalFileNode(): FileNode? {
+        val path = filePath ?: return null
+        val f = File(path)
+        if (!f.exists()) return null
+        return FileNode(
+            uri = FileUri.Local(path),
+            name = displayName.ifEmpty { f.name },
+            type = NodeType.FILE,
+            size = if (size > 0) size else f.length(),
+            lastModified = if (modifiedSec > 0) Instant.fromEpochSeconds(modifiedSec) else null,
+            permissions = Permissions(readable = f.canRead(), writable = f.canWrite(), executable = f.canExecute()),
+        )
     }
 
     private fun query(): List<MediaItem> {

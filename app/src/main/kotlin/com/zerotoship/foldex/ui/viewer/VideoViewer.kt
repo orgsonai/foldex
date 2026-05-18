@@ -74,12 +74,17 @@ fun VideoViewer(
     val playUri = mediaUri ?: file.toURI().toString()
     var playbackError by remember(playUri) { mutableStateOf<String?>(null) }
 
+    // PlayerView 側へ「再生中だけスリープさせない」状態を流すための flag。
+    var isPlaying by remember(playUri) { mutableStateOf(false) }
     val player = remember(playUri) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(playUri))
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
                     playbackError = error.message ?: "再生エラー (${error.errorCodeName})"
+                }
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
                 }
             })
             prepare()
@@ -100,6 +105,10 @@ fun VideoViewer(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                     )
                 }
+            },
+            update = { view ->
+                // 再生中だけ keepScreenOn を立てる。一時停止/終了でディスプレイは通常通り消える。
+                view.keepScreenOn = isPlaying
             },
             modifier = Modifier.fillMaxSize(),
         )
