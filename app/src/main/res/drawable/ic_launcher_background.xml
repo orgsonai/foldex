@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  アダプティブアイコンの背景。フォアグラウンド PNG はもともとデザインの外側が
+  透明 + 内側が暗色の角丸正方形なので、背景を黒で塗っておくとランチャーが
+  どのマスク (円/角丸正方形/しずく) を当てても継ぎ目なく溶け込む。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#000000" />
+</shape>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  フォアグラウンドのデザイン本体。元 PNG はリフレッシュアイコン/フォルダタブが
+  画像端 (alpha=255 が y=0 まで来ている) まで張り付いているため、フルブリードで
+  使うとランチャーマスク (squircle / 円) がそれらを齧ってしまう。
+
+  layer-list + android:width/height = 76dp で PNG を中央 76x76dp に縮小配置し、
+  108dp フォアグラウンドの周囲 (16dp) は背景の黒で埋めることで、どの形状の
+  マスクでもデザイン全体が必ず収まるようにする。
+
+  サイズ調整目安:
+    76dp  : 安全寄り (どのマスクでも余裕、デザインは控えめ)
+    84dp  : 標準的な squircle / 角丸正方形なら収まる
+    92dp  : 角丸正方形マスクのランチャー専用 (円マスクだと端が齧られる)
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:gravity="center"
+        android:width="56dp"
+        android:height="56dp">
+        <bitmap android:src="@mipmap/ic_launcher_foreground" />
+    </item>
+</layer-list>
