@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.zerotoship.foldex.ui.components.FastScrollbar
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
@@ -46,25 +47,30 @@ fun MarkdownViewer(file: File, modifier: Modifier = Modifier) {
         }
         else -> {
             val onSurface = MaterialTheme.colorScheme.onSurface.toArgb()
-            AndroidView(
-                modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                factory = { ctx ->
-                    TextView(ctx).apply {
-                        setTextColor(onSurface)
-                        setTextIsSelectable(true)
-                    }
-                },
-                update = { tv ->
-                    // 表 (GFM tables) / 取り消し線 / タスクリスト / リンク自動化を有効化。
-                    val markwon = Markwon.builder(tv.context)
-                        .usePlugin(TablePlugin.create(tv.context))
-                        .usePlugin(StrikethroughPlugin.create())
-                        .usePlugin(TaskListPlugin.create(tv.context))
-                        .usePlugin(LinkifyPlugin.create())
-                        .build()
-                    markwon.setMarkdown(tv, md)
-                },
-            )
+            // verticalScroll の状態を hoist して、掴めるファストスクロールバーと共有する。
+            val scrollState = rememberScrollState()
+            Box(modifier.fillMaxSize()) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(16.dp),
+                    factory = { ctx ->
+                        TextView(ctx).apply {
+                            setTextColor(onSurface)
+                            setTextIsSelectable(true)
+                        }
+                    },
+                    update = { tv ->
+                        // 表 (GFM tables) / 取り消し線 / タスクリスト / リンク自動化を有効化。
+                        val markwon = Markwon.builder(tv.context)
+                            .usePlugin(TablePlugin.create(tv.context))
+                            .usePlugin(StrikethroughPlugin.create())
+                            .usePlugin(TaskListPlugin.create(tv.context))
+                            .usePlugin(LinkifyPlugin.create())
+                            .build()
+                        markwon.setMarkdown(tv, md)
+                    },
+                )
+                FastScrollbar(scrollState, Modifier.align(Alignment.CenterEnd))
+            }
         }
     }
 }

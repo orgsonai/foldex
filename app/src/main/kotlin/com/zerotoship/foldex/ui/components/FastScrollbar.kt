@@ -2,6 +2,7 @@ package com.zerotoship.foldex.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
@@ -204,4 +205,102 @@ fun FastScrollbar(
         modifier = modifier,
         labelProvider = labelProvider,
     )
+}
+
+/**
+ * 連続スクロール ([ScrollState]) 向けの掴めるファストスクローラ。
+ * Markdown / HTML プレビューのように `Modifier.verticalScroll(scrollState)` で描画する
+ * (= 行/アイテムの概念が無い) 画面向け。位置はピクセル比率で扱う。
+ *
+ * `BoxScope` 内で `Modifier.align(Alignment.CenterEnd)` を渡して使う。
+ * 中身が収まっていて (maxValue == 0) スクロール不要なら何も描画しない。
+ */
+@Composable
+fun FastScrollbar(
+    scrollState: ScrollState,
+    modifier: Modifier = Modifier,
+) {
+    val maxValue = scrollState.maxValue
+    if (maxValue <= 0) return
+
+    val scope = rememberCoroutineScope()
+    var dragging by remember { mutableStateOf(false) }
+    var dragFraction by remember { mutableFloatStateOf(0f) }
+    var lastActiveAt by remember { mutableLongStateOf(0L) }
+    var trackHeightPx by remember { mutableFloatStateOf(0f) }
+
+    val scrolling = scrollState.isScrollInProgress
+    var visibleNow by remember { mutableStateOf(false) }
+    LaunchedEffect(scrolling, dragging) {
+        if (scrolling || dragging) {
+            lastActiveAt = System.currentTimeMillis()
+            visibleNow = true
+        } else if (lastActiveAt != 0L) {
+            delay(1400)
+            if (!scrollState.isScrollInProgress && !dragging) visibleNow = false
+        }
+    }
+
+    val alpha by animateFloatAsState(
+        if (visibleNow || dragging) 1f else 0f,
+        tween(220),
+        label = "scrollFastScrollbarAlpha",
+    )
+    if (alpha <= 0.01f && !dragging) return
+
+    // つまみ高さ比率 = 表示領域 / 全体 (= track / (track + maxValue))。
+    val thumbFraction =
+        if (trackHeightPx <= 0f) 0.1f
+        else (trackHeightPx / (trackHeightPx + maxValue)).coerceIn(0.05f, 1f)
+    val primary = MaterialTheme.colorScheme.primary
+
+    fun positionFraction(): Float =
+        if (dragging) dragFraction else (scrollState.value.toFloat() / maxValue).coerceIn(0f, 1f)
+
+    fun thumbOffsetY(): Int {
+        if (trackHeightPx <= 0f) return 0
+        val maxOff = (trackHeightPx * (1f - thumbFraction)).coerceAtLeast(0f)
+        return (maxOff * positionFraction()).roundToInt()
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(28.dp)
+            .zIndex(2f)
+            .onSizeChanged { trackHeightPx = it.height.toFloat() }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        dragging = true
+                        val h = size.height.toFloat().coerceAtLeast(1f)
+                        dragFraction = (offset.y / h).coerceIn(0f, 1f)
+                        scope.launch { scrollState.scrollTo((dragFraction * maxValue).roundToInt()) }
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val h = size.height.toFloat().coerceAtLeast(1f)
+                        val f = (change.position.y / h).coerceIn(0f, 1f)
+                        dragFraction = f
+                        scope.launch { scrollState.scrollTo((f * maxValue).roundToInt()) }
+                    },
+                    onDragEnd = { dragging = false; lastActiveAt = System.currentTimeMillis() },
+                    onDragCancel = { dragging = false; lastActiveAt = System.currentTimeMillis() },
+                )
+            },
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 2.dp)
+                .offset { IntOffset(0, thumbOffsetY()) }
+                .fillMaxHeight(thumbFraction)
+                .heightIn(min = 24.dp)
+                .width(if (dragging) 10.dp else 4.dp)
+                .background(
+                    primary.copy(alpha = (if (dragging) 1f else 0.5f * alpha).coerceIn(0f, 1f)),
+                    RoundedCornerShape(50),
+                ),
+        )
+    }
 }
