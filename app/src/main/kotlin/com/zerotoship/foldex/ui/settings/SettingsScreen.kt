@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.ui.viewer.UNLIMITED_EDITABLE_LIMIT_KB
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -216,11 +217,19 @@ fun SettingsScreen(
                 wide = true,
             ) {
                 ChipsControl {
-                    listOf(128, 256, 512, 1024, 2048, 4096, 8192).forEach { kb ->
+                    listOf(128, 256, 512, 1024, 2048, 4096, 8192, UNLIMITED_EDITABLE_LIMIT_KB).forEach { kb ->
                         FilterChip(
                             selected = settings.editorEditableLimitKb == kb,
                             onClick = { viewModel.setEditorEditableLimitKb(kb) },
-                            label = { Text(if (kb >= 1024) "${kb / 1024}MB" else "${kb}KB") },
+                            label = {
+                                Text(
+                                    when {
+                                        kb == UNLIMITED_EDITABLE_LIMIT_KB -> "無制限"
+                                        kb >= 1024 -> "${kb / 1024}MB"
+                                        else -> "${kb}KB"
+                                    },
+                                )
+                            },
                         )
                     }
                 }

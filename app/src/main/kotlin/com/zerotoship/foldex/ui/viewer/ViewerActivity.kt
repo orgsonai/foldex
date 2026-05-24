@@ -32,8 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.common.Result
+import com.zerotoship.foldex.core.data.repo.SettingsRepository
+import com.zerotoship.foldex.core.data.repo.UserSettings
 import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.ThemeMode
 import com.zerotoship.foldex.core.model.WriteMode
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
@@ -60,6 +64,8 @@ class ViewerActivity : ComponentActivity() {
 
     @Inject lateinit var storage: StorageProviderRouter
 
+    @Inject lateinit var settingsRepo: SettingsRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val path = intent.getStringExtra(EXTRA_PATH).orEmpty()
@@ -78,7 +84,16 @@ class ViewerActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            FoldexTheme(darkTheme = isSystemInDarkTheme()) {
+            // ビューア/エディタもメイン画面と同じテーマ設定 (システム/ライト/ダーク + Material You)
+            // に追従させる。以前は isSystemInDarkTheme() 固定で、手動でライト/ダークを選んでいると
+            // エディタだけ別テーマになっていた。
+            val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = UserSettings())
+            val darkTheme = when (settings.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            FoldexTheme(darkTheme = darkTheme, dynamicColor = settings.dynamicColor) {
                 ViewerScreen(
                     file = file,
                     name = name,

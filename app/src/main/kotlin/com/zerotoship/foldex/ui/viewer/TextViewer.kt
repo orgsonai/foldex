@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -78,10 +79,17 @@ import java.io.File
 import java.nio.charset.Charset
 
 // 内蔵で開ける上限 (これより大きいと外部アプリ案内のみ)。
+// ただし「無制限」設定 + 編集モードのときはこの上限も外す ([UNLIMITED_EDITABLE_LIMIT_KB])。
 private const val MAX_BYTES = 8L * 1024 * 1024
 
 // 編集可能の既定上限 (KB)。Sora の Canvas 描画 + 仮想化により ~4MB まで快適。
 private const val DEFAULT_EDITABLE_LIMIT_KB = 2048
+
+/**
+ * 編集可能上限の「無制限」を表すセンチネル値 (KB)。設定画面・ViewerActivity でこの値を渡すと
+ * サイズによる編集ロック ( + 内蔵ビューアの読み込み上限) を外す。
+ */
+const val UNLIMITED_EDITABLE_LIMIT_KB = Int.MAX_VALUE
 
 private sealed interface TextLoad {
     data object Loading : TextLoad
@@ -110,11 +118,14 @@ fun TextViewer(
     onSaveRemote: (suspend (File) -> Boolean)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val state by produceState<TextLoad>(TextLoad.Loading, file) {
+    // 「無制限」(= 編集モードでサイズ制限なし)。読み込み上限 MAX_BYTES もこの時だけ外す。
+    val unlimited = editableLimitKb >= UNLIMITED_EDITABLE_LIMIT_KB
+
+    val state by produceState<TextLoad>(TextLoad.Loading, file, editable, unlimited) {
         value = withContext(Dispatchers.IO) {
             runCatching {
                 val len = file.length()
-                if (len > MAX_BYTES) return@runCatching TextLoad.TooLarge(len)
+                if (len > MAX_BYTES && !(editable && unlimited)) return@runCatching TextLoad.TooLarge(len)
                 val bytes = file.readBytes()
                 val charset = TextDecoding.detect(bytes)
                 TextLoad.Loaded(String(bytes, charset), charset, len)
@@ -122,7 +133,7 @@ fun TextViewer(
         }
     }
 
-    val editableLimitBytes = editableLimitKb.toLong() * 1024L
+    val editableLimitBytes = if (unlimited) Long.MAX_VALUE else editableLimitKb.toLong() * 1024L
 
     when (val s = state) {
         TextLoad.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -163,7 +174,10 @@ private fun SoraEditor(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // テーマ色を Compose 側から取って Sora の ColorScheme に流し込む。
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    // isDark は「適用中の Material テーマ」から判定する (= アプリのテーマ設定に追従)。
+    // isSystemInDarkTheme() 固定だと、手動でライト/ダークを選んでいる時にエディタの
+    // ベース配色 (Darcula/GitHub) だけがシステム側に引っ張られてしまうため。
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val onSurface = MaterialTheme.colorScheme.onSurface.toArgb()
     val surface = MaterialTheme.colorScheme.surface.toArgb()
     val primary = MaterialTheme.colorScheme.primary.toArgb()
