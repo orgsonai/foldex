@@ -183,12 +183,21 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         else Result.Failure(StorageError.IoError("delete failed: ${uri.absolutePath}"))
                     }
                     is FileUri.Saf -> {
-                        // tree-document URI でも fromTreeUri で開けば delete できる。
-                        // (fromSingleUri は plain content URI 想定で、tree-document URI で
-                        //  delete が効かないケースが Termux 等で見られるため)。
-                        val doc = DocumentFile.fromTreeUri(context, Uri.parse(uri.documentUri))
-                            ?: DocumentFile.fromSingleUri(context, Uri.parse(uri.documentUri))
-                            ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                        // pendingChildName 付きは「親 URI + 子の名前」を指す擬似 URI。
+                        // この場合 documentUri は親なので、findFile(name) で子を解決してから消す。
+                        // (これをしないと親ディレクトリごと消す致命的な誤動作になる)。
+                        val pending = uri.pendingChildName
+                        val doc = if (pending != null) {
+                            DocumentFile.fromTreeUri(context, Uri.parse(uri.documentUri))?.findFile(pending)
+                                ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                        } else {
+                            // tree-document URI でも fromTreeUri で開けば delete できる。
+                            // (fromSingleUri は plain content URI 想定で、tree-document URI で
+                            //  delete が効かないケースが Termux 等で見られるため)。
+                            DocumentFile.fromTreeUri(context, Uri.parse(uri.documentUri))
+                                ?: DocumentFile.fromSingleUri(context, Uri.parse(uri.documentUri))
+                                ?: return@withContext Result.Failure(StorageError.NotFound(uri))
+                        }
                         if (doc.delete()) Result.Success(Unit)
                         else Result.Failure(StorageError.IoError("SAF delete failed: ${uri.documentUri}"))
                     }
@@ -235,7 +244,8 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         copyFileOrDir(src, dst, observer)
                         Result.Success(Unit)
                     }
-                    else -> Result.Failure(StorageError.IoError("Cross-type copy not supported"))
+                    // SAF が絡む組み合わせ (SAF↔SAF / SAF↔Local) はストリーム経由で汎用コピー。
+                    else -> genericCopy(from, to, observer)
                 }
             }
         }
@@ -256,12 +266,122 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         src.deleteRecursively()
                         Result.Success(Unit)
                     }
-                    else -> Result.Failure(StorageError.IoError("Cross-type move not supported"))
+                    // SAF が絡む移動 = 汎用コピー後に元を削除 (SAF にアトミック move は無い)。
+                    else -> when (val copied = genericCopy(from, to, observer)) {
+                        is Result.Success -> delete(from, recursive = true)
+                        is Result.Failure -> copied
+                    }
                 }
             }
         }
 
     // --- helpers ---
+
+    /**
+     * Local / SAF を問わずプロバイダのプリミティブ ([stat]/[list]/[openInput]/[openOutput]/[mkdir])
+     * だけでコピーする汎用コピー。SAF↔SAF / SAF↔Local の双方向に対応する。
+     *
+     * ディレクトリは [ensureDirResolved] で作成後に「実体の URI」を取り直してから再帰する。
+     * SAF の宛先 URI は「親 + pendingChildName」の擬似 URI なので、解決せずに子へ潜ると
+     * 全部が同じ親直下に作られてしまうため、ここで一段ずつ実 URI に解決するのが要点。
+     */
+    private suspend fun genericCopy(
+        from: FileUri,
+        to: FileUri,
+        observer: ProgressObserver?,
+    ): Result<Unit, StorageError> {
+        val node = when (val s = stat(from)) {
+            is Result.Success -> s.value
+            is Result.Failure -> return s
+        }
+        return if (node.type == NodeType.DIRECTORY) {
+            val destDir = when (val d = ensureDirResolved(to)) {
+                is Result.Success -> d.value
+                is Result.Failure -> return d
+            }
+            var failure: StorageError? = null
+            // showHidden=true: コピーでドットファイルを取りこぼさない。
+            list(from, ListOptions(showHidden = true)).collect { child ->
+                if (failure != null) return@collect
+                when (val r = genericCopy(child.uri, resolvedChildUri(destDir, child.name), observer)) {
+                    is Result.Success -> Unit
+                    is Result.Failure -> failure = r.error
+                }
+            }
+            failure?.let { Result.Failure(it) } ?: Result.Success(Unit)
+        } else {
+            genericCopyFile(from, to, node.size, observer)
+        }
+    }
+
+    /** [to] のディレクトリを (無ければ) 作り、子へ再帰できる「実体の URI」を返す。 */
+    private fun ensureDirResolved(to: FileUri): Result<FileUri, StorageError> = when (to) {
+        is FileUri.Local -> {
+            File(to.absolutePath).mkdirs()
+            Result.Success(to)
+        }
+        is FileUri.Saf -> {
+            val pending = to.pendingChildName
+            if (pending == null) {
+                // 既に実体ディレクトリの URI。そのまま使う。
+                Result.Success(to)
+            } else {
+                val parent = DocumentFile.fromTreeUri(context, Uri.parse(to.documentUri))
+                    ?: return Result.Failure(StorageError.NotFound(to))
+                val existing = parent.findFile(pending)
+                val dir = when {
+                    existing != null && existing.isDirectory -> existing
+                    existing != null -> return Result.Failure(StorageError.AlreadyExists(to))
+                    else -> parent.createDirectory(pending)
+                        ?: return Result.Failure(StorageError.IoError("SAF createDirectory failed: $pending"))
+                }
+                Result.Success(FileUri.Saf(dir.uri.toString()))
+            }
+        }
+        is FileUri.Remote -> Result.Failure(StorageError.IoError("Remote not supported"))
+    }
+
+    /** 実体ディレクトリ URI [parentDir] の配下に [name] を持つ子 URI を組み立てる。 */
+    private fun resolvedChildUri(parentDir: FileUri, name: String): FileUri = when (parentDir) {
+        is FileUri.Local -> FileUri.Local("${parentDir.absolutePath.trimEnd('/')}/$name")
+        is FileUri.Saf -> FileUri.Saf(parentDir.documentUri, pendingChildName = name)
+        is FileUri.Remote -> parentDir // 到達しない
+    }
+
+    private suspend fun genericCopyFile(
+        from: FileUri,
+        to: FileUri,
+        size: Long,
+        observer: ProgressObserver?,
+    ): Result<Unit, StorageError> {
+        val input = when (val i = openInput(from)) {
+            is Result.Success -> i.value
+            is Result.Failure -> return i
+        }
+        val output = when (val o = openOutput(to, WriteMode.CREATE_NEW)) {
+            is Result.Success -> o.value
+            is Result.Failure -> { runCatching { input.close() }; return o }
+        }
+        return runCatching {
+            input.use { ins ->
+                output.use { outs ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var transferred = 0L
+                    var read: Int
+                    while (ins.read(buffer).also { read = it } >= 0) {
+                        outs.write(buffer, 0, read)
+                        transferred += read
+                        observer?.onProgress(transferred, size)
+                    }
+                    outs.flush()
+                }
+            }
+            Result.Success(Unit)
+        }.getOrElse { t ->
+            if (t is CancellationException) throw t
+            Result.Failure(StorageError.IoError("コピーに失敗しました: ${t.message}", t))
+        }
+    }
 
     private fun copyFileOrDir(src: File, dst: File, observer: ProgressObserver?) {
         if (src.isDirectory) {
