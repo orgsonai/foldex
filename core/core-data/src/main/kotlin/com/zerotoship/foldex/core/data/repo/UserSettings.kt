@@ -12,8 +12,11 @@ import com.zerotoship.foldex.core.model.ThemeMode
  */
 data class UserSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    /** Material You (端末の壁紙連動カラー)。Android 12 未満では効果なし。 */
-    val dynamicColor: Boolean = true,
+    /**
+     * Material You (端末の壁紙連動カラー)。Android 12 未満では効果なし。
+     * 既定は OFF — Foldex 独自の Forest Green テーマを既定の見た目にするため。ON で壁紙連動に切替。
+     */
+    val dynamicColor: Boolean = false,
     /** ファイル一覧でファイル名の後ろに拡張子バッジを表示するか。 */
     val showExtensionBadge: Boolean = true,
     /** 削除前に確認ダイアログを出すか。 */

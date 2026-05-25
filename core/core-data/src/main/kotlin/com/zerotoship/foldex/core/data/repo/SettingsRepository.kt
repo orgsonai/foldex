@@ -34,7 +34,7 @@ class SettingsRepository @Inject constructor(
         UserSettings(
             themeMode = p[KEY_THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
-            dynamicColor = p[KEY_DYNAMIC_COLOR] ?: true,
+            dynamicColor = p[KEY_DYNAMIC_COLOR] ?: false,
             showExtensionBadge = p[KEY_EXTENSION_BADGE] ?: true,
             confirmBeforeDelete = p[KEY_CONFIRM_DELETE] ?: true,
             undoTimeoutSeconds = p[KEY_UNDO_TIMEOUT] ?: 5,
