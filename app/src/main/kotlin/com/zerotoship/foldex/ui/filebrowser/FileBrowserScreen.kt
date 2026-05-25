@@ -203,6 +203,12 @@ fun FileBrowserScreen(
                     setDataAndType(req.uri, "application/vnd.android.package-archive")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
+                is OpenRequest.Archive ->
+                    com.zerotoship.foldex.ui.archive.ArchiveExplorerActivity.intent(
+                        context = context,
+                        localZipPath = req.localPath,
+                        name = req.name,
+                    )
             }
             if (runCatching { context.startActivity(intent) }.isFailure) {
                 snackbarHostState.showSnackbar("開けるアプリが見つかりません")

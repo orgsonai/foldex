@@ -84,6 +84,12 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- ZIP の中身を展開せずに閲覧する内蔵アーカイブブラウザ -->
+        <activity
+            android:name=".ui.archive.ArchiveExplorerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
         <!-- 外部アプリへファイルを渡すための FileProvider -->
         <provider
             android:name="androidx.core.content.FileProvider"

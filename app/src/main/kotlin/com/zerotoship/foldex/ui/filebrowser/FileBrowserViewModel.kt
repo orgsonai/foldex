@@ -359,6 +359,10 @@ class FileBrowserViewModel @Inject constructor(
             )
             val request = when {
                 category == Category.APK -> OpenRequest.InstallApk(fileProviderUri(localFile))
+                // ZIP は「展開せずに中身を閲覧」する内蔵アーカイブブラウザへ (毎回選択/外部指定時を除く)。
+                category == Category.ARCHIVE && ZipOps.isLikelyZip(node.name) &&
+                    (mode == OpenWithMode.DEFAULT || mode == OpenWithMode.BUILTIN) ->
+                    OpenRequest.Archive(localPath = localFile.absolutePath, name = node.name)
                 mode == OpenWithMode.EXTERNAL -> external(chooser = false)
                 mode == OpenWithMode.ASK -> external(chooser = true)
                 // DEFAULT / BUILTIN: 内蔵対応があれば内蔵、なければ外部アプリ選択
