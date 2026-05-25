@@ -274,7 +274,7 @@
 - [x] **Markdown プレビューに掴めるファストスクロールバー** (`f634115`): `verticalScroll(ScrollState)` 向けのピクセル比率ベースの `FastScrollbar` を追加し MD プレビューへ設置 (既存の index ベース core には未変更)。
 - [x] **HOME のタイルを配色チップ付きデザインに刷新** (`70fe3dc`): 全タイルが同一の灰色カード + primary 一色アイコンで単調だったのを、機能ごとに色分けした角丸アイコンチップ入りタイルへ。配色はテーマ由来 (primary/secondary/tertiary/error/neutral コンテナ) で Material You・ライト/ダークに追従。アイコンも意味の合うものへ (設定=Settings, 権限=Shield, 同期=Sync, サーバ=Dns 等。従来は設定=錠前など誤マッピング)。
 - [x] **ZIP を展開せずに中身を閲覧 (ArchiveExplorer)** (`0f72628`): 仕様 §10「中身プレビュー」を実装。`ui/archive/ArchiveExplorer` (zip4j ヘッダ読み + 仮想ツリー + 単一エントリ展開) と `ArchiveExplorerActivity` (パンくず付きで潜れる一覧、ファイルタップで内蔵ビューア/外部表示、暗号化 zip はパスワード要求)。`openFile` が ZIP を `OpenRequest.Archive` 経由で本画面へ振り分け。全展開 (解凍) は従来どおり選択メニューから利用可能。
-- [ ] **ライトモードの全体的な色合いを改善** ← 対応中
+- [x] **ライトモードの色合いを改善**: フォールバック配色 (`FoldexTheme.kt` の `LightColors`/`DarkColors`) が primary だけ緑で残りが Material 既定の紫系のままだった (緑×紫の不調和)。緑シード (#2E7D32) から起こした一貫した light/dark フルパレットに置換 (primary/secondary/tertiary/各 container/surface まで緑系)。あわせて**動的カラーの既定を OFF** にし (`UserSettings.dynamicColor=false` + repo 既定 false)、既定の見た目を Forest Green テーマに統一 (設定でいつでも Material You に切替可)。
 
 ---
 
