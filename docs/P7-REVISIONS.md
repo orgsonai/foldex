@@ -263,6 +263,21 @@
 
 ---
 
+## H. P7 仕上げの追加修正 (2026-05-26)
+
+実機検証後に出た追加依頼。すべて実機確認済み。HANDOFF の確定事項とは矛盾しない (機能追加・不具合修正)。
+
+- [x] **SAF のコピー/切り取り移動ができない問題を修正** (`fcf3be3`): `LocalStorageProvider.copyWithin/moveWithin` が SAF (`FileUri.Saf`) を「Cross-type copy not supported」で弾いていた。SAF↔SAF / SAF↔Local を `openInput/openOutput/mkdir/list/stat` だけで行う汎用コピー (`genericCopy`) を追加し、ディレクトリは実 URI に解決してから再帰。あわせて pendingChildName 付き SAF の `delete` が**親フォルダごと消しかねない**バグも修正 (findFile で子を解決してから削除)。
+- [x] **エディタの編集可能上限に「無制限」** (`35c7de4`): 設定チップに「無制限」(`UNLIMITED_EDITABLE_LIMIT_KB`) を追加。選択時は編集ロックと読み込み上限 (MAX_BYTES) の両方を外す。
+- [x] **ビューア/エディタをアプリのテーマ設定に追従** (`35c7de4`): `ViewerActivity` が `isSystemInDarkTheme()` 固定で手動のライト/ダーク設定を無視していた。`themeMode` + Material You を設定から解決して `FoldexTheme` に渡す。Sora の `isDark` も実テーマ由来 (surface の luminance) に。
+- [x] **ダークモードの行番号が背景に埋もれる問題を修正** (`61eb8d4`): Sora の `LINE_NUMBER_CURRENT` を本文色、スクロール時の行番号バブル (`LINE_NUMBER_PANEL` / `_TEXT`) を primary/onPrimary で高コントラスト化。
+- [x] **Markdown プレビューに掴めるファストスクロールバー** (`f634115`): `verticalScroll(ScrollState)` 向けのピクセル比率ベースの `FastScrollbar` を追加し MD プレビューへ設置 (既存の index ベース core には未変更)。
+- [x] **HOME のタイルを配色チップ付きデザインに刷新** (`70fe3dc`): 全タイルが同一の灰色カード + primary 一色アイコンで単調だったのを、機能ごとに色分けした角丸アイコンチップ入りタイルへ。配色はテーマ由来 (primary/secondary/tertiary/error/neutral コンテナ) で Material You・ライト/ダークに追従。アイコンも意味の合うものへ (設定=Settings, 権限=Shield, 同期=Sync, サーバ=Dns 等。従来は設定=錠前など誤マッピング)。
+- [x] **ZIP を展開せずに中身を閲覧 (ArchiveExplorer)** (`0f72628`): 仕様 §10「中身プレビュー」を実装。`ui/archive/ArchiveExplorer` (zip4j ヘッダ読み + 仮想ツリー + 単一エントリ展開) と `ArchiveExplorerActivity` (パンくず付きで潜れる一覧、ファイルタップで内蔵ビューア/外部表示、暗号化 zip はパスワード要求)。`openFile` が ZIP を `OpenRequest.Archive` 経由で本画面へ振り分け。全展開 (解凍) は従来どおり選択メニューから利用可能。
+- [ ] **ライトモードの全体的な色合いを改善** ← 対応中
+
+---
+
 ## 影響範囲・要確認まとめ
 
 | # | 内容 | HANDOFF/PHASES との整合 | 要確認 |

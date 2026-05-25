@@ -898,11 +898,13 @@ server/src/main/kotlin/com/zerotoship/foldex/server/
 | 7z | ◎ | ◎ | Apache Commons Compress |
 | RAR | ◎ (読みのみ) | × | junrar (`com.github.junrar:junrar`) |
 
-#### 中身プレビュー
-- 圧縮ファイルをタップ → 展開せずに中身一覧を表示
-- 通常のフォルダのように扱う (パンくずリスト等で潜れる)
-- 内部のファイルもプレビュー可能 (画像・テキスト)
-- 単一ファイルだけ展開してコピーも可能
+#### 中身プレビュー (P7 実装済み: `ui/archive/ArchiveExplorer` + `ArchiveExplorerActivity`)
+- ✅ ZIP をタップ → 展開せずに中身一覧を表示 (zip4j のヘッダ読みのみ)
+- ✅ 通常のフォルダのように扱う (パンくず + フォルダタップで潜れる)
+- ✅ 内部のファイルもプレビュー可能 (タップで単一エントリだけキャッシュ展開 → 内蔵ビューア/外部アプリ)
+- ✅ 暗号化 ZIP は開く時にパスワードを要求 (一覧表示自体は不要)
+- ⏳ 単一ファイルだけ展開して「コピー」(現状はプレビュー目的の展開のみ。明示コピーは将来)
+- ⏳ 7z / tar.xz / RAR は未着手 (ZIP のみ)
 
 #### 実装方針
 - `storage-archive` モジュールは作らない (独立Providerにしない)
@@ -971,9 +973,9 @@ app/ui/viewer/
 |---|---|
 | 動画プレーヤー | Media3 ExoPlayer で内蔵 (P7)。**リモートも `StorageManager.openProxyFileDescriptor` + 範囲指定 `openInput` で seek 対応ストリーミング**。WMV/.asf は外部アプリ案内 |
 | PDFビューア | PdfRenderer で内蔵 (P7、LRU ページキャッシュ + 専用スクロールバー) |
-| テキストエディタ | **Sora-editor (Canvas 描画 + 仮想化、`sora-editor:0.23.5`)** に置換 (P7 後期)。検索/折返し/行番号/Undo/Redo、編集上限はユーザー設定 (128KB〜8MB) |
-| Markdownプレビュー | Markwon で内蔵 (tables/strikethrough/tasklist/linkify プラグイン) |
-| 圧縮ファイル | ZIP の圧縮/解凍を P7 で実装 (zip4j 2.11.5、AES-256 パスワード対応)。7z/tar.xz/RAR は未着手 |
+| テキストエディタ | **Sora-editor (Canvas 描画 + 仮想化、`sora-editor:0.23.5`)** に置換 (P7 後期)。検索/折返し/行番号/Undo/Redo、編集上限はユーザー設定 (128KB〜8MB / 無制限)。配色はアプリのテーマ設定 (システム/ライト/ダーク) に追従、ダークの行番号視認性も調整済み |
+| Markdownプレビュー | Markwon で内蔵 (tables/strikethrough/tasklist/linkify プラグイン)。プレビューにも掴めるファストスクロールバー |
+| 圧縮ファイル | ZIP の圧縮/解凍 + **中身プレビュー (展開せずフォルダのように閲覧、`ArchiveExplorerActivity`)** を P7 で実装 (zip4j 2.11.5、AES-256 パスワード対応)。7z/tar.xz/RAR は未着手 |
 | RAR | 未着手 (将来 junrar を検討) |
 | パスワード付きZIP | zip4j で対応 (AES-256 / PKCS#5) |
 | EXIF削除 | オプション提供、デフォルトオフ (P7以降) |
@@ -1565,9 +1567,9 @@ P7 で前倒し実装したものを含む詳細な進捗は `docs/PHASES.md` §
 | ホスト鍵 (SFTP) | Ed25519、初回自動生成、再生成可 |
 | 動画プレーヤー | Media3 ExoPlayer で内蔵 (P7)。**リモートも `StorageManager.openProxyFileDescriptor` + 範囲指定 openInput で seek 対応ストリーミング** (P7 後期)。WMV/.asf は外部アプリ案内 |
 | PDFビューア | PdfRenderer で内蔵 (P7、LRU ページキャッシュ + 専用スクロールバー) |
-| テキストエディタ | **Sora-editor (Canvas 描画 + 仮想化、`sora-editor:0.23.5`)** に置換 (P7 後期、~8MB まで軽快)。検索/折返し/行番号/Undo/Redo、編集上限はユーザー設定 (128KB〜8MB) |
-| Markdownプレビュー | Markwon で内蔵 (P7、tables/strikethrough/tasklist/linkify プラグイン) |
-| 圧縮ファイル | ZIP の圧縮 + 解凍を P7 で実装 (zip4j 2.11.5)。7z/tar.xz/RAR は未着手 |
+| テキストエディタ | **Sora-editor (Canvas 描画 + 仮想化、`sora-editor:0.23.5`)** に置換 (P7 後期、~8MB まで軽快)。検索/折返し/行番号/Undo/Redo、編集上限はユーザー設定 (128KB〜8MB / 無制限)。配色はアプリのテーマ設定に追従、ダークの行番号視認性も調整済み |
+| Markdownプレビュー | Markwon で内蔵 (P7、tables/strikethrough/tasklist/linkify プラグイン)。プレビューにも掴めるファストスクロールバー |
+| 圧縮ファイル | ZIP の圧縮 + 解凍 + **中身プレビュー (展開せず閲覧、`ArchiveExplorerActivity`)** を P7 で実装 (zip4j 2.11.5)。7z/tar.xz/RAR は未着手 |
 | RAR | 未着手 (将来 junrar を検討) |
 | パスワード付きZIP | zip4j で対応 (AES-256 / PKCS#5) |
 | EXIF削除 | オプション提供、デフォルトオフ (P7以降) |
@@ -1620,7 +1622,7 @@ P7 終盤での消化状況を ✅ / ⏳ で示す。
    - ⏳ EXIF削除オプション (共有時の自動GPS削除)
    - ✅ PDF内蔵ビューア (P7、PdfRenderer + LRU ページキャッシュ + 専用スクロールバー)
    - ⏳ リモート画像の部分ダウンロードサムネ
-   - ✅ ZIP 圧縮/解凍 (P7、AES-256 パスワード対応)
+   - ✅ ZIP 圧縮/解凍 (P7、AES-256 パスワード対応) + 中身プレビュー (展開せず閲覧、`ArchiveExplorerActivity`)
    - ✅ 拡張子なしテキストの自動判定で内蔵エディタ開く (P7)
 
 3. **タブレット・大画面対応 (P7以降)**
