@@ -1016,16 +1016,21 @@ DataStore で `themeMode` を保存。
 - オフ時 (既定) は Foldex 独自カラーを使用
 
 #### Foldex 独自カラー
-- **Forest Green** (`#2E7D32`) を基調
-- `FoldexTheme.kt` に light / dark それぞれ緑シードから起こした一貫したトーナルパレットを定義
-  (primary/secondary/tertiary/各 container/surface まで緑系で統一)。
-  以前は primary だけ緑で残りが Material 既定の紫系のままだったため、動的カラー OFF 時に
-  緑×紫がちぐはぐだった問題を解消
+- **Forest Green** (`#2E7D32`) をアクセントの基調
+- `FoldexTheme.kt` に light / dark のフルパレットを定義。**地の面 (background / surface /
+  surfaceVariant / surfaceContainer 群) はニュートラルなグレー、緑は primary とアクセントの
+  container (HOME タイル等) にだけ使う**。
+  - 以前は primary だけ緑で残りが Material 既定の紫系 → 緑×紫がちぐはぐだった。
+  - その後 surface まで緑にしたら「全体的に緑っぽい」となったため、地の面はニュートラルへ戻した
+    (= 現在の方針)。
 - Zero to Ship のアクセントカラーと整合
 
 #### ダーク/ライトの注意点
 - ファイル一覧の読みやすさ (行間、コントラスト)
 - アイコンの視認性 (拡張子別の色分けが沈まないよう調整)
+- **システムバーのアイコン明暗はアプリの実テーマに追従** (`FoldexTheme` の `SideEffect` で
+  `WindowCompat.isAppearanceLight{Status,Navigation}Bars = !darkTheme`)。`enableEdgeToEdge()` は
+  システムの dark/light 基準なので、手動でライト/ダークを選ぶと時計等が背景と同化する問題への対処。
 - ダーク時の画像サムネに薄い枠線
 
 ### 11-C. タイポグラフィ
@@ -1582,7 +1587,7 @@ P7 で前倒し実装したものを含む詳細な進捗は `docs/PHASES.md` §
 | サムネキャッシュ | メモリ + ディスクの2層 |
 | UIフレームワーク | Material 3 |
 | 動的カラー | **デフォルトオフ** (Android 12+ で設定オン時のみ壁紙連動)。既定は Forest Green テーマ |
-| 独自カラー | Forest Green (`#2E7D32`) 基調の light/dark フル緑パレット (`FoldexTheme.kt`) |
+| 独自カラー | Forest Green (`#2E7D32`) アクセント。地の面はニュートラルなグレー、緑は primary とアクセント container のみ (`FoldexTheme.kt` の light/dark パレット) |
 | テーマモード | システム追従/ライト/ダーク |
 | 拡張子バッジ | デフォルトオン |
 | 削除確認ダイアログ | デフォルトオン |
