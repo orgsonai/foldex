@@ -6,6 +6,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -28,22 +30,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderSpecial
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -72,6 +76,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -190,8 +196,8 @@ fun HomeScreen(
             }
             LazyVerticalGrid(
                 state = gridState,
-                columns = GridCells.Adaptive(minSize = 112.dp),
-                contentPadding = PaddingValues(12.dp),
+                columns = GridCells.Adaptive(minSize = 120.dp),
+                contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize().padding(inner),
@@ -341,47 +347,21 @@ private fun ShortcutTile(
     onRemove: () -> Unit,
     onRename: () -> Unit,
 ) {
-    val icon: ImageVector
-    val tint = MaterialTheme.colorScheme.primary
-    val subtitle: String?
-    when (sc) {
-        is HomeShortcut.LocalFolder -> {
-            icon = Icons.Outlined.FolderOpen
-            subtitle = sc.path
-        }
-        is HomeShortcut.SafFolder -> {
-            icon = Icons.Outlined.FolderOpen
-            subtitle = "SAF"
-        }
-        is HomeShortcut.RemoteConnection -> {
-            icon = Icons.Default.Cloud
-            subtitle = "リモート"
-        }
-        is HomeShortcut.Function -> {
-            icon = when (sc.kind) {
-                HomeFunction.INTERNAL_STORAGE -> Icons.Default.Folder
-                HomeFunction.TRASH -> Icons.Default.Delete
-                HomeFunction.SERVERS -> Icons.Default.Storage
-                HomeFunction.SYNC -> Icons.Default.Cloud
-                HomeFunction.SETTINGS -> Icons.Default.Lock
-                HomeFunction.PERMISSIONS -> Icons.Default.Lock
-                HomeFunction.SAF_PICK -> Icons.Default.Cloud
-                HomeFunction.ALL_IMAGES -> Icons.Default.Image
-                HomeFunction.ALL_VIDEOS -> Icons.Default.Movie
-            }
-            subtitle = null
-        }
-    }
+    val style = homeTileStyle(sc)
     var menuOpen by remember { mutableStateOf(false) }
     Box {
         Card(
             colors = CardDefaults.cardColors(
-                // ドラッグ中は前景タイルを少し強調 (Material elevation 風)。
+                // ドラッグ中は前景タイルを少し強調。通常時は一段持ち上げた surface で
+                // 色付きアイコンチップが映えるようにする。
                 containerColor = if (isDragging) {
                     MaterialTheme.colorScheme.secondaryContainer
                 } else {
-                    MaterialTheme.colorScheme.surfaceVariant
+                    MaterialTheme.colorScheme.surfaceContainerHigh
                 },
+            ),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = if (isDragging) 8.dp else 1.dp,
             ),
             // 長押し = ドラッグ開始 (reorderable の dragHandleModifier)。
             // タップ = タイルの本来動作 (フォルダ/接続を開く等)。
@@ -394,21 +374,37 @@ private fun ShortcutTile(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxSize().padding(8.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.height(40.dp))
-                Spacer(Modifier.height(6.dp))
+                // 機能ごとに配色を変えた角丸アイコンチップ。色はテーマ (Material You / ライト/ダーク)
+                // から取るので動的カラーでも破綻しない。
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(style.container),
+                ) {
+                    Icon(
+                        style.icon,
+                        contentDescription = null,
+                        tint = style.content,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
                 Text(
                     sc.label,
                     style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (subtitle != null) {
+                if (style.subtitle != null) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        subtitle,
+                        style.subtitle,
                         style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
@@ -447,10 +443,56 @@ private fun ShortcutTile(
             if (canRemove) {
                 DropdownMenuItem(
                     text = { Text("削除") },
-                    leadingIcon = { Icon(Icons.Default.Delete, null) },
+                    leadingIcon = { Icon(Icons.Rounded.Delete, null) },
                     onClick = { onRemove(); menuOpen = false },
                 )
             }
+        }
+    }
+}
+
+/** タイル 1 枚分の見た目 (アイコン + 配色チップ色 + サブタイトル)。 */
+private data class HomeTileStyle(
+    val icon: ImageVector,
+    val container: Color,
+    val content: Color,
+    val subtitle: String?,
+)
+
+/**
+ * ショートカット種別ごとのアイコン・配色を決める。色はすべて [MaterialTheme.colorScheme] 由来なので
+ * Material You / ライト・ダークいずれでも自然に追従する。系統で色を分けて一目で見分けられるようにする:
+ * フォルダ=primary / メディア・SAF追加=secondary / ネットワーク=tertiary / ゴミ箱=error / システム=neutral。
+ */
+@Composable
+private fun homeTileStyle(sc: HomeShortcut): HomeTileStyle {
+    val cs = MaterialTheme.colorScheme
+    return when (sc) {
+        is HomeShortcut.LocalFolder ->
+            HomeTileStyle(Icons.Rounded.Folder, cs.primaryContainer, cs.onPrimaryContainer, sc.path)
+        is HomeShortcut.SafFolder ->
+            HomeTileStyle(Icons.Rounded.FolderSpecial, cs.primaryContainer, cs.onPrimaryContainer, "SAF")
+        is HomeShortcut.RemoteConnection ->
+            HomeTileStyle(Icons.Rounded.Cloud, cs.tertiaryContainer, cs.onTertiaryContainer, "リモート")
+        is HomeShortcut.Function -> when (sc.kind) {
+            HomeFunction.INTERNAL_STORAGE ->
+                HomeTileStyle(Icons.Rounded.PhoneAndroid, cs.primaryContainer, cs.onPrimaryContainer, null)
+            HomeFunction.TRASH ->
+                HomeTileStyle(Icons.Rounded.Delete, cs.errorContainer, cs.onErrorContainer, null)
+            HomeFunction.SERVERS ->
+                HomeTileStyle(Icons.Rounded.Dns, cs.tertiaryContainer, cs.onTertiaryContainer, null)
+            HomeFunction.SYNC ->
+                HomeTileStyle(Icons.Rounded.Sync, cs.tertiaryContainer, cs.onTertiaryContainer, null)
+            HomeFunction.SETTINGS ->
+                HomeTileStyle(Icons.Rounded.Settings, cs.surfaceContainerHighest, cs.onSurfaceVariant, null)
+            HomeFunction.PERMISSIONS ->
+                HomeTileStyle(Icons.Rounded.Shield, cs.surfaceContainerHighest, cs.onSurfaceVariant, null)
+            HomeFunction.SAF_PICK ->
+                HomeTileStyle(Icons.Rounded.CreateNewFolder, cs.secondaryContainer, cs.onSecondaryContainer, null)
+            HomeFunction.ALL_IMAGES ->
+                HomeTileStyle(Icons.Rounded.PhotoLibrary, cs.secondaryContainer, cs.onSecondaryContainer, null)
+            HomeFunction.ALL_VIDEOS ->
+                HomeTileStyle(Icons.Rounded.VideoLibrary, cs.secondaryContainer, cs.onSecondaryContainer, null)
         }
     }
 }
