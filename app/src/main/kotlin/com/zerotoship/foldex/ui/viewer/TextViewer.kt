@@ -181,6 +181,7 @@ private fun SoraEditor(
     val onSurface = MaterialTheme.colorScheme.onSurface.toArgb()
     val surface = MaterialTheme.colorScheme.surface.toArgb()
     val primary = MaterialTheme.colorScheme.primary.toArgb()
+    val onPrimary = MaterialTheme.colorScheme.onPrimary.toArgb()
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant.toArgb()
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
     val selection = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f).toArgb()
@@ -253,6 +254,12 @@ private fun SoraEditor(
         scheme.setColor(EditorColorScheme.TEXT_NORMAL, onSurface)
         scheme.setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, surfaceVariant)
         scheme.setColor(EditorColorScheme.LINE_NUMBER, onSurfaceVariant)
+        // 現在行の番号は本文色で強調 (ダークでベース配色の既定値が背景と被るのを防ぐ)。
+        scheme.setColor(EditorColorScheme.LINE_NUMBER_CURRENT, onSurface)
+        // スクロール/ドラッグ時に出る行番号バブル。未設定だと既定色が背景と被って読めないので、
+        // ファストスクロールバーのラベルと同じ primary / onPrimary で高コントラストにする。
+        scheme.setColor(EditorColorScheme.LINE_NUMBER_PANEL, primary)
+        scheme.setColor(EditorColorScheme.LINE_NUMBER_PANEL_TEXT, onPrimary)
         scheme.setColor(EditorColorScheme.LINE_DIVIDER, onSurfaceVariant)
         scheme.setColor(EditorColorScheme.SELECTION_INSERT, primary)
         scheme.setColor(EditorColorScheme.SELECTION_HANDLE, primary)
