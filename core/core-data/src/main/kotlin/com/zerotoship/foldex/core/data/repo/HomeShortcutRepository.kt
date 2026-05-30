@@ -35,6 +35,12 @@ class HomeShortcutRepository @Inject constructor(
 ) {
     private val ds get() = context.homeDataStore
 
+    // DataStore は同期読み出しができず、起動直後は値が届くまで一瞬遅れる。その間 HOME は
+    // 既定順のタイルを描き、直後に保存順へ並び替わるため「並び替えアニメ」がチラつく。
+    // それを消すために、最後に表示したタイル列を SharedPreferences (同期) にキャッシュしておき、
+    // 起動時の初期値として即座に最終状態を描けるようにする。
+    private val cachePrefs = context.getSharedPreferences("foldex_home_cache", Context.MODE_PRIVATE)
+
     val customShortcuts: Flow<List<HomeShortcut>> = ds.data.map { p ->
         (p[KEY_ITEMS] ?: emptySet()).mapNotNull(::decode)
     }
@@ -146,6 +152,22 @@ class HomeShortcutRepository @Inject constructor(
         ds.edit { it[KEY_ORDER] = ids.joinToString("") }
     }
 
+    /** 直近に表示したタイル列のキャッシュ (同期読み出し)。無ければ null。 */
+    fun cachedShortcuts(): List<HomeShortcut>? {
+        val raw = cachePrefs.getString(KEY_CACHE, null) ?: return null
+        return runCatching {
+            val arr = org.json.JSONArray(raw)
+            (0 until arr.length()).mapNotNull { decode(arr.getString(it)) }
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+    }
+
+    /** 表示中タイル列を同期キャッシュへ保存する (次回起動の初期値に使う)。 */
+    fun cacheShortcuts(list: List<HomeShortcut>) {
+        val arr = org.json.JSONArray()
+        list.forEach { arr.put(encode(it)) }
+        cachePrefs.edit().putString(KEY_CACHE, arr.toString()).apply()
+    }
+
     private fun appendToOrder(current: String?, id: String): String {
         val list = (current ?: "").split('').filter { it.isNotEmpty() }
         if (id in list) return current ?: ""
@@ -197,5 +219,7 @@ class HomeShortcutRepository @Inject constructor(
         val KEY_HIDDEN = stringSetPreferencesKey("home_hidden")
         val KEY_ORDER = stringPreferencesKey("home_order")
         val KEY_LABEL_OVERRIDES = stringSetPreferencesKey("home_label_overrides")
+        // SharedPreferences 側の表示キャッシュキー (DataStore とは別ストア)。
+        const val KEY_CACHE = "home_visible_cache"
     }
 }

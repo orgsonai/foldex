@@ -14,6 +14,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -61,10 +62,17 @@ class HomeViewModel @Inject constructor(
         applyOrder(merged, order)
     }
 
-    /** HOME のタイル一覧 (表示分)。組み込みも含めて非表示 id は除外する。 */
+    /**
+     * HOME のタイル一覧 (表示分)。組み込みも含めて非表示 id は除外する。
+     * 起動直後の並び替えチラつきを消すため、初期値は前回表示のキャッシュ ([cachedShortcuts])
+     * を使い、実値が届くたびにキャッシュを更新する ([cacheShortcuts])。キャッシュ無し (初回) は
+     * 組み込みタイルを既定順で出す。
+     */
     val shortcuts: StateFlow<List<HomeShortcut>> = combine(allShortcuts, repo.hiddenIds) { all, hidden ->
         all.filter { it.id !in hidden }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BUILT_IN)
+    }
+        .onEach { repo.cacheShortcuts(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), repo.cachedShortcuts() ?: BUILT_IN)
 
     /** 復元 UI 用: 非表示にされている全タイル。 */
     val hiddenShortcuts: StateFlow<List<HomeShortcut>> = combine(allShortcuts, repo.hiddenIds) { all, hidden ->
