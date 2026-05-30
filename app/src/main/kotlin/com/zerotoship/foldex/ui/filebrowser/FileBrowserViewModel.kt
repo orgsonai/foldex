@@ -713,6 +713,13 @@ class FileBrowserViewModel @Inject constructor(
 
         for ((index, node) in nodes.withIndex()) {
             val destUri = destUriFor(destDir, node.name) ?: continue
+            // 元と宛先が「同一」または「一方が他方の祖先」のときは絶対に処理しない。
+            // (例: フォルダ内の同名フォルダを外へ出そうとすると宛先 = 親フォルダになる。
+            //  上書き処理で宛先を消すと、その中にいる元フォルダごと巻き添えで消滅する不具合の原因。)
+            if (pathsOverlapUnsafely(node.uri, destUri)) {
+                lastError = "「${node.name}」は元の場所と重なるため移動/コピーできません"
+                continue
+            }
             // ProgressObserver で逐次状態を更新。プロバイダによっては 64KB ごとに呼ばれて
             // 1ファイルで何千回も発火するので、80ms (約 12fps) に間引いて UI 負荷を抑える。
             var lastTick = 0L
@@ -817,12 +824,31 @@ class FileBrowserViewModel @Inject constructor(
 
     private fun performDelete(nodes: List<FileNode>, behavior: DeleteBehavior) {
         if (nodes.isEmpty()) return
-        _state.value = _state.value.copy(isLoading = true)
+        val opLabel = if (behavior == DeleteBehavior.TRASH) "ゴミ箱へ移動中…" else "削除中…"
+        // 削除は逐次のバイト進捗が取れない (deleteRecursively は一括) ので、件数ベースのバナーを出す。
+        // totalBytes = 0 にしてバーは不確定 (くるくる) 表示にする。
+        _state.value = _state.value.copy(
+            isLoading = true,
+            opProgress = FileOpProgress(
+                label = opLabel,
+                currentName = nodes.firstOrNull()?.name ?: "",
+                currentIndex = 1,
+                totalCount = nodes.size,
+                bytesTransferred = 0,
+                totalBytes = 0,
+            ),
+        )
         viewModelScope.launch {
             var lastError: String? = null
             var trashedCount = 0
             var deletedCount = 0
-            for (node in nodes) {
+            for ((index, node) in nodes.withIndex()) {
+                _state.value = _state.value.copy(
+                    opProgress = _state.value.opProgress?.copy(
+                        currentName = node.name,
+                        currentIndex = index + 1,
+                    ),
+                )
                 val localFile = (node.uri as? FileUri.Local)?.let { File(it.absolutePath) }
                 if (behavior == DeleteBehavior.TRASH && localFile != null) {
                     if (trashRepo.moveToTrash(localFile)) trashedCount++
@@ -835,7 +861,7 @@ class FileBrowserViewModel @Inject constructor(
                 }
             }
             val currentUri = _state.value.currentUri
-            _state.value = _state.value.copy(isLoading = false, selectedUris = emptySet())
+            _state.value = _state.value.copy(isLoading = false, opProgress = null, selectedUris = emptySet())
             if (currentUri != null) loadFilesSync(currentUri)
             when {
                 lastError != null -> emit(SnackbarEvent("削除エラー: $lastError"))
@@ -1308,10 +1334,37 @@ class FileBrowserViewModel @Inject constructor(
         val destDir = _state.value.currentUri ?: return
         if (targets.isEmpty()) return
         val finalName = if (zipName.endsWith(".zip", ignoreCase = true)) zipName else "$zipName.zip"
-        _state.value = _state.value.copy(pendingZipCompress = emptyList(), isLoading = true)
+        _state.value = _state.value.copy(
+            pendingZipCompress = emptyList(),
+            isLoading = true,
+            opProgress = FileOpProgress(
+                label = "圧縮中…",
+                currentName = targets.firstOrNull()?.name ?: finalName,
+                currentIndex = 1,
+                totalCount = targets.size,
+                bytesTransferred = 0,
+                totalBytes = 0,
+            ),
+        )
         viewModelScope.launch {
             val cacheZip = withContext(Dispatchers.IO) {
                 File(context.cacheDir, "compress_${System.currentTimeMillis()}_$finalName")
+            }
+            // zip4j の ProgressMonitor → opProgress。80ms スロットルで UI 負荷を抑える。
+            var lastTick = 0L
+            val onZip = ZipOps.ZipProgress { idx, total, name, done, totalBytes ->
+                val now = System.currentTimeMillis()
+                if (now - lastTick < 80 && done < totalBytes) return@ZipProgress
+                lastTick = now
+                _state.value = _state.value.copy(
+                    opProgress = _state.value.opProgress?.copy(
+                        currentName = name ?: "",
+                        currentIndex = idx,
+                        totalCount = total,
+                        bytesTransferred = done.coerceAtLeast(0),
+                        totalBytes = totalBytes.coerceAtLeast(0),
+                    ),
+                )
             }
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
@@ -1321,7 +1374,7 @@ class FileBrowserViewModel @Inject constructor(
                         locals += f
                     }
                     if (locals.isEmpty()) return@runCatching false
-                    ZipOps.compress(locals, cacheZip, password.takeUnless { it.isNullOrEmpty() })
+                    ZipOps.compress(locals, cacheZip, password.takeUnless { it.isNullOrEmpty() }, onZip)
                     true
                 }.getOrElse { e ->
                     emit(SnackbarEvent("圧縮失敗: ${e.message}"))
@@ -1329,16 +1382,25 @@ class FileBrowserViewModel @Inject constructor(
                 }
             }
             if (!ok || !cacheZip.exists()) {
-                _state.value = _state.value.copy(isLoading = false)
+                _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
             // できた zip を destDir に書き込む。
             val destUri = destUriFor(destDir, uniqueName(destDir, finalName))
             if (destUri == null) {
                 emit(SnackbarEvent("保存先を解決できません"))
-                _state.value = _state.value.copy(isLoading = false)
+                _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
+            // zip 本体の書き込みフェーズはバーを不確定表示に切り替える。
+            _state.value = _state.value.copy(
+                opProgress = _state.value.opProgress?.copy(
+                    label = "保存中…",
+                    currentName = finalName,
+                    bytesTransferred = 0,
+                    totalBytes = 0,
+                ),
+            )
             val written = withContext(Dispatchers.IO) {
                 runCatching {
                     cacheZip.inputStream().use { ins ->
@@ -1358,7 +1420,7 @@ class FileBrowserViewModel @Inject constructor(
             }
             runCatching { cacheZip.delete() }
             loadFilesSync(destDir)
-            _state.value = _state.value.copy(isLoading = false)
+            _state.value = _state.value.copy(isLoading = false, opProgress = null)
             if (written) {
                 emit(SnackbarEvent("「$finalName」を作成しました"))
                 clearSelection()
@@ -1390,12 +1452,23 @@ class FileBrowserViewModel @Inject constructor(
         val req = _state.value.pendingZipExtract ?: return
         val node = req.node
         val destDir = _state.value.currentUri ?: return
-        _state.value = _state.value.copy(pendingZipExtract = null, isLoading = true)
+        _state.value = _state.value.copy(
+            pendingZipExtract = null,
+            isLoading = true,
+            opProgress = FileOpProgress(
+                label = "解凍中…",
+                currentName = node.name,
+                currentIndex = 1,
+                totalCount = 1,
+                bytesTransferred = 0,
+                totalBytes = 0,
+            ),
+        )
         viewModelScope.launch {
             // 1) zip 本体をローカルに揃える
             val zipFile = withContext(Dispatchers.IO) { resolveLocalFile(node) }
             if (zipFile == null) {
-                _state.value = _state.value.copy(isLoading = false)
+                _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
             // 2) 一旦キャッシュに展開
@@ -1403,9 +1476,23 @@ class FileBrowserViewModel @Inject constructor(
                 File(context.cacheDir, "extract_${System.currentTimeMillis()}_${node.name.removeSuffix(".zip")}")
                     .apply { mkdirs() }
             }
+            // zip4j の ProgressMonitor → opProgress。80ms スロットル。
+            var lastTick = 0L
+            val onZip = ZipOps.ZipProgress { _, _, name, done, totalBytes ->
+                val now = System.currentTimeMillis()
+                if (now - lastTick < 80 && done < totalBytes) return@ZipProgress
+                lastTick = now
+                _state.value = _state.value.copy(
+                    opProgress = _state.value.opProgress?.copy(
+                        currentName = name ?: node.name,
+                        bytesTransferred = done.coerceAtLeast(0),
+                        totalBytes = totalBytes.coerceAtLeast(0),
+                    ),
+                )
+            }
             val (ok, needsPwd, message) = withContext(Dispatchers.IO) {
                 try {
-                    ZipOps.extract(zipFile, cacheOut, password.takeUnless { it.isNullOrEmpty() })
+                    ZipOps.extract(zipFile, cacheOut, password.takeUnless { it.isNullOrEmpty() }, onZip)
                     Triple(true, false, null)
                 } catch (e: ZipOps.WrongPassword) {
                     Triple(false, true, e.message)
@@ -1414,7 +1501,7 @@ class FileBrowserViewModel @Inject constructor(
                 }
             }
             if (!ok) {
-                _state.value = _state.value.copy(isLoading = false)
+                _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 if (needsPwd) {
                     _state.value = _state.value.copy(
                         pendingZipExtract = req.copy(needsPassword = true, initialError = message),
@@ -1430,16 +1517,25 @@ class FileBrowserViewModel @Inject constructor(
             if (baseDirUri == null) {
                 emit(SnackbarEvent("展開先を解決できません"))
                 cacheOut.deleteRecursively()
-                _state.value = _state.value.copy(isLoading = false)
+                _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
             val mkRes = withContext(Dispatchers.IO) { storage.mkdir(baseDirUri, recursive = true) }
             if (mkRes is Result.Failure) {
                 emit(SnackbarEvent("展開フォルダ作成失敗: ${mkRes.error.message}"))
                 cacheOut.deleteRecursively()
-                _state.value = _state.value.copy(isLoading = false)
+                _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
+            // 展開先 (SAF/Remote 含む) へのコピーは逐次バイト進捗が取れないので不確定表示に切り替える。
+            _state.value = _state.value.copy(
+                opProgress = _state.value.opProgress?.copy(
+                    label = "展開中…",
+                    currentName = baseName,
+                    bytesTransferred = 0,
+                    totalBytes = 0,
+                ),
+            )
             // baseDirUri は擬似 URI (SAF) / 正規 URI (Local/Remote) のどちらか。実体ノードの
             // URI を解決し直すために、改めて parent dir の中の同名フォルダを stat する。
             val realBase = resolveDir(destDir, baseName)
@@ -1449,7 +1545,7 @@ class FileBrowserViewModel @Inject constructor(
             }
             cacheOut.deleteRecursively()
             loadFilesSync(destDir)
-            _state.value = _state.value.copy(isLoading = false)
+            _state.value = _state.value.copy(isLoading = false, opProgress = null)
             emit(SnackbarEvent("「$baseName/」に展開しました"))
             clearSelection()
         }
@@ -1585,6 +1681,48 @@ class FileBrowserViewModel @Inject constructor(
         }
         return entries
     }
+
+    /**
+     * 貼り付け先 [dest] が、元 [src] と「同一」または「どちらかが他方の祖先」になっていないか判定する。
+     * true のとき move / copy は危険なので呼び出し側で拒否する:
+     *  - [dest] が [src] の祖先 (= [src] は [dest] の中) → 上書きで [dest] を消すと [src] ごと消える。
+     *    フォルダ内の同名フォルダを外へ出そうとして親ごと消滅する不具合の直接原因。
+     *  - [src] が [dest] の祖先 (= [dest] は [src] の中) → 自分自身の配下へ入れ子コピーになり破綻する。
+     */
+    private fun pathsOverlapUnsafely(src: FileUri, dest: FileUri): Boolean {
+        val srcKey = canonicalKey(src) ?: return false
+        val destKey = canonicalKey(dest) ?: return false
+        if (srcKey.first != destKey.first) return false // ストレージ/接続先が違えば重ならない
+        val srcSegs = srcKey.second
+        val destSegs = destKey.second
+        val common = minOf(srcSegs.size, destSegs.size)
+        for (i in 0 until common) {
+            if (srcSegs[i] != destSegs[i]) return false // 途中で枝分かれ = 重ならない
+        }
+        // 共通区間が全て一致 = 同一 or 一方が他方のプレフィックス (= 祖先)。
+        return true
+    }
+
+    /** URI を (名前空間, パスセグメント列) に正規化する。比較できない種類は null。 */
+    private fun canonicalKey(uri: FileUri): Pair<String, List<String>>? = when (uri) {
+        is FileUri.Local -> "local" to splitSegments(uri.absolutePath)
+        is FileUri.Remote -> "${uri.protocol.name}@${uri.connectionId}" to splitSegments(uri.path)
+        is FileUri.Saf -> {
+            // SAF の document URI 末尾は "primary:Download/A" のような docId。`:` の前を名前空間、
+            // 後ろをパスとして扱い、pendingChildName があれば末尾に足す。
+            val docId = runCatching { Uri.parse(uri.documentUri).lastPathSegment }.getOrNull()
+                ?: return null
+            val colon = docId.indexOf(':')
+            val ns = if (colon >= 0) docId.substring(0, colon) else docId
+            val rawPath = if (colon >= 0) docId.substring(colon + 1) else ""
+            val segs = splitSegments(rawPath).toMutableList()
+            uri.pendingChildName?.let { segs += it }
+            "saf@$ns" to segs
+        }
+    }
+
+    private fun splitSegments(path: String): List<String> =
+        path.split('/').filter { it.isNotEmpty() }
 
     private fun destUriFor(dir: FileUri, name: String): FileUri? = when (dir) {
         is FileUri.Local -> FileUri.Local("${dir.absolutePath}/$name")
