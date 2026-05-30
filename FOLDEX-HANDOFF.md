@@ -1642,8 +1642,10 @@ P7 終盤での消化状況を ✅ / ⏳ で示す。
    - ⏳ F-Droid 用ビルド設定 (Reproducible Build対応)
    - ⏳ Google Play 審査用 デモ動画・プライバシーポリシー
    - ⏳ GitHub リリースワークフロー
-   - ✅ release 自己署名 (`isMinifyEnabled=false` / `signingConfig=debug`、24MB) で内輪配布可
+   - ✅ release 自己署名 (`isMinifyEnabled=false`、24MB) で内輪配布可
+   - ✅ **正式リリース署名構成** (`keystore.properties` 経由 / PKCS12 / RSA-2048): リポ直下に `keystore.properties` (gitignore 済み) があれば本番鍵 (`release.keystore`) で署名、無いマシンでは debug 鍵にフォールバック。`apksigner verify --print-certs` で APK v2 署名を確認可
    - ✅ debug `.debug` applicationIdSuffix で release と共存可能
+   - ✅ GitHub 公開: `git@github.com:orgsonai/foldex.git` (main + phase/P1〜P7-polish + v0.1.0-P1〜v0.6.0-P6)
 
 5. **P7 で消化された設計論点** (HANDOFF / PHASES に反映済み)
    - ✅ HOME 画面 (元々想定外、P7 で追加)

@@ -279,6 +279,19 @@
 
 ---
 
+## I. P7 仕上げの追加修正 (2026-05-31)
+
+実機検証後の追加依頼 + 正式リリース署名構成 + GitHub 公開。`fix(filebrowser)` `fix(home)` `build` の 3 コミット (`7405d9f` / `c6e014d` / `3979e27`)。
+
+- [x] **親フォルダ消滅バグの修正** (`7405d9f`): `FileBrowserViewModel.executePaste` の上書き処理 (`storage.delete(destUri)` → `move/copy`) が、宛先が元 (`node.uri`) の祖先になっているケースで「元ごと巻き添えで消えて、その後の move/copy が失敗」していた致命バグを修正。再現条件: フォルダ `…/X/A` の中に同名フォルダ `…/X/A/A` があり、内側を切り取って `…/X` で「同名を上書き」貼り付けすると宛先 `…/X/A` が祖先になる。新規ヘルパ `pathsOverlapUnsafely(src, dest)` で「同一」または「どちらかが他方の祖先」を判定し、危険時は削除も移動もせず明示メッセージで拒否 (Local / Remote / SAF 全対応、SAF は docId のパス部で比較)。コピー側も同様にガード。
+- [x] **削除に進捗バナー** (`7405d9f`): `performDelete` で `opProgress` を設定し、件数ベースの「削除中…」「ゴミ箱へ移動中…」バナーを表示 (バイト進捗は取れないため不確定バー)。
+- [x] **圧縮・解凍に進捗バナー** (`7405d9f`): `ZipOps.compress/extract` に `fun interface ZipProgress` を追加し、zip4j の `runInThread=true` + `ProgressMonitor` ポーリング (60ms) で逐次バイト進捗を吸い出す。`executeZipCompress` / `executeZipExtract` は 80ms スロットルで `opProgress` を更新 (圧縮はファイル単位、解凍はアーカイブ全体)。例外は `pm.exception` 経由で再 throw し既存の `WrongPassword` 検出を保持。
+- [x] **HOME 起動時の並び替えチラつき解消** (`c6e014d`): DataStore (非同期) の初期ロード前は `BUILT_IN` 既定順を描き、ロード後に保存順へ並び替わるため Reorderable の配置アニメが走っていた。`HomeShortcutRepository` に SharedPreferences ベースの同期キャッシュ (`cachedShortcuts()` / `cacheShortcuts()`、`foldex_home_cache`) を追加し、`HomeViewModel.shortcuts` の `stateIn` 初期値に使用 + `onEach` で実値到着のたびに更新。前回と変化が無ければ完全に無動作で描ける。
+- [x] **正式リリース署名構成** (`3979e27`): リポ直下 `keystore.properties` (gitignore 済み) があれば PKCS12 のリリース鍵 (`release.keystore`、RSA-2048、10000日) で署名し、無いマシンでは debug 鍵にフォールバック。`signingConfigs { create("release") { ... } }` と `release { signingConfig = if (keystorePropsFile.exists()) … else … }` を `app/build.gradle.kts` に追加 (`java.util.Properties` を明示 import)。`release.keystore` / `keystore.properties` は `.gitignore` 既定で除外 (`*.keystore` / `keystore.properties`)。`apksigner verify` で `CN=Foldex, O=Zerotoship, C=JP`、SHA-256 `4F:8C:09:…:00:03` の APK v2 署名を確認済み。
+- [x] **GitHub 公開** (リモート: `git@github.com:orgsonai/foldex.git`): main + phase/P1〜P7-polish + v0.1.0-P1〜v0.6.0-P6 のタグ全てを push 済み。鍵 (`release.keystore`) と資格情報 (`keystore.properties`) は gitignore で除外され、リポジトリには含まれない。
+
+---
+
 ## 影響範囲・要確認まとめ
 
 | # | 内容 | HANDOFF/PHASES との整合 | 要確認 |

@@ -219,6 +219,14 @@ docs: P1 達成サマリ
 - [x] **ZIP 中身プレビュー (`ArchiveExplorer`)**: 展開せずフォルダのように閲覧、単一エントリ展開プレビュー、暗号化対応
 - [x] **ライト/ダークの配色整備**: 地の面はニュートラルなグレー、緑は primary とアクセント container のみ (従来は primary だけ緑で残り紫系)。動的カラーの既定を OFF にし既定を Forest Green テーマに統一。ステータスバー/ナビバーのアイコン明暗もアプリの実テーマに追従
 
+#### P7 さらに追加修正 (2026-05-31, `docs/P7-REVISIONS.md` §I)
+- [x] **親フォルダ消滅バグ修正** (`7405d9f`): フォルダ内の同名フォルダを「同名上書き」で外に出すと宛先が祖先になり、上書き削除で元ごと消えていた致命バグを修正。`FileBrowserViewModel.pathsOverlapUnsafely` で重なりを判定し拒否
+- [x] **削除に進捗バナー** (`7405d9f`): `performDelete` から `opProgress` を出す (件数ベース、不確定バー)
+- [x] **圧縮・解凍に進捗バナー** (`7405d9f`): `ZipOps` に `ZipProgress` を追加し zip4j `ProgressMonitor` をポーリングしてバイト進捗を吸い出す
+- [x] **HOME 起動時の並び替えチラつき解消** (`c6e014d`): `HomeShortcutRepository.cachedShortcuts/cacheShortcuts` で表示中タイル列を同期キャッシュし、`HomeViewModel.shortcuts` の初期値に使用
+- [x] **正式リリース署名構成** (`3979e27`): `keystore.properties` (gitignore 済) があれば PKCS12 リリース鍵で署名、無ければ debug 鍵にフォールバック。`apksigner` で `CN=Foldex, O=Zerotoship, C=JP` 署名済 APK を確認
+- [x] **GitHub 公開**: `git@github.com:orgsonai/foldex.git` に main + 全 phase ブランチ + 全タグを push
+
 ### スコープ外
 - F-Droid / Play 配布 (P8)
 - LICENSE 確定 (P8)
@@ -252,4 +260,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-05-26 (P7 終盤の追加修正 §H を §7 に反映)
+最終更新: 2026-05-31 (P7 さらに追加修正 §I を §7 に反映 + GitHub 公開)

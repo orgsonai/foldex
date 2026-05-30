@@ -5,6 +5,14 @@
 [Zero to Ship](https://github.com/orgsonai/zero-to-ship) シリーズ第3弾。
 広告なし・ローカルファースト・リモート全部入り。自分が日常使いするためのアプリ。
 
+リポジトリ: <https://github.com/orgsonai/foldex>
+
+```bash
+git clone git@github.com:orgsonai/foldex.git
+# または HTTPS
+git clone https://github.com/orgsonai/foldex.git
+```
+
 ## 特徴
 
 ### ファイル管理
@@ -75,12 +83,21 @@
 # debug (applicationIdSuffix=.debug、release と共存可)
 ./gradlew :app:assembleDebug
 
-# release (debug 鍵で署名済み、isMinifyEnabled=false)
+# release (リポ直下 keystore.properties があれば正式鍵、無ければ debug 鍵にフォールバック)
 ./gradlew :app:assembleRelease
 
 # 出力
 # app/build/outputs/apk/{debug,release}/app-{debug,release}.apk
 ```
+
+正式署名で配布する場合は `keystore.properties` (gitignore 済み) を以下の形式で用意する:
+```
+storeFile=release.keystore
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+鍵ファイル本体 (`*.jks` / `*.keystore`) と `keystore.properties` は `.gitignore` で除外されるためコミットされない。署名確認は `apksigner verify --print-certs <apk>`。
 
 ## ライセンス
 
