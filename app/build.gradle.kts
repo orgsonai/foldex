@@ -1,9 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.compose.compiler)
+}
+
+// 正式リリース署名用の資格情報 (リポジトリ直下 keystore.properties・gitignore 済み)。
+// 無いマシンでは debug 鍵にフォールバックするので、共有開発に支障は出ない。
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
 
 android {
@@ -20,6 +29,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropsFile.exists()) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // debug ビルドは Compose ランタイムチェック・JIT 未温め等で release の数倍重い。
@@ -32,8 +52,11 @@ android {
             // 必要なため P9 (リリース準備) で有効化する。当面は OFF。
             isMinifyEnabled = false
             isDebuggable = false
-            // 配布前の体感確認用に debug 鍵で署名しておく (本番署名は P9)。
-            signingConfig = signingConfigs.getByName("debug")
+            // keystore.properties があれば正式鍵で署名、無ければ debug 鍵にフォールバック。
+            signingConfig = if (keystorePropsFile.exists())
+                signingConfigs.getByName("release")
+            else
+                signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
