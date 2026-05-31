@@ -13,7 +13,7 @@
 | 所属プロジェクト | Zero to Ship |
 | 開発言語 | Kotlin + Jetpack Compose |
 | パッケージ名 | `com.zerotoship.foldex` |
-| ライセンス | 未定 (GPL-3.0 想定) |
+| ライセンス | GPL-3.0 (確定) |
 
 ### コンセプト補足
 

@@ -101,7 +101,7 @@ keyPassword=...
 
 ## ライセンス
 
-未定 (GPL-3.0 想定)。確定次第 `LICENSE` を追加。
+[GPL-3.0](LICENSE)。依存ライブラリ (smbj / Apache Commons / MINA SSHD / Apache FtpServer = Apache-2.0、xz = public domain) はいずれも GPL-3.0 互換。
 
 ## このリポジトリで Claude Code を使う場合
 
