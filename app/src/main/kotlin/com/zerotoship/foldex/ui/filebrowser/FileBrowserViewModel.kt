@@ -701,14 +701,29 @@ class FileBrowserViewModel @Inject constructor(
             if (conflicts.isNotEmpty()) {
                 _state.value = _state.value.copy(pasteConflicts = conflicts)
             } else {
-                executePaste(overwrite = false)
+                runPaste(overwrite = false)
             }
         }
     }
 
     fun confirmPasteOverwrite() {
         _state.value = _state.value.copy(pasteConflicts = emptyList())
-        viewModelScope.launch { executePaste(overwrite = true) }
+        viewModelScope.launch { runPaste(overwrite = true) }
+    }
+
+    /**
+     * [executePaste] を実行し、成功/失敗/例外いずれで終わっても進捗を必ず畳む。
+     * これにより「コピー/切り取りが終わったら前景サービス + WakeLock を自動解放」を保証する
+     * (opProgress が null になると監視中の [FileOpService] が停止しロックを手放す)。
+     */
+    private suspend fun runPaste(overwrite: Boolean) {
+        try {
+            executePaste(overwrite)
+        } finally {
+            if (_state.value.opProgress != null || _state.value.isLoading) {
+                _state.value = _state.value.copy(isLoading = false, opProgress = null)
+            }
+        }
     }
 
     fun dismissPasteConflict() {
@@ -807,28 +822,49 @@ class FileBrowserViewModel @Inject constructor(
                     storage.delete(destUri, recursive = true)
                 }
             }
-            val result = when (clipboard) {
-                is ClipboardOperation.Copy -> storage.copyWithin(node.uri, destUri, observer)
-                is ClipboardOperation.Cut -> storage.moveWithin(node.uri, destUri, observer)
+            // 同一ファイルシステム上の Local→Local 移動だけは atomic rename で済ませる。
+            // (データのバイトコピーが無く欠損し得ないので検証不要・即時。cross-fs なら
+            //  rename が失敗するので下のコピー経路に落ちる。SAF/リモートが絡む移動は
+            //  rename の意味が異なるため使わず、必ず「コピー→検証→元削除」に回す。)
+            val renamed = if (clipboard is ClipboardOperation.Cut &&
+                node.uri is FileUri.Local && destUri is FileUri.Local
+            ) {
+                storage.rename(node.uri, destUri)
+            } else {
+                null
             }
-            when (result) {
-                is Result.Success -> {
-                    // コピー結果が元のツリーと一致するか検証 (サイズ/ファイル数/フォルダ数)。
-                    // 隠しファイルの取りこぼし・途中失敗・切断による欠損をここで検出する。
-                    val realDest = resolveChildUri(destDir, node.name)
-                    val verified = realDest != null && computeTreeStat(realDest) == srcStats[index]
-                    if (!verified) {
-                        lastError = "「${node.name}」はコピー後の検証に失敗しました (元データと不一致)"
-                    } else {
-                        when (clipboard) {
-                            is ClipboardOperation.Copy ->
-                                undoActions.add { storage.delete(destUri, recursive = true) }
-                            is ClipboardOperation.Cut ->
-                                undoActions.add { storage.moveWithin(destUri, node.uri) }
+            if (renamed is Result.Success) {
+                undoActions.add { storage.rename(destUri, node.uri) }
+            } else {
+                // コピー (Cut でもこの時点では元を消さない)。
+                when (val copied = storage.copyWithin(node.uri, destUri, observer)) {
+                    is Result.Success -> {
+                        // コピー結果が元のツリーと一致するか検証 (サイズ/ファイル数/フォルダ数)。
+                        // 隠しファイルの取りこぼし・途中失敗・切断による欠損をここで検出する。
+                        val realDest = resolveChildUri(destDir, node.name)
+                        val verified = realDest != null && computeTreeStat(realDest) == srcStats[index]
+                        if (!verified) {
+                            lastError = "「${node.name}」はコピー後の検証に失敗しました (元データと不一致)"
+                            // 検証に失敗したら元は絶対に消さない。中途半端な宛先だけ掃除する。
+                            if (realDest != null) storage.delete(destUri, recursive = true)
+                        } else {
+                            when (clipboard) {
+                                is ClipboardOperation.Copy ->
+                                    undoActions.add { storage.delete(destUri, recursive = true) }
+                                is ClipboardOperation.Cut -> {
+                                    // 検証 OK を確認してから初めて元を削除する (データ保全)。
+                                    when (val del = storage.delete(node.uri, recursive = true)) {
+                                        is Result.Success ->
+                                            undoActions.add { storage.moveWithin(destUri, node.uri) }
+                                        is Result.Failure ->
+                                            lastError = "「${node.name}」はコピーできましたが元の削除に失敗しました: ${del.error.message}"
+                                    }
+                                }
+                            }
                         }
                     }
+                    is Result.Failure -> lastError = copied.error.message
                 }
-                is Result.Failure -> lastError = result.error.message
             }
             completedBytes += nodeBytes
             // ノード完了時にバーを確定値へスナップ (ノード内の累積推定のズレをここで補正)。
