@@ -315,6 +315,19 @@
 - **実機状態 (Motorola, ja-JP)**: release `com.zerotoship.foldex` (Foldex / 0.1.0) と debug `com.zerotoship.foldex.debug` (Foldex (debug) / 0.1.0-debug) が共存インストール済み。検証用に一時無効化した Play Protect (`verifier_verify_adb_installs`) は有効 (=1) に復帰済み。
 - **未実施 / 次の判断**: `git push` (未)、P7 完了タグ付けの可否、実機での「隠しフォルダ込みコピー / 全体進捗 / 画面OFF継続」の最終確認。
 
+## K. P7 残課題の消化 + 進捗のファイル数表示 (2026-05-31, 第3回)
+
+P7 達成条件の残課題 (エラーメッセージ日本語化 / アクセシビリティ) を消化し、フォルダ操作の進捗にファイル数を追加。コミット: `7861e51` `feec716` `137945c` (+ docs)。
+
+- [x] **エラーメッセージの日本語化** (`7861e51`): `StorageError.toUserMessage()` を core-model に追加。`message` (診断用、英語の内部メッセージを含む / AppLogger 用) は温存し、UI 表示はこちらを使う。NotConnected / AuthenticationFailed / HostUnreachable / NotFound / AlreadyExists / PermissionDenied / Cancelled をカテゴリ単位の日本語に。IoError / ProtocolError / Unknown は呼び出し側が既に日本語文面を入れている場合だけ尊重し英語内部メッセージはカテゴリ日本語に丸める。`FileUri.displayName()` を追加 (URI 全体でなく末尾名)。FileBrowserViewModel のスナックバー/エラー表示を `toUserMessage()` へ。同期側 (`SyncResult.toSummaryLine`) は元から日本語のため変更なし。→ PHASES §7 完了に更新。
+- [x] **アクセシビリティ最低ライン** (`feec716`): 一覧の `FileLeadingIcon` でフォルダ種別と選択状態を TalkBack 読み上げ (フォルダ→「フォルダ」、選択中→「選択中」、通常ファイルは name + 拡張子バッジで伝わるため null 維持)。操作系 IconButton は調査の結果すべてラベル済み、行高 56/64dp で 48dp タップ領域を確保、コントラストは §H で整備済み。→ PHASES §7 完了に更新。※実機 TalkBack の通し確認は残 (運用)。
+- [x] **コピー/切り取り貼り付けの進捗にファイル数** (`137945c`): `FileOpProgress` に `filesTransferred` / `filesTotal` を追加。`executePaste` で `filesTotal = computeTreeStat の files 合計`、ノード完了で `completedFiles` 加算、フォルダ内は observer のファイル境界検出 (初回 / transferred 巻き戻り / total 変化) で `intraFiles` をカウント。バナーは `filesTotal>0` のとき「○○ / ○○ ファイル」を表示 (なければ従来の項目数)。削除/ZIP/保存は `filesTotal=0` で表示は従来どおり。
+
+### 引き継ぎメモ (第3回追記)
+- **未 push が増加**: §J の 7 + §K の 4 コミット (`7861e51` `6cd3cb3` `feec716` `5301dcf` `316b1fe` `137945c` + 本追記) がローカルのみ。
+- **P7 達成条件の残り**: 「同期途中再開」のみ (リモートの完全動作を実機で見届けた後に着手の前提)。他 (アクセシビリティ / エラー日本語化) は §K で完了。
+- **ファイル数進捗の限界**: フォルダ内のファイル数はバイト境界からの推定なので、空ファイル (0 バイトで observer が発火しない) は途中カウントに乗らないことがある。ノード完了時に確定値 (`completedFiles`) へスナップするので最終値は正しい。
+
 ---
 
 ## 影響範囲・要確認まとめ
