@@ -13,7 +13,7 @@
 | 所属プロジェクト | Zero to Ship |
 | 開発言語 | Kotlin + Jetpack Compose |
 | パッケージ名 | `com.zerotoship.foldex` |
-| ライセンス | GPL-3.0 (確定) |
+| ライセンス | MIT (確定) |
 
 ### コンセプト補足
 
@@ -1717,4 +1717,4 @@ Foldex は Zero to Ship シリーズ初の本格 Kotlin/Compose アプリ。Kura
 新しい設計判断が確定したら、該当セクションに追記または更新。
 将来的な変更履歴は Git の履歴で追えるので、ファイル内に「いつ変えた」は書かない。
 
-最終更新: 2026-05-31 (§1 ライセンスを GPL-3.0 で確定。P7 仕上げ第2回の修正は `docs/P7-REVISIONS.md` §J を参照)
+最終更新: 2026-05-31 (§1 ライセンスを MIT に変更。経緯は `docs/P7-REVISIONS.md` §J (GPL-3.0 確定) → §L (MIT へ変更) を参照)

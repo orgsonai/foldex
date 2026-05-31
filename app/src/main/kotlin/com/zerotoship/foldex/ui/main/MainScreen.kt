@@ -285,10 +285,14 @@ fun MainScreen(
                     onOpenFileTypes = { navController.navigate("settings/open-with") },
                     onOpenTrash = { navController.navigate("settings/trash") },
                     onOpenLogs = { navController.navigate("settings/logs") },
+                    onOpenLicenses = { navController.navigate("settings/licenses") },
                 )
             }
             composable("settings/open-with") {
                 OpenWithSettingsScreen(onBack = { navController.popBackStack() })
+            }
+            composable("settings/licenses") {
+                com.zerotoship.foldex.ui.settings.LicensesScreen(onBack = { navController.popBackStack() })
             }
             composable("settings/trash") {
                 TrashScreen(onBack = { navController.popBackStack() })

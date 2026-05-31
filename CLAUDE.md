@@ -31,7 +31,7 @@
 | DI | Hilt |
 | DB | Room + DataStore + AndroidKeyStore (AES-GCM) |
 | 最低SDK | minSdk 26 想定 (要確認) / targetSdk 最新 |
-| ライセンス | GPL-3.0 (確定) |
+| ライセンス | MIT (確定) |
 | シリーズ | Zero to Ship |
 
 詳細は `FOLDEX-HANDOFF.md` を見ること。本ファイル内に重複させない。

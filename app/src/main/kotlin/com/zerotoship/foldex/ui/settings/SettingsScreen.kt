@@ -50,6 +50,7 @@ fun SettingsScreen(
     onOpenFileTypes: () -> Unit = {},
     onOpenTrash: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
+    onOpenLicenses: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -261,7 +262,11 @@ fun SettingsScreen(
             HorizontalDivider()
             SettingsSectionHeader("詳細")
             SettingRow(title = "バージョン", subtitle = versionName)
-            SettingRow(title = "ライセンス", subtitle = "GPL-3.0 (予定)")
+            SettingRow(
+                title = "ライセンス",
+                subtitle = "MIT © 2026 Zero to Ship",
+                onClick = onOpenLicenses,
+            )
             Spacer(Modifier.height(16.dp))
         }
     }

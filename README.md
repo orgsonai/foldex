@@ -101,7 +101,7 @@ keyPassword=...
 
 ## ライセンス
 
-[GPL-3.0](LICENSE)。依存ライブラリ (smbj / Apache Commons / MINA SSHD / Apache FtpServer = Apache-2.0、xz = public domain) はいずれも GPL-3.0 互換。
+[MIT](LICENSE) — Copyright (c) 2026 Zero to Ship。依存ライブラリ (smbj / Apache Commons / MINA SSHD / Apache FtpServer = Apache-2.0、xz = public domain) はいずれも MIT と互換。
 
 ## このリポジトリで Claude Code を使う場合
 

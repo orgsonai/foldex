@@ -328,6 +328,15 @@ P7 達成条件の残課題 (エラーメッセージ日本語化 / アクセシ
 - **P7 達成条件の残り**: 「同期途中再開」のみ (リモートの完全動作を実機で見届けた後に着手の前提)。他 (アクセシビリティ / エラー日本語化) は §K で完了。
 - **ファイル数進捗の限界**: フォルダ内のファイル数はバイト境界からの推定なので、空ファイル (0 バイトで observer が発火しない) は途中カウントに乗らないことがある。ノード完了時に確定値 (`completedFiles`) へスナップするので最終値は正しい。
 
+## L. ライセンスを GPL-3.0 → MIT に変更 (2026-05-31, 第4回)
+
+§J で GPL-3.0 に確定していたが、自由度重視の方針転換で **MIT** に変更。依存ライブラリは全て Apache-2.0 / public domain で MIT と互換のため問題なし。あわせてアプリ内にライセンス画面を新設した。
+
+- [x] **`LICENSE` を MIT 全文に差し替え** (GPL-3.0 全文 → MIT、Copyright (c) 2026 Zero to Ship)。
+- [x] **ドキュメントの記述を MIT に更新**: `README.md` のライセンス節 / `FOLDEX-HANDOFF.md` §1 / `CLAUDE.md` §1 の表を「MIT (確定)」に。
+- [x] **アプリ内ライセンス画面を新設** (`ui/settings/LicensesScreen.kt`): 設定 → 「ライセンス」をタップで開く。本アプリ本体 (MIT) + 依存ライブラリ (smbj / Apache Commons Net / MINA SSHD / Apache FtpServer = Apache-2.0、XZ for Java = public domain) を一覧表示し、タップで全文ダイアログ。全文は `assets/licenses/MIT.txt` / `Apache-2.0.txt` から読み込む。`MainScreen` に `settings/licenses` ルートを追加。設定の「ライセンス」行は固定文字列 `"GPL-3.0 (予定)"` → `"MIT © 2026 Zero to Ship"` + タップ遷移に変更。
+- 注: §J 行・PHASES §7/§8 の GPL 記述は当時の履歴としてそのまま残す (本 §L が後続の確定)。各ソースへの SPDX ヘッダ付与は引き続き P8。
+
 ---
 
 ## 影響範囲・要確認まとめ
