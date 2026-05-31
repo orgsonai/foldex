@@ -13,6 +13,7 @@ import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.Protocol
+import com.zerotoship.foldex.core.model.toUserMessage
 import com.zerotoship.foldex.core.data.repo.OpenWithMode
 import com.zerotoship.foldex.core.data.repo.OpenWithRepository
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
@@ -444,7 +445,7 @@ class FileBrowserViewModel @Inject constructor(
                         out.outputStream().use { os -> copyWithProgress(ins, os, total, dlId) }
                     }
                     is Result.Failure -> {
-                        emit(SnackbarEvent("読み込み失敗: ${r.error.message}"))
+                        emit(SnackbarEvent("読み込み失敗: ${r.error.toUserMessage()}"))
                         return@withContext null
                     }
                 }
@@ -496,7 +497,7 @@ class FileBrowserViewModel @Inject constructor(
                         out
                     }.getOrElse { emit(SnackbarEvent("読み込み失敗: ${it.message}")); null }
                 }
-                is Result.Failure -> { emit(SnackbarEvent("読み込み失敗: ${r.error.message}")); null }
+                is Result.Failure -> { emit(SnackbarEvent("読み込み失敗: ${r.error.toUserMessage()}")); null }
             }
         } finally {
             removeActiveDownload(dlId)
@@ -857,13 +858,13 @@ class FileBrowserViewModel @Inject constructor(
                                         is Result.Success ->
                                             undoActions.add { storage.moveWithin(destUri, node.uri) }
                                         is Result.Failure ->
-                                            lastError = "「${node.name}」はコピーできましたが元の削除に失敗しました: ${del.error.message}"
+                                            lastError = "「${node.name}」はコピーできましたが元の削除に失敗しました: ${del.error.toUserMessage()}"
                                     }
                                 }
                             }
                         }
                     }
-                    is Result.Failure -> lastError = copied.error.message
+                    is Result.Failure -> lastError = copied.error.toUserMessage()
                 }
             }
             completedBytes += nodeBytes
@@ -1009,7 +1010,7 @@ class FileBrowserViewModel @Inject constructor(
                 } else {
                     when (val r = storage.delete(node.uri, recursive = true)) {
                         is Result.Success -> deletedCount++
-                        is Result.Failure -> lastError = r.error.message
+                        is Result.Failure -> lastError = r.error.toUserMessage()
                     }
                 }
             }
@@ -1058,7 +1059,7 @@ class FileBrowserViewModel @Inject constructor(
                 }
                 is Result.Failure -> {
                     _state.value = _state.value.copy(isLoading = false)
-                    emit(SnackbarEvent("名前変更エラー: ${r.error.message}"))
+                    emit(SnackbarEvent("名前変更エラー: ${r.error.toUserMessage()}"))
                 }
             }
         }
@@ -1099,7 +1100,7 @@ class FileBrowserViewModel @Inject constructor(
                 }
                 is Result.Failure -> {
                     _state.value = _state.value.copy(isLoading = false)
-                    emit(SnackbarEvent("フォルダ作成エラー: ${r.error.message}"))
+                    emit(SnackbarEvent("フォルダ作成エラー: ${r.error.toUserMessage()}"))
                 }
             }
         }
@@ -1125,7 +1126,7 @@ class FileBrowserViewModel @Inject constructor(
                     true
                 }
                 is Result.Failure -> {
-                    emit(SnackbarEvent("ファイル作成エラー: ${r.error.message}"))
+                    emit(SnackbarEvent("ファイル作成エラー: ${r.error.toUserMessage()}"))
                     false
                 }
             }
@@ -1251,7 +1252,7 @@ class FileBrowserViewModel @Inject constructor(
                                     }
                                 }
                                 is Result.Failure -> {
-                                    lastError = r.error.message
+                                    lastError = r.error.toUserMessage()
                                     return@runCatching false
                                 }
                             }
@@ -1560,7 +1561,7 @@ class FileBrowserViewModel @Inject constructor(
                         when (val r = storage.openOutput(destUri, com.zerotoship.foldex.core.model.WriteMode.CREATE_NEW)) {
                             is Result.Success -> r.value.use { os -> ins.copyTo(os) }
                             is Result.Failure -> {
-                                emit(SnackbarEvent("保存失敗: ${r.error.message}"))
+                                emit(SnackbarEvent("保存失敗: ${r.error.toUserMessage()}"))
                                 return@runCatching false
                             }
                         }
@@ -1675,7 +1676,7 @@ class FileBrowserViewModel @Inject constructor(
             }
             val mkRes = withContext(Dispatchers.IO) { storage.mkdir(baseDirUri, recursive = true) }
             if (mkRes is Result.Failure) {
-                emit(SnackbarEvent("展開フォルダ作成失敗: ${mkRes.error.message}"))
+                emit(SnackbarEvent("展開フォルダ作成失敗: ${mkRes.error.toUserMessage()}"))
                 cacheOut.deleteRecursively()
                 _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch

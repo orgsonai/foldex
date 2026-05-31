@@ -22,6 +22,17 @@ sealed class FileUri {
         is Remote -> "${protocol.scheme}://$connectionId/$path"
     }
 
+    /**
+     * ユーザー向けエラーメッセージ等で使う、URI 全体ではなく末尾のファイル/フォルダ名。
+     * 取り出せない場合は元の文字列を返す (空にはしない)。
+     */
+    fun displayName(): String = when (this) {
+        is Local -> absolutePath.trimEnd('/').substringAfterLast('/').ifEmpty { absolutePath }
+        is Saf -> pendingChildName
+            ?: documentUri.substringAfterLast('/').substringAfterLast("%2F").substringAfterLast(':').ifEmpty { documentUri }
+        is Remote -> path.trimEnd('/').substringAfterLast('/').ifEmpty { "/" }
+    }
+
     companion object {
         /**
          * [toStorageString] の逆。`local://...` / `saf://...` / `<scheme>://<connectionId>/<path>` を
