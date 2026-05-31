@@ -20,6 +20,7 @@ import com.zerotoship.foldex.core.data.repo.TrashRepository
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
+import com.zerotoship.foldex.fileop.FileOpService
 import com.zerotoship.foldex.storage.StorageProviderRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,7 +31,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -123,6 +126,29 @@ class FileBrowserViewModel @Inject constructor(
                 _state.value = _state.value.copy(clipboard = op)
             }
         }
+        // 長時間ファイル操作中 (opProgress != null) は前景サービス + WakeLock を確保し、
+        // 画面OFF/Doze でもコピー/移動/解凍/保存が止まらないようにする。完了で解放。
+        // opProgress を出す全操作 (paste/delete/zip/共有保存) を一括でカバーする。
+        viewModelScope.launch {
+            var serviceActive = false
+            _state.map { it.opProgress?.label }
+                .distinctUntilChanged()
+                .collect { label ->
+                    if (label != null) {
+                        FileOpService.start(context, label)
+                        serviceActive = true
+                    } else if (serviceActive) {
+                        FileOpService.stop(context)
+                        serviceActive = false
+                    }
+                }
+        }
+    }
+
+    override fun onCleared() {
+        // ViewModel 破棄 (= 操作コルーチンも cancel) 時は前景サービス/WakeLock を確実に解放する。
+        FileOpService.stop(context)
+        super.onCleared()
     }
 
     private fun displayNameForLocal(file: File): String {
@@ -697,19 +723,27 @@ class FileBrowserViewModel @Inject constructor(
             is ClipboardOperation.Cut -> "移動中…"
         }
         val nodes = clipboard.nodes
+
+        // フォルダ全体の進捗を出すため、まず各ノードのツリーを実測する
+        // (サイズ/ファイル数/フォルダ数)。この実測はコピー後の一致検証にも使う。
+        // 移動 (Cut) は元が消える前にここで確定させておく。
         _state.value = _state.value.copy(
             isLoading = true,
             opProgress = FileOpProgress(
                 label = opLabel,
-                currentName = nodes.firstOrNull()?.name ?: "",
-                currentIndex = 1,
+                currentName = "サイズを計算中…",
+                currentIndex = 0,
                 totalCount = nodes.size,
                 bytesTransferred = 0,
                 totalBytes = 0,
             ),
         )
+        val srcStats = nodes.map { computeTreeStat(it.uri) }
+        val grandTotal = srcStats.sumOf { it.bytes }
+
         val undoActions = mutableListOf<suspend () -> Unit>()
         var lastError: String? = null
+        var completedBytes = 0L
 
         for ((index, node) in nodes.withIndex()) {
             val destUri = destUriFor(destDir, node.name) ?: continue
@@ -720,32 +754,50 @@ class FileBrowserViewModel @Inject constructor(
                 lastError = "「${node.name}」は元の場所と重なるため移動/コピーできません"
                 continue
             }
-            // ProgressObserver で逐次状態を更新。プロバイダによっては 64KB ごとに呼ばれて
-            // 1ファイルで何千回も発火するので、80ms (約 12fps) に間引いて UI 負荷を抑える。
+            val nodeBytes = srcStats[index].bytes
+            val baseBytes = completedBytes
+            // フォルダ内は 1 ファイルずつ observer が呼ばれる (total はそのファイルのサイズ)。
+            // これを「操作全体に対する累積バイト」へ翻訳して、フォルダ全体の進捗を出す。
             var lastTick = 0L
+            var fileCounted = 0L   // 現在ファイルで既に計上済みのバイト
+            var intra = 0L         // このノード内で計上した累積バイト
+            var curFileTotal = -1L
+            var lastTransferred = -1L
             val observer = com.zerotoship.foldex.core.model.ProgressObserver { transferred, total ->
+                // ファイル境界 (total が変わる/transferred が巻き戻る) を検出して計上をリセット。
+                if (lastTransferred >= 0 && (transferred < lastTransferred || total != curFileTotal)) {
+                    fileCounted = 0L
+                }
+                curFileTotal = total
+                lastTransferred = transferred
+                if (transferred > fileCounted) {
+                    intra += transferred - fileCounted
+                    fileCounted = transferred
+                }
+                // 累積 (intra) は毎回更新しつつ、UI への反映だけ 80ms に間引く。
                 val now = System.currentTimeMillis()
-                if (now - lastTick < 80 && transferred < total) return@ProgressObserver
+                if (now - lastTick < 80) return@ProgressObserver
                 lastTick = now
+                val overall = if (grandTotal > 0) (baseBytes + intra).coerceIn(0L, grandTotal) else 0L
                 val prev = _state.value.opProgress
                 if (prev != null) {
                     _state.value = _state.value.copy(
                         opProgress = prev.copy(
                             currentName = node.name,
                             currentIndex = index + 1,
-                            bytesTransferred = transferred,
-                            totalBytes = total,
+                            bytesTransferred = overall,
+                            totalBytes = grandTotal,
                         ),
                     )
                 }
             }
-            // 進捗バーは新しいファイルに切り替える前にリセット (0/total)。
+            // ノード開始時はバーを「確定済みバイト」に合わせる。
             _state.value = _state.value.copy(
                 opProgress = _state.value.opProgress?.copy(
                     currentName = node.name,
                     currentIndex = index + 1,
-                    bytesTransferred = 0,
-                    totalBytes = 0,
+                    bytesTransferred = if (grandTotal > 0) baseBytes.coerceIn(0L, grandTotal) else 0L,
+                    totalBytes = grandTotal,
                 ),
             )
             // overwrite=true なら、衝突しているもののみ既存削除してから書く。
@@ -761,15 +813,31 @@ class FileBrowserViewModel @Inject constructor(
             }
             when (result) {
                 is Result.Success -> {
-                    when (clipboard) {
-                        is ClipboardOperation.Copy ->
-                            undoActions.add { storage.delete(destUri, recursive = true) }
-                        is ClipboardOperation.Cut ->
-                            undoActions.add { storage.moveWithin(destUri, node.uri) }
+                    // コピー結果が元のツリーと一致するか検証 (サイズ/ファイル数/フォルダ数)。
+                    // 隠しファイルの取りこぼし・途中失敗・切断による欠損をここで検出する。
+                    val realDest = resolveChildUri(destDir, node.name)
+                    val verified = realDest != null && computeTreeStat(realDest) == srcStats[index]
+                    if (!verified) {
+                        lastError = "「${node.name}」はコピー後の検証に失敗しました (元データと不一致)"
+                    } else {
+                        when (clipboard) {
+                            is ClipboardOperation.Copy ->
+                                undoActions.add { storage.delete(destUri, recursive = true) }
+                            is ClipboardOperation.Cut ->
+                                undoActions.add { storage.moveWithin(destUri, node.uri) }
+                        }
                     }
                 }
                 is Result.Failure -> lastError = result.error.message
             }
+            completedBytes += nodeBytes
+            // ノード完了時にバーを確定値へスナップ (ノード内の累積推定のズレをここで補正)。
+            _state.value = _state.value.copy(
+                opProgress = _state.value.opProgress?.copy(
+                    bytesTransferred = if (grandTotal > 0) completedBytes.coerceIn(0L, grandTotal) else 0L,
+                    totalBytes = grandTotal,
+                ),
+            )
         }
 
         // Cut の場合はクリップボードを消す (もう移動済みなので再度貼る意味が無い)。
@@ -784,8 +852,8 @@ class FileBrowserViewModel @Inject constructor(
             emit(SnackbarEvent("エラー: $lastError"))
         } else {
             val msg = when (clipboard) {
-                is ClipboardOperation.Copy -> "${nodes.size}件コピーしました"
-                is ClipboardOperation.Cut -> "${nodes.size}件移動しました"
+                is ClipboardOperation.Copy -> "${nodes.size}件コピーしました (検証OK)"
+                is ClipboardOperation.Cut -> "${nodes.size}件移動しました (検証OK)"
             }
             val undo: suspend () -> Unit = {
                 undoActions.forEach { it() }
@@ -793,6 +861,55 @@ class FileBrowserViewModel @Inject constructor(
             }
             emit(SnackbarEvent(msg, actionLabel = "元に戻す", onAction = undo))
         }
+    }
+
+    /** ツリー全体の合計 (バイト数 / ファイル数 / フォルダ数)。コピー進捗と一致検証に使う。 */
+    private data class TreeStat(val bytes: Long, val files: Long, val dirs: Long)
+
+    /**
+     * [uri] 配下を再帰的に実測する。隠しファイルも含める (showHidden=true)。
+     * フォルダはそのフォルダ自身も dirs に 1 数える。失敗した枝は 0 として扱う。
+     */
+    private suspend fun computeTreeStat(uri: FileUri): TreeStat {
+        return when (val s = storage.stat(uri)) {
+            is Result.Success -> {
+                val node = s.value
+                if (node.type == NodeType.DIRECTORY) {
+                    var bytes = 0L
+                    var files = 0L
+                    var dirs = 1L // このフォルダ自身
+                    runCatching {
+                        storage.list(
+                            uri,
+                            com.zerotoship.foldex.core.model.ListOptions(showHidden = true),
+                        ).collect { child ->
+                            val cs = computeTreeStat(child.uri)
+                            bytes += cs.bytes
+                            files += cs.files
+                            dirs += cs.dirs
+                        }
+                    }
+                    TreeStat(bytes, files, dirs)
+                } else {
+                    TreeStat(node.size.coerceAtLeast(0L), 1L, 0L)
+                }
+            }
+            is Result.Failure -> TreeStat(0L, 0L, 0L)
+        }
+    }
+
+    /** 親 [parentDir] 配下で [name] に一致する子の実体 URI を返す (隠しファイル含む)。 */
+    private suspend fun resolveChildUri(parentDir: FileUri, name: String): FileUri? {
+        var found: FileUri? = null
+        runCatching {
+            storage.list(
+                parentDir,
+                com.zerotoship.foldex.core.model.ListOptions(showHidden = true),
+            ).collect { node ->
+                if (found == null && node.name == name) found = node.uri
+            }
+        }
+        return found
     }
 
     // --- Delete ---
@@ -1577,7 +1694,10 @@ class FileBrowserViewModel @Inject constructor(
     private suspend fun resolveDir(parentDir: FileUri, name: String): FileUri? {
         var found: FileUri? = null
         runCatching {
-            storage.list(parentDir, com.zerotoship.foldex.core.model.ListOptions()).collect { node ->
+            storage.list(
+                parentDir,
+                com.zerotoship.foldex.core.model.ListOptions(showHidden = true),
+            ).collect { node ->
                 if (node.type == NodeType.DIRECTORY && node.name == name) found = node.uri
             }
         }
