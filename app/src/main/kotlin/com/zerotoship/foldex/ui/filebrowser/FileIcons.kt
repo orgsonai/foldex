@@ -138,17 +138,20 @@ fun FileLeadingIcon(
     modifier: Modifier = Modifier,
 ) {
     if (selected) {
-        Icon(Icons.Default.CheckBox, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+        // 選択モードでは「選択中」を読み上げる (背景色だけだと TalkBack に伝わらない)。
+        Icon(Icons.Default.CheckBox, contentDescription = "選択中", tint = MaterialTheme.colorScheme.primary,
             modifier = modifier.size(size))
         return
     }
+    // フォルダはアイコンが唯一の手がかりなので種別を読み上げる。ファイルは name と拡張子バッジで伝わるため装飾扱い (null)。
+    val typeDescription = if (node.type == NodeType.DIRECTORY) "フォルダ" else null
     // カテゴリ判定は 1 行につき 1 回だけ (アイコン・色・サムネ判定で使い回す)。
     val category = remember(node.name) { FileTypeRegistry.categorize(node.name) }
     val model = remember(node.uri, node.lastModified, category) { thumbnailModelFor(node, category) }
     if (model == null) {
         Icon(
             iconForCategory(node, category),
-            contentDescription = null,
+            contentDescription = typeDescription,
             tint = tintForCategory(node, category, false),
             modifier = modifier.size(size),
         )
