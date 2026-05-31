@@ -179,7 +179,7 @@ docs: P1 達成サマリ
 - [x] 動的カラー (Material You) + Forest Green フォールバック
 - [x] ダーク/ライト/システム追従
 - [x] 拡張子バッジ
-- [ ] アクセシビリティ最低ライン (TalkBack / 48dp / コントラスト) ← **P7 残**
+- [x] アクセシビリティ最低ライン (TalkBack / 48dp / コントラスト): 操作系 IconButton は全てラベル済み、一覧の行高 56/64dp で 48dp 確保、コントラストは §H で整備。ファイル行のフォルダ種別/選択状態を読み上げ (`feec716`)。※実機 TalkBack での通し確認は残（運用）
 - [ ] 同期途中再開 ← **P7 残** (リモートの完全動作を見届けた後に着手)
 - [x] エラーメッセージの日本語化 (`StorageError` / `SyncError`): `StorageError.toUserMessage()` を追加し FileBrowser の表示を日本語化 (`7861e51`)。`SyncResult.toSummaryLine` は元から日本語
 - [x] ゴミ箱機能 (ゴミ箱へ/完全削除/毎回確認 + ゴミ箱画面)
