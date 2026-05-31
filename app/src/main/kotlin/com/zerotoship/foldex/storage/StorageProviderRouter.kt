@@ -151,21 +151,21 @@ class StorageProviderRouter @Inject constructor(
         to: FileUri,
         observer: ProgressObserver?,
     ): Result<Unit, StorageError> {
-        // 行き先を用意 (既に同名ディレクトリがあれば許容する)。
-        when (val m = mkdir(to, recursive = true)) {
-            is Result.Success -> Unit
-            is Result.Failure -> {
-                val existing = stat(to)
-                if (!(existing is Result.Success && existing.value.type == NodeType.DIRECTORY)) {
-                    return m
-                }
-            }
+        // 宛先ディレクトリを (無ければ作成して) 「実体の URI」に解決する。
+        // SAF の宛先は「親 + pendingChildName」の擬似 URI なので、ここで実 URI に
+        // 解決しないと (1) 子要素が全部宛先の親直下に作られて階層が潰れる、
+        // (2) ファイルが親 (=ディレクトリ) に openOutput されて EISDIR になる。
+        val destDir = when (val r = resolveDestDir(to)) {
+            is Result.Success -> r.value
+            is Result.Failure -> return r
         }
         var failure: StorageError? = null
-        list(from).collect { child ->
+        // showHidden = true: 隠しファイル/フォルダ (.zsh など) を取りこぼさない。
+        // (既定の ListOptions は showHidden=false でコピー対象から漏れていた)
+        list(from, ListOptions(showHidden = true)).collect { child ->
             if (failure != null) return@collect
             coroutineContext.ensureActive()
-            val childDest = childUri(to, child.name) ?: run {
+            val childDest = childUri(destDir, child.name) ?: run {
                 failure = StorageError.IoError("コピー先のパスを解決できません: ${child.name}")
                 return@collect
             }
@@ -175,6 +175,20 @@ class StorageProviderRouter @Inject constructor(
             }
         }
         return failure?.let { Result.Failure(it) } ?: Result.Success(Unit)
+    }
+
+    /** SAF/Local/Remote の宛先ディレクトリを (無ければ作成して) 子へ再帰できる実体 URI に解決する。 */
+    private suspend fun resolveDestDir(to: FileUri): Result<FileUri, StorageError> = when (to) {
+        // SAF は LocalStorageProvider が pendingChildName を実ディレクトリ URI へ解決する。
+        is FileUri.Saf -> local.resolveDestDirectory(to)
+        else -> when (val m = mkdir(to, recursive = true)) {
+            is Result.Success -> Result.Success(to)
+            is Result.Failure -> {
+                val existing = stat(to)
+                if (existing is Result.Success && existing.value.type == NodeType.DIRECTORY) Result.Success(to)
+                else m
+            }
+        }
     }
 
     private suspend fun copyFile(
@@ -187,7 +201,10 @@ class StorageProviderRouter @Inject constructor(
             is Result.Success -> i.value
             is Result.Failure -> return i
         }
-        val output = when (val o = openOutput(to, WriteMode.OVERWRITE)) {
+        // CREATE_NEW: SAF の「親 + pendingChildName」擬似 URI では親に新規ファイルを
+        // createDocument する。OVERWRITE だと親ディレクトリ自身を開いてしまい EISDIR。
+        // (宛先の既存削除は呼び出し側 executePaste が上書き時に実施済み)
+        val output = when (val o = openOutput(to, WriteMode.CREATE_NEW)) {
             is Result.Success -> o.value
             is Result.Failure -> { runCatching { input.close() }; return o }
         }

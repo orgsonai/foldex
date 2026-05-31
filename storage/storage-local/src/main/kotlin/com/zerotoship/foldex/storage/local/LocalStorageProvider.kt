@@ -314,6 +314,14 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
         }
     }
 
+    /**
+     * 跨プロバイダコピー ([StorageProviderRouter]) から呼ぶための公開ラッパ。
+     * SAF の「親 + pendingChildName」擬似 URI を、実際に作成したディレクトリの
+     * tree-document URI に解決して返す (子へ再帰する前に必須)。Local はそのまま返す。
+     */
+    suspend fun resolveDestDirectory(to: FileUri): Result<FileUri, StorageError> =
+        withContext(Dispatchers.IO) { ensureDirResolved(to) }
+
     /** [to] のディレクトリを (無ければ) 作り、子へ再帰できる「実体の URI」を返す。 */
     private fun ensureDirResolved(to: FileUri): Result<FileUri, StorageError> = when (to) {
         is FileUri.Local -> {
