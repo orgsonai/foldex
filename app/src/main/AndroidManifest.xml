@@ -23,6 +23,13 @@
     <!-- APK のインストール起動 (P7) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- 長時間ファイル操作 (コピー/移動/解凍) を画面OFF/Doze でも継続するための
+         前景サービス + WakeLock (P7) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- 他アプリ起動可否の判定用クエリ宣言 (Android 11+) -->
     <queries>
         <intent>
@@ -76,6 +83,12 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- 長時間ファイル操作中に端末を起こし続ける前景サービス (画面OFF耐性) -->
+        <service
+            android:name=".fileop.FileOpService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
 
         <!-- 内蔵ビューア (画像/テキスト/Markdown/HTML/音声) -->
         <activity

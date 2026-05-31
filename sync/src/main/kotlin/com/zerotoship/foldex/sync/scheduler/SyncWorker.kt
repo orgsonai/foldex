@@ -1,9 +1,15 @@
 package com.zerotoship.foldex.sync.scheduler
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.Data
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.zerotoship.foldex.core.data.repo.SyncJobRepository
@@ -36,6 +42,11 @@ class SyncWorker @AssistedInject constructor(
         val job = jobRepository.findById(jobId) ?: return Result.failure()
         if (!job.enabled) return Result.success()
 
+        // 長時間ワーカーとして前景化する。これにより画面OFF/Doze 中でも実行枠 (約10分の
+        // 既定上限) で打ち切られず、大きな同期を最後まで走らせられる。
+        // 端末制限で前景化が拒否される場合があるので runCatching で握りつぶす (通常ワーカーで継続)。
+        runCatching { setForeground(createForegroundInfo()) }
+
         // 毎日/毎週/毎月 は OneTimeWork で次回を予約しているので、実行のたびに次回を再予約する。
         if (job.schedule.isRecurringOneShot) scheduler.scheduleNext(job)
 
@@ -48,6 +59,38 @@ class SyncWorker @AssistedInject constructor(
             SyncResult.Outcome.PARTIAL, SyncResult.Outcome.FAILED ->
                 if (runAttemptCount < job.retryCount) Result.retry() else Result.failure(result.toData())
         }
+    }
+
+    /** 長時間ワーカー用の前景通知 (IMPORTANCE_LOW = 無音)。Android 14+ は dataSync 型を明示。 */
+    private fun createForegroundInfo(): ForegroundInfo {
+        ensureChannel()
+        val notif = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setContentTitle("Foldex 同期中")
+            .setContentText("バックグラウンドで同期を実行しています")
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .build()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(FOREGROUND_NOTIFICATION_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            ForegroundInfo(FOREGROUND_NOTIFICATION_ID, notif)
+        }
+    }
+
+    private fun ensureChannel() {
+        val nm = applicationContext.getSystemService(NotificationManager::class.java) ?: return
+        if (nm.getNotificationChannel(CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "同期",
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "バックグラウンド同期の進行状態を表示します"
+            setShowBadge(false)
+        }
+        nm.createNotificationChannel(channel)
     }
 
     private fun SyncProgress.toData(): Data = workDataOf(
@@ -70,6 +113,9 @@ class SyncWorker @AssistedInject constructor(
 
     companion object {
         const val KEY_JOB_ID = "jobId"
+
+        private const val CHANNEL_ID = "foldex_sync"
+        private const val FOREGROUND_NOTIFICATION_ID = 4344
 
         const val KEY_PROGRESS_PHASE = "progress.phase"
         const val KEY_PROGRESS_TOTAL = "progress.totalActions"
