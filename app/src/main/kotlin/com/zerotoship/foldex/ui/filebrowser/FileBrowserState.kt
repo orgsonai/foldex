@@ -48,6 +48,10 @@ data class FileOpProgress(
     val totalCount: Int,
     val bytesTransferred: Long,
     val totalBytes: Long,
+    // フォルダ全体のファイル数進捗。フォルダコピー/切り取り貼り付けで「○○ / ○○ ファイル」を出す。
+    // 0 のときは件数表示なし (削除/ZIP/保存など個別操作)。
+    val filesTransferred: Long = 0,
+    val filesTotal: Long = 0,
 )
 
 data class FileBrowserState(

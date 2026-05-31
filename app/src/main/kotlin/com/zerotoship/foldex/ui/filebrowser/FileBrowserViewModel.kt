@@ -756,10 +756,12 @@ class FileBrowserViewModel @Inject constructor(
         )
         val srcStats = nodes.map { computeTreeStat(it.uri) }
         val grandTotal = srcStats.sumOf { it.bytes }
+        val grandTotalFiles = srcStats.sumOf { it.files }
 
         val undoActions = mutableListOf<suspend () -> Unit>()
         var lastError: String? = null
         var completedBytes = 0L
+        var completedFiles = 0L
 
         for ((index, node) in nodes.withIndex()) {
             val destUri = destUriFor(destDir, node.name) ?: continue
@@ -777,12 +779,16 @@ class FileBrowserViewModel @Inject constructor(
             var lastTick = 0L
             var fileCounted = 0L   // 現在ファイルで既に計上済みのバイト
             var intra = 0L         // このノード内で計上した累積バイト
+            var intraFiles = 0L    // このノード内で着手したファイル数 (境界検出でカウント)
             var curFileTotal = -1L
             var lastTransferred = -1L
             val observer = com.zerotoship.foldex.core.model.ProgressObserver { transferred, total ->
-                // ファイル境界 (total が変わる/transferred が巻き戻る) を検出して計上をリセット。
-                if (lastTransferred >= 0 && (transferred < lastTransferred || total != curFileTotal)) {
+                // ファイル境界 (初回 / transferred が巻き戻る / total が変わる) を検出。
+                // 新しいファイルに入った合図なので、計上バイトをリセットしファイル数を 1 進める。
+                val isNewFile = lastTransferred < 0 || transferred < lastTransferred || total != curFileTotal
+                if (isNewFile) {
                     fileCounted = 0L
+                    intraFiles++
                 }
                 curFileTotal = total
                 lastTransferred = transferred
@@ -795,6 +801,11 @@ class FileBrowserViewModel @Inject constructor(
                 if (now - lastTick < 80) return@ProgressObserver
                 lastTick = now
                 val overall = if (grandTotal > 0) (baseBytes + intra).coerceIn(0L, grandTotal) else 0L
+                val filesNow = if (grandTotalFiles > 0) {
+                    (completedFiles + intraFiles).coerceIn(0L, grandTotalFiles)
+                } else {
+                    0L
+                }
                 val prev = _state.value.opProgress
                 if (prev != null) {
                     _state.value = _state.value.copy(
@@ -803,6 +814,8 @@ class FileBrowserViewModel @Inject constructor(
                             currentIndex = index + 1,
                             bytesTransferred = overall,
                             totalBytes = grandTotal,
+                            filesTransferred = filesNow,
+                            filesTotal = grandTotalFiles,
                         ),
                     )
                 }
@@ -814,6 +827,8 @@ class FileBrowserViewModel @Inject constructor(
                     currentIndex = index + 1,
                     bytesTransferred = if (grandTotal > 0) baseBytes.coerceIn(0L, grandTotal) else 0L,
                     totalBytes = grandTotal,
+                    filesTransferred = if (grandTotalFiles > 0) completedFiles.coerceIn(0L, grandTotalFiles) else 0L,
+                    filesTotal = grandTotalFiles,
                 ),
             )
             // overwrite=true なら、衝突しているもののみ既存削除してから書く。
@@ -868,11 +883,14 @@ class FileBrowserViewModel @Inject constructor(
                 }
             }
             completedBytes += nodeBytes
+            completedFiles += srcStats[index].files
             // ノード完了時にバーを確定値へスナップ (ノード内の累積推定のズレをここで補正)。
             _state.value = _state.value.copy(
                 opProgress = _state.value.opProgress?.copy(
                     bytesTransferred = if (grandTotal > 0) completedBytes.coerceIn(0L, grandTotal) else 0L,
                     totalBytes = grandTotal,
+                    filesTransferred = if (grandTotalFiles > 0) completedFiles.coerceIn(0L, grandTotalFiles) else 0L,
+                    filesTotal = grandTotalFiles,
                 ),
             )
         }

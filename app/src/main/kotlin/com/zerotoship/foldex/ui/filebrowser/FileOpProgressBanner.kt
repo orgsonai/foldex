@@ -51,8 +51,15 @@ fun FileOpProgressBanner(
             )
             // weight(1f) で残り幅を Spacer に充てる (旧: Spacer.fillMaxWidth() は隣を押し出してた)。
             Spacer(Modifier.weight(1f))
+            // フォルダ全体のファイル数が分かるときは件数を「○○ / ○○ ファイル」で出す
+            // (フォルダコピー/切り取り貼り付け)。分からない操作は従来どおり項目数を出す。
+            val countText = if (progress.filesTotal > 0) {
+                "${progress.filesTransferred} / ${progress.filesTotal} ファイル"
+            } else {
+                "${progress.currentIndex} / ${progress.totalCount}"
+            }
             Text(
-                "${progress.currentIndex} / ${progress.totalCount}   $percent",
+                "$countText   $percent",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
