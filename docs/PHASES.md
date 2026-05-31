@@ -227,9 +227,18 @@ docs: P1 達成サマリ
 - [x] **正式リリース署名構成** (`3979e27`): `keystore.properties` (gitignore 済) があれば PKCS12 リリース鍵で署名、無ければ debug 鍵にフォールバック。`apksigner` で `CN=Foldex, O=Zerotoship, C=JP` 署名済 APK を確認
 - [x] **GitHub 公開**: `git@github.com:orgsonai/foldex.git` に main + 全 phase ブランチ + 全タグを push
 
+#### P7 仕上げ第2回 — フォルダ操作の堅牢化 + ライセンス確定 (2026-05-31, `docs/P7-REVISIONS.md` §J)
+- [x] **ライセンス GPL-3.0 確定** (`f403172`): `LICENSE` を GPL-3.0 全文に置換。依存は全て GPL-3.0 互換。README / HANDOFF §1 / CLAUDE も更新 (※当初 P8 予定を前倒し)
+- [x] **リモート→SAF コピーの EISDIR 修正** (`e0177b5`): `StorageProviderRouter` の跨プロバイダコピーで SAF 宛先を `CREATE_NEW` + 実体 URI 解決 (`LocalStorageProvider.resolveDestDirectory`) に修正
+- [x] **隠しファイル/フォルダの取りこぼし修正** (`e0177b5`): `copyDirectory` の `list` を `showHidden=true` に
+- [x] **フォルダ全体の進捗 + コピー後の一致検証** (`9fef4df`): `computeTreeStat` でツリー実測し全体進捗を表示、コピー後に宛先ツリーと突き合わせ検証 (サイズ/ファイル数/フォルダ数)
+- [x] **画面OFF/Doze 耐性** (`7b09ab4`): `FileOpService` (dataSync 前景 + WakeLock + WifiLock) を追加し paste/delete/zip/共有保存を保護、`SyncWorker` も `setForeground` 長時間化
+- [x] **切り取りを「コピー→検証→元削除」に変更** (`3a36115`): 検証OK後にのみ元削除 (同一fs Local→Local は atomic rename)。`runPaste`/`onCleared` で WakeLock を確実解放
+- [x] **debug 別名「Foldex (debug)」化** (`dc9948d` / `86ff749`): `versionNameSuffix` + `src/debug/res` の `app_name` 上書き (ja-JP 用に `values-ja` も)
+
 ### スコープ外
 - F-Droid / Play 配布 (P8)
-- LICENSE 確定 (P8)
+- ~~LICENSE 確定 (P8)~~ → §J で前倒し確定済み (GPL-3.0)。残りは各ソースへの SPDX ヘッダ付与 (P8)
 
 ---
 
@@ -242,7 +251,7 @@ docs: P1 達成サマリ
 - [ ] エクスポート/インポート (要設計)
 - [ ] F-Droid 用 metadata
 - [ ] Reproducible Build
-- [ ] LICENSE 確定 + ヘッダ付与
+- [x] LICENSE 確定 (GPL-3.0、P7 §J で前倒し) / [ ] 各ソースへの SPDX ヘッダ付与
 - [ ] プライバシーポリシー (Play 向けに準備)
 - [ ] GitHub リリースワークフロー
 - [ ] `v1.0.0` タグ
@@ -260,4 +269,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-05-31 (P7 さらに追加修正 §I を §7 に反映 + GitHub 公開)
+最終更新: 2026-05-31 (P7 仕上げ第2回 §J を §7 に反映: フォルダ操作の堅牢化 + GPL-3.0 確定)

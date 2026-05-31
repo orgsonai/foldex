@@ -290,6 +290,31 @@
 - [x] **正式リリース署名構成** (`3979e27`): リポ直下 `keystore.properties` (gitignore 済み) があれば PKCS12 のリリース鍵 (`release.keystore`、RSA-2048、10000日) で署名し、無いマシンでは debug 鍵にフォールバック。`signingConfigs { create("release") { ... } }` と `release { signingConfig = if (keystorePropsFile.exists()) … else … }` を `app/build.gradle.kts` に追加 (`java.util.Properties` を明示 import)。`release.keystore` / `keystore.properties` は `.gitignore` 既定で除外 (`*.keystore` / `keystore.properties`)。`apksigner verify` で `CN=Foldex, O=Zerotoship, C=JP`、SHA-256 `4F:8C:09:…:00:03` の APK v2 署名を確認済み。
 - [x] **GitHub 公開** (リモート: `git@github.com:orgsonai/foldex.git`): main + phase/P1〜P7-polish + v0.1.0-P1〜v0.6.0-P6 のタグ全てを push 済み。鍵 (`release.keystore`) と資格情報 (`keystore.properties`) は gitignore で除外され、リポジトリには含まれない。
 
+## J. P7 仕上げの追加修正 (2026-05-31, 第2回) — フォルダ操作の堅牢化 + ライセンス確定
+
+実機フィードバック (リモート→SAF コピー失敗 / 進捗 / 隠しファイル / 画面OFF / 切り取りの安全性) への対応とライセンス確定。コミット: `f403172` `e0177b5` `7b09ab4` `9fef4df` `3a36115` `dc9948d` `86ff749`。
+
+- [x] **ライセンス GPL-3.0 確定** (`f403172`): `LICENSE` を GNU GPL-3.0 全文 (gnu.org 原文) に置換。依存 (smbj / Apache Commons / MINA SSHD / Apache FtpServer = Apache-2.0、xz = public domain) はすべて GPL-3.0 互換であることを確認。README / FOLDEX-HANDOFF (§1) / CLAUDE.md の記述も「確定」に更新。
+- [x] **リモート→SAF フォルダ貼付の EISDIR 修正** (`e0177b5`): `StorageProviderRouter.crossCopy` が SAF 宛先を扱えていなかった。① `copyFile` が `OVERWRITE` で `openOutput` していたため、SAF の「親 + pendingChildName」擬似 URI で親ディレクトリ自身を `openOutputStream` し `open failed: EISDIR (Is a directory)` を出していた → `CREATE_NEW` に変更。② `copyDirectory` が宛先を実体 URI に解決せず再帰し階層が平坦化していた → `LocalStorageProvider.resolveDestDirectory` を新設し宛先 dir を実 URI に解決してから再帰。単一ファイルの remote→SAF も同根 (OVERWRITE→親EISDIR) で同時に解消。
+- [x] **隠しファイル/フォルダの取りこぼし修正** (`e0177b5`): `copyDirectory` が `list(from)` を既定 (`showHidden=false`) で呼び `.zsh` 等が漏れていた → `ListOptions(showHidden=true)`。同プロバイダ内コピー (SMB/SFTP/FTP/WebDAV/Local) は元から raw list で隠しを含むため影響なし。`resolveDir` も `showHidden=true` 化。
+- [x] **フォルダ全体の進捗表示** (`9fef4df`): `executePaste` で貼付開始時に各ノードのツリーを実測 (`computeTreeStat`: サイズ/ファイル数/フォルダ数) し、フォルダ全体に対する累積バイトで進捗バーを出す。従来は「1ファイルずつの進捗」でフォルダ完了時刻が読めなかった。ノード境界で確定値へスナップして累積推定のズレを補正。zip 解凍/圧縮は元からアーカイブ/フォルダ全体の進捗。
+- [x] **コピー後のデータ一致検証** (`9fef4df`): コピー/移動の成功後に宛先ツリーを再実測し、元の実測値 (サイズ/ファイル数/フォルダ数) と一致するか検証 (`TreeStat` の等価比較)。隠しファイル漏れ・途中失敗・切断による欠損を検出し、不一致はエラー表示。成功時スナックバーに「(検証OK)」。
+- [x] **画面OFF/Doze 耐性** (`7b09ab4`): 長時間操作中に画面OFF→Doze で CPU/Wi-Fi が眠り転送がストール/切断していた。`FileOpService` (dataSync 前景サービス + `PARTIAL_WAKE_LOCK` + `WifiLock(FULL_HIGH_PERF)`、安全弁で最長2時間自動解放) を `app/.../fileop/` に追加。`FileBrowserViewModel` が `opProgress` の有無を監視して start/stop し、コピー/移動/解凍/共有保存を一括保護。app manifest に `WAKE_LOCK` / `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` / `POST_NOTIFICATIONS` と service 宣言を追加。`SyncWorker` も `setForeground` で長時間ワーカー化 (約10分上限での打ち切り回避、端末制限で前景化拒否時は通常ワーカーで継続)。
+- [x] **切り取りを「コピー→検証→元削除」に変更** (`3a36115`): 従来 `moveWithin` は検証なしでコピー後に元を削除しており欠損時のデータ消失リスクがあった。`executePaste` の Cut を「コピー → 一致検証 → 検証OK確認後に元削除」へ。検証失敗時は元を残し中途半端な宛先のみ掃除。ただし同一ファイルシステム上の Local→Local 移動は atomic rename (バイトコピーが無く欠損し得ない) を使用 (cross-fs/SAF/リモートはコピー経路)。`runPaste` ラッパで成功/失敗/例外いずれでも `opProgress` を畳み、前景サービス+WakeLock を確実に解放 (= コピー/切り取り終了で自動ロック解除)。`onCleared` でも解放。
+- [x] **debug ビルドを別名「Foldex (debug)」化** (`dc9948d` / `86ff749`): release (`com.zerotoship.foldex` / Foldex) と区別できるよう、debug は `applicationIdSuffix=".debug"` (既存) に加え `versionNameSuffix="-debug"` と表示名上書きを追加。`src/debug/res/values/strings.xml` だけだと **ja-JP 端末では main の `values-ja` (Foldex) が優先され効かない**ため、`src/debug/res/values-ja/strings.xml` も追加。
+
+### 引き継ぎメモ (2026-05-31 時点)
+
+- **ブランチ**: `phase/P7-polish`。上記 §J の 7 コミットは**ローカルのみ (未 push)**。
+- **ビルド確認**: `:app:assembleDebug` / `:app:assembleRelease` ともに成功 (`lintVitalRelease` 通過)。
+- **既知の限界 / フォローアップ**:
+  - 一致検証は宛先ツリーを再 walk するため、巨大なリモートフォルダではメタデータ列挙の往復コストが増える (バイト再読込はしない)。
+  - 前景サービスは Android 14 仕様上、処理中に無音 (IMPORTANCE_LOW) の常駐通知を 1 つ出す。
+  - 同一fs の Local→Local 切り取りは atomic rename なので検証をスキップ (rename はデータ欠損し得ないため意図的)。
+- **運用インシデント (要再設定)**: 実機検証中、release のインストール失敗 (Play Protect の `VERIFICATION_FAILURE`) を署名衝突と誤認し `adb uninstall com.zerotoship.foldex` を実行 → release のアプリ内データ (接続情報 / サーバー設定 / お気に入り / 同期ジョブ / SAF許可) を消失。`allowBackup=false` のため復旧不可。管理対象のファイル本体は無事。**release は再設定が必要**。debug は別パッケージ (`.debug`) で最初から共存しており衝突は無く、uninstall は不要だった (再発防止: 破壊的操作は事前確認)。
+- **実機状態 (Motorola, ja-JP)**: release `com.zerotoship.foldex` (Foldex / 0.1.0) と debug `com.zerotoship.foldex.debug` (Foldex (debug) / 0.1.0-debug) が共存インストール済み。検証用に一時無効化した Play Protect (`verifier_verify_adb_installs`) は有効 (=1) に復帰済み。
+- **未実施 / 次の判断**: `git push` (未)、P7 完了タグ付けの可否、実機での「隠しフォルダ込みコピー / 全体進捗 / 画面OFF継続」の最終確認。
+
 ---
 
 ## 影響範囲・要確認まとめ
