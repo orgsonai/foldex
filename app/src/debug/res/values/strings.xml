@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- debug ビルドはランチャー/設定で release と一目で区別できるよう別名にする。
+         パッケージも applicationIdSuffix=".debug" で分離済みなので release と共存できる。 -->
+    <string name="app_name">Foldex (debug)</string>
+</resources>

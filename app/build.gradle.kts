@@ -44,7 +44,10 @@ android {
         debug {
             // debug ビルドは Compose ランタイムチェック・JIT 未温め等で release の数倍重い。
             // 起動時の体感を評価する場合は assembleRelease で確認する。
+            // release (com.zerotoship.foldex) と共存・区別できるよう、パッケージと
+            // バージョン名・表示名 (src/debug/res の app_name) をずらす。
             applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
             isDebuggable = true
         }
         release {
