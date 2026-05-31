@@ -181,7 +181,7 @@ docs: P1 達成サマリ
 - [x] 拡張子バッジ
 - [ ] アクセシビリティ最低ライン (TalkBack / 48dp / コントラスト) ← **P7 残**
 - [ ] 同期途中再開 ← **P7 残** (リモートの完全動作を見届けた後に着手)
-- [ ] エラーメッセージの日本語化 (`StorageError` / `SyncError`) ← **P7 残**
+- [x] エラーメッセージの日本語化 (`StorageError` / `SyncError`): `StorageError.toUserMessage()` を追加し FileBrowser の表示を日本語化 (`7861e51`)。`SyncResult.toSummaryLine` は元から日本語
 - [x] ゴミ箱機能 (ゴミ箱へ/完全削除/毎回確認 + ゴミ箱画面)
 - [x] PDF 内蔵ビューア (PdfRenderer + LRU ページキャッシュ + 専用スクロールバー)
 - [x] テスト配布用 APK ビルド (debug `.debug` 共存 / release 自己署名 / `./gradlew :app:assembleRelease`)
