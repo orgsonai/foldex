@@ -1643,11 +1643,8 @@ class FileBrowserViewModel @Inject constructor(
                 _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
-            // 2) 一旦キャッシュに展開
-            val cacheOut = withContext(Dispatchers.IO) {
-                File(context.cacheDir, "extract_${System.currentTimeMillis()}_${node.name.removeSuffix(".zip")}")
-                    .apply { mkdirs() }
-            }
+            val pwd = password.takeUnless { it.isNullOrEmpty() }
+            val baseName = uniqueName(destDir, node.name.removeSuffix(".zip"))
             // zip4j の ProgressMonitor → opProgress。80ms スロットル。
             var lastTick = 0L
             val onZip = ZipOps.ZipProgress { _, _, name, done, totalBytes ->
@@ -1662,9 +1659,40 @@ class FileBrowserViewModel @Inject constructor(
                     ),
                 )
             }
+
+            // === 高速パス: 展開先がローカルなら zip4j で「直接」展開する ===
+            // 旧実装はどんな展開先でも「キャッシュへ全展開 → さらに保存先へ全コピー」と
+            // 全データを 2 回書いていた。ローカル展開先ではこのコピーは不要なので、展開先の
+            // 実フォルダへそのまま展開する。I/O が約半分になり、無進捗だった「展開中…」工程も
+            // 丸ごと消える (= 最後まで解凍バイト進捗が出続ける)。
+            if (destDir is FileUri.Local) {
+                val destFolder = File(destDir.absolutePath, baseName)
+                val (ok, needsPwd, message) = withContext(Dispatchers.IO) {
+                    try {
+                        ZipOps.extract(zipFile, destFolder, pwd, onZip)
+                        Triple(true, false, null)
+                    } catch (e: ZipOps.WrongPassword) {
+                        destFolder.deleteRecursively()
+                        Triple(false, true, e.message)
+                    } catch (e: Exception) {
+                        destFolder.deleteRecursively()
+                        Triple(false, false, e.message)
+                    }
+                }
+                finishZipExtract(ok, needsPwd, message, req, baseName, destDir)
+                return@launch
+            }
+
+            // === 通常パス: SAF / リモート展開先 ===
+            // SAF/リモートは java.io.File で直接書けないので、一旦キャッシュへ展開してから
+            // storage 経由でコピーする。
+            val cacheOut = withContext(Dispatchers.IO) {
+                File(context.cacheDir, "extract_${System.currentTimeMillis()}_${node.name.removeSuffix(".zip")}")
+                    .apply { mkdirs() }
+            }
             val (ok, needsPwd, message) = withContext(Dispatchers.IO) {
                 try {
-                    ZipOps.extract(zipFile, cacheOut, password.takeUnless { it.isNullOrEmpty() }, onZip)
+                    ZipOps.extract(zipFile, cacheOut, pwd, onZip)
                     Triple(true, false, null)
                 } catch (e: ZipOps.WrongPassword) {
                     Triple(false, true, e.message)
@@ -1673,19 +1701,11 @@ class FileBrowserViewModel @Inject constructor(
                 }
             }
             if (!ok) {
-                _state.value = _state.value.copy(isLoading = false, opProgress = null)
-                if (needsPwd) {
-                    _state.value = _state.value.copy(
-                        pendingZipExtract = req.copy(needsPassword = true, initialError = message),
-                    )
-                } else {
-                    emit(SnackbarEvent("解凍失敗: ${message ?: "原因不明"}"))
-                }
+                cacheOut.deleteRecursively()
+                finishZipExtract(false, needsPwd, message, req, baseName, destDir)
                 return@launch
             }
-            // 3) cacheOut の中身を destDir 配下にコピー (storage 経由で SAF/Remote にも対応)
-            val baseName = node.name.removeSuffix(".zip")
-            val baseDirUri = destUriFor(destDir, uniqueName(destDir, baseName))
+            val baseDirUri = destUriFor(destDir, baseName)
             if (baseDirUri == null) {
                 emit(SnackbarEvent("展開先を解決できません"))
                 cacheOut.deleteRecursively()
@@ -1699,39 +1719,107 @@ class FileBrowserViewModel @Inject constructor(
                 _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
-            // 展開先 (SAF/Remote 含む) へのコピーは逐次バイト進捗が取れないので不確定表示に切り替える。
+            // 展開中フェーズ: storage 経由のコピーにもバイト + ファイル数の進捗を出す
+            // (旧実装は不確定表示でずっと「読み込み中」に見えていた)。事前に総ファイル数と
+            // 総バイト数を測ってから、1 ファイルごとに加算して進捗バーを進める。
+            val (totalFiles, totalBytesToCopy) = withContext(Dispatchers.IO) { measureTree(cacheOut) }
             _state.value = _state.value.copy(
                 opProgress = _state.value.opProgress?.copy(
                     label = "展開中…",
                     currentName = baseName,
                     bytesTransferred = 0,
-                    totalBytes = 0,
+                    totalBytes = totalBytesToCopy,
+                    filesTransferred = 0,
+                    filesTotal = totalFiles,
                 ),
             )
             // baseDirUri は擬似 URI (SAF) / 正規 URI (Local/Remote) のどちらか。実体ノードの
             // URI を解決し直すために、改めて parent dir の中の同名フォルダを stat する。
             val realBase = resolveDir(destDir, baseName)
             val target = realBase ?: baseDirUri
+            var copiedFiles = 0L
+            var copiedBytes = 0L
+            var lastCopyTick = 0L
             withContext(Dispatchers.IO) {
-                copyTreeIntoStorage(cacheOut, target)
+                copyTreeIntoStorage(cacheOut, target) { name, bytes ->
+                    copiedFiles++
+                    copiedBytes += bytes
+                    val now = System.currentTimeMillis()
+                    if (now - lastCopyTick < 80 && copiedFiles < totalFiles) return@copyTreeIntoStorage
+                    lastCopyTick = now
+                    _state.value = _state.value.copy(
+                        opProgress = _state.value.opProgress?.copy(
+                            currentName = name,
+                            bytesTransferred = copiedBytes,
+                            totalBytes = totalBytesToCopy,
+                            filesTransferred = copiedFiles,
+                            filesTotal = totalFiles,
+                        ),
+                    )
+                }
             }
             cacheOut.deleteRecursively()
-            loadFilesSync(destDir)
-            _state.value = _state.value.copy(isLoading = false, opProgress = null)
-            emit(SnackbarEvent("「$baseName/」に展開しました"))
-            clearSelection()
+            finishZipExtract(true, false, null, req, baseName, destDir)
         }
     }
 
-    /** 展開後 ZIP 直下のファイル/フォルダを storage 経由で再帰コピーする (SAF/Remote 対応)。 */
-    private suspend fun copyTreeIntoStorage(srcDir: File, destDirUri: FileUri) {
+    /** 解凍処理の後始末 (成功/失敗共通)。成功なら再読込 + 完了通知、失敗なら原因に応じて再ダイアログ。 */
+    private suspend fun finishZipExtract(
+        ok: Boolean,
+        needsPwd: Boolean,
+        message: String?,
+        req: ZipExtractRequest,
+        baseName: String,
+        destDir: FileUri,
+    ) {
+        if (!ok) {
+            _state.value = _state.value.copy(isLoading = false, opProgress = null)
+            if (needsPwd) {
+                _state.value = _state.value.copy(
+                    pendingZipExtract = req.copy(needsPassword = true, initialError = message),
+                )
+            } else {
+                emit(SnackbarEvent("解凍失敗: ${message ?: "原因不明"}"))
+            }
+            return
+        }
+        loadFilesSync(destDir)
+        _state.value = _state.value.copy(isLoading = false, opProgress = null)
+        emit(SnackbarEvent("「$baseName/」に展開しました"))
+        clearSelection()
+    }
+
+    /** [dir] 配下を再帰的に走査し、(ファイル数, 合計バイト数) を返す。展開中の進捗総量に使う。 */
+    private fun measureTree(dir: File): Pair<Long, Long> {
+        var files = 0L
+        var bytes = 0L
+        dir.listFiles()?.forEach { child ->
+            if (child.isDirectory) {
+                val (f, b) = measureTree(child)
+                files += f
+                bytes += b
+            } else {
+                files++
+                bytes += child.length()
+            }
+        }
+        return files to bytes
+    }
+
+    /** 展開後 ZIP 直下のファイル/フォルダを storage 経由で再帰コピーする (SAF/Remote 対応)。
+     *  [onFile] はファイルを 1 つコピーするたびに (名前, バイト数) で呼ばれる (進捗表示用)。 */
+    private suspend fun copyTreeIntoStorage(
+        srcDir: File,
+        destDirUri: FileUri,
+        onFile: (name: String, bytes: Long) -> Unit = { _, _ -> },
+    ) {
         val children = srcDir.listFiles() ?: return
         for (child in children) {
             val childDest = destUriFor(destDirUri, child.name) ?: continue
             if (child.isDirectory) {
                 storage.mkdir(childDest, recursive = true)
                 val realChild = resolveDir(destDirUri, child.name) ?: childDest
-                copyTreeIntoStorage(child, realChild)
+                copyTreeIntoStorage(child, realChild, onFile)
             } else {
                 runCatching {
                     child.inputStream().use { ins ->
@@ -1741,6 +1829,7 @@ class FileBrowserViewModel @Inject constructor(
                         }
                     }
                 }
+                onFile(child.name, child.length())
             }
         }
     }
