@@ -337,6 +337,31 @@ P7 達成条件の残課題 (エラーメッセージ日本語化 / アクセシ
 - [x] **アプリ内ライセンス画面を新設** (`ui/settings/LicensesScreen.kt`): 設定 → 「ライセンス」をタップで開く。本アプリ本体 (MIT) + 依存ライブラリ (smbj / Apache Commons Net / MINA SSHD / Apache FtpServer = Apache-2.0、XZ for Java = public domain) を一覧表示し、タップで全文ダイアログ。全文は `assets/licenses/MIT.txt` / `Apache-2.0.txt` から読み込む。`MainScreen` に `settings/licenses` ルートを追加。設定の「ライセンス」行は固定文字列 `"GPL-3.0 (予定)"` → `"MIT © 2026 Zero to Ship"` + タップ遷移に変更。
 - 注: §J 行・PHASES §7/§8 の GPL 記述は当時の履歴としてそのまま残す (本 §L が後続の確定)。各ソースへの SPDX ヘッダ付与は引き続き P8。
 
+## M. 実機フィードバック対応 + 完了通知 (2026-06-01〜06-02, 第5回)
+
+実機 (Motorola, ja-JP, Android 14) で release 版を使い込んでの追加依頼。パッチ適用 → 解凍高速化 →
+Android 14 同期クラッシュの根治 → 完了通知の追加、の順で対応。コミット: `708102a` `3aa17e7`
+`0ce3e68` `cbd2ab3` `28945fc` (+ 本 docs 更新でバージョンを 0.2.1 に)。
+
+- [x] **foldex-patch の適用** (`708102a`): 別セッションで `foldex-patch/` に置かれていた 5 ファイルの修正を本体へ反映。
+  - 画像スライドの順序を画面表示順 (`MediaCollectionScreen` の `visible: List<MediaItem>`) に統一し、画像以外の混入を排除 (旧: `File.parentFile.listFiles()` の FS 順 + `isFile` のみ)。
+  - SD/OTG を `StorageManager.storageVolumes` (API 30+) で確実検出し `/storage/XXXX-XXXX` を直接アクセス候補に (FileBrowser QuickAccess / HOME 候補 / 同期のローカルフォルダ GUI ピッカー)。SAF より大幅に高速。`canRead()` 判定を外し権限未付与でも候補に出す。
+  - 同期実行 (`SyncJobsViewModel.runNow/setEnabled`) を `runCatching` で保護 (※無音クラッシュの**暫定**防御。根治は下の `0ce3e68`)。
+- [x] **ZIP 解凍の高速化 + 展開進捗** (`3aa17e7`): 旧 `executeZipExtract` はどんな展開先でも「キャッシュへ全展開 → 保存先へ全コピー」と全データを 2 回書いており、ローカル展開が遅く、後半の「展開中…」が無進捗で長時間ハングして見えていた。
+  - **ローカル展開先** (`FileUri.Local`) は zip4j で展開先フォルダへ**直接展開**し、コピー工程を廃止 (I/O 約半分、最後まで解凍バイト進捗が出続ける)。
+  - **SAF/リモート展開先**はキャッシュ経由を維持しつつ、コピー工程に `measureTree` で測った総バイト+総ファイル数ベースの進捗 (`filesTransferred/Total`) を追加。
+  - `finishZipExtract` / `measureTree` を切り出して成功・失敗の後始末を共通化。`copyTreeIntoStorage` に per-file コールバックを追加。
+- [x] **Android 14 で同期がクラッシュする問題を根治** (`0ce3e68`): `SyncWorker` は WorkManager の `SystemForegroundService` 経由で `dataSync` 型の前景サービスとして起動するが、このサービスは WorkManager ライブラリ側マニフェストで `foregroundServiceType` が未宣言 (=0)。Android 14 (API 34) は `setForeground` で要求する型 (0x1) がマニフェスト宣言の部分集合でないと、メインスレッドの `SystemForegroundService.startForeground` が `IllegalArgumentException` で即クラッシュする (`0x1 is not a subset of 0x0`)。実際の `startForeground` は Worker の coroutine 外で起きるため `runCatching` では捕捉できなかった。→ app マニフェストで `SystemForegroundService` に `android:foregroundServiceType="dataSync"` を `tools:node="merge"` で上書き宣言 (必要権限 FOREGROUND_SERVICE / FOREGROUND_SERVICE_DATA_SYNC は §J で宣言済み)。マージ後マニフェストに型付与を確認。
+- [x] **操作完了のシステム通知 + 設定で個別 ON/OFF** (`cbd2ab3`): 長時間操作が終わったとき、画面を離れていても気づけるように完了をシステム通知する。設定画面に「通知」セクションを新設し 3 トグルで個別制御 (**コピー・移動 / 解凍 / 同期**、既定すべて ON)。
+  - core-data: `UserSettings` に `notifyOnFileOpComplete/Extract/Sync` を追加、`SettingsRepository` に DataStore キーと setter。
+  - core-data: 完了通知の共通ユーティリティ `notify/OpCompletionNotifier` を新設 (チャンネル `foldex_op_done`、タップでアプリ起動、POST_NOTIFICATIONS 未許可でも例外を投げず無表示)。app (`FileBrowserViewModel` の貼付/解凍完了) と sync (`SyncWorker` の最終結果) の両方から呼ぶ。同期はリトライ予定時は通知しない (最終結果のみ)。
+- [x] **バージョン** (`28945fc` + 本 docs): `0.1.0` (code 1) → `0.2.0` (code 2、完了通知の追加に合わせ minor) → `0.2.1` (code 3、本 docs 更新の区切りで patch)。
+
+### 引き継ぎメモ (第5回追記)
+- **未 push が増加**: §J の 7 + §K の 4 + §M の 5 コミット (`708102a` `3aa17e7` `0ce3e68` `cbd2ab3` `28945fc` + 本 docs + バージョン 0.2.1) がローカルのみ。→ 本 §M 完了後に push 予定。
+- **実機状態 (Motorola, ja-JP, Android 14)**: release `com.zerotoship.foldex` を 0.2.1 で再インストール済み。同期クラッシュは解消を実機で確認。完了通知は POST_NOTIFICATIONS が許可なら表示 (起動時の許可ダイアログ導線は未実装 — 必要なら次回)。
+- **P7 達成条件の残り**: 「同期途中再開」のみ (§K から変わらず)。
+
 ---
 
 ## 影響範囲・要確認まとめ

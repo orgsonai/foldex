@@ -20,7 +20,7 @@ git clone https://github.com/orgsonai/foldex.git
 - ☁️ **リモート** — SMB / SFTP / FTP(S) / WebDAV
 - 🏠 **HOME 画面** — よく使うフォルダ・リモート接続・機能をタイル化。長押しでドラッグ並べ替え、改名、非表示
 - 🔍 **検索 / ソート / 隠しファイル切替** — フォルダごとに記憶
-- 🗜️ **ZIP** — 圧縮 / 解凍 (AES-256 パスワード対応)
+- 🗜️ **ZIP** — 圧縮 / 解凍 (AES-256 パスワード対応、ローカルは直接展開で高速・進捗表示)
 - 🔄 **共有受信** — 他アプリの「共有」から複数ファイルを受け取って保存
 
 ### 内蔵ビューア
@@ -41,6 +41,7 @@ git clone https://github.com/orgsonai/foldex.git
 - 🔒 **プライバシー** — トラッキングなし、認証情報は AndroidKeyStore + AES-GCM 暗号化
 - 🎨 **Material You** — 動的カラー対応、日本語UIデフォルト
 - 🔔 **App Shortcuts** — ランチャー長押しから Files / Connections / Servers / Trash へ
+- 🔕 **完了通知** — コピー・移動 / 解凍 / 同期 の完了をシステム通知 (設定で個別 ON/OFF)
 - 📋 **実行ログ** — クラッシュ・サーバ起動失敗・同期サマリを集約 (設定→実行ログから確認・共有)
 
 ## 開発状況
@@ -48,7 +49,7 @@ git clone https://github.com/orgsonai/foldex.git
 現在 **P7 (UI 洗練) 終盤**。
 
 - ✅ P1〜P6: 完了 (スケルトン / ローカル read-only / CRUD / SMB / SFTP-FTP-WebDAV / 自機サーバー + 同期エンジン)
-- 🚧 P7: 大半完了。残: アクセシビリティ (TalkBack/48dp/コントラスト)、エラーメッセージ日本語化、同期途中再開
+- 🚧 P7: 大半完了。アクセシビリティ (TalkBack/48dp/コントラスト) とエラーメッセージ日本語化は対応済み。残: 同期途中再開
 - ⏳ P8: F-Droid 用 metadata / Reproducible Build / LICENSE 確定 / プライバシーポリシー / 初回正式リリース (`v1.0.0`)
 
 開発フェーズ詳細は [`docs/PHASES.md`](docs/PHASES.md)、P7 で前倒し対応した内容は [`docs/P7-REVISIONS.md`](docs/P7-REVISIONS.md) を参照。

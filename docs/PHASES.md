@@ -236,6 +236,13 @@ docs: P1 達成サマリ
 - [x] **切り取りを「コピー→検証→元削除」に変更** (`3a36115`): 検証OK後にのみ元削除 (同一fs Local→Local は atomic rename)。`runPaste`/`onCleared` で WakeLock を確実解放
 - [x] **debug 別名「Foldex (debug)」化** (`dc9948d` / `86ff749`): `versionNameSuffix` + `src/debug/res` の `app_name` 上書き (ja-JP 用に `values-ja` も)
 
+#### P7 仕上げ第5回 — 実機FB + 完了通知 (2026-06-01〜06-02, `docs/P7-REVISIONS.md` §M)
+- [x] **foldex-patch 適用** (`708102a`): 画像スライドの順序を画面表示順に統一 + 画像以外を排除、SD/OTG を `StorageManager` 経由で直接アクセス候補に、同期実行を `runCatching` で暫定保護
+- [x] **ZIP 解凍の高速化 + 展開進捗** (`3aa17e7`): ローカル展開先は zip4j で直接展開しキャッシュ経由コピーを廃止 (I/O 約半分)、SAF/リモートはコピー工程に総バイト+ファイル数進捗を追加
+- [x] **Android 14 同期クラッシュの根治** (`0ce3e68`): WorkManager の `SystemForegroundService` に `foregroundServiceType="dataSync"` をマニフェスト merge で付与 (型 0x1 が宣言 0x0 の部分集合でないクラッシュ)。`runCatching` では捕捉できない coroutine 外の `startForeground` が原因
+- [x] **操作完了のシステム通知** (`cbd2ab3`): 共通 `OpCompletionNotifier` (core-data) でコピー・移動 / 解凍 / 同期の完了を通知。設定に「通知」セクションを新設し 3 トグルで個別 ON/OFF (既定 ON)
+- [x] **バージョン** (`28945fc` + docs): `0.1.0` → `0.2.0` (完了通知で minor) → `0.2.1` (docs 区切りで patch)
+
 ### スコープ外
 - F-Droid / Play 配布 (P8)
 - ~~LICENSE 確定 (P8)~~ → §J で前倒し確定 (GPL-3.0) → **§L で MIT に変更**。残りは各ソースへの SPDX ヘッダ付与 (P8)
@@ -269,4 +276,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-05-31 (P7 仕上げ第4回 §L: ライセンスを MIT に変更 + アプリ内ライセンス画面を新設)
+最終更新: 2026-06-02 (P7 仕上げ第5回 §M: 実機FB対応 (画像スライド/SD直接アクセス) + ZIP解凍の高速化 + Android 14 同期クラッシュ根治 + 操作完了のシステム通知。バージョン 0.2.1)
