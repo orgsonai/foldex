@@ -73,4 +73,7 @@ class SettingsViewModel @Inject constructor(
     fun setSyncBackupThresholdMb(mb: Int) = viewModelScope.launch { repo.setSyncBackupThresholdMb(mb) }
     fun setSyncBackupPolicyOverThreshold(p: SyncBackupPolicy) = viewModelScope.launch { repo.setSyncBackupPolicyOverThreshold(p) }
     fun setEditorEditableLimitKb(kb: Int) = viewModelScope.launch { repo.setEditorEditableLimitKb(kb) }
+    fun setNotifyOnFileOpComplete(enabled: Boolean) = viewModelScope.launch { repo.setNotifyOnFileOpComplete(enabled) }
+    fun setNotifyOnExtractComplete(enabled: Boolean) = viewModelScope.launch { repo.setNotifyOnExtractComplete(enabled) }
+    fun setNotifyOnSyncComplete(enabled: Boolean) = viewModelScope.launch { repo.setNotifyOnSyncComplete(enabled) }
 }

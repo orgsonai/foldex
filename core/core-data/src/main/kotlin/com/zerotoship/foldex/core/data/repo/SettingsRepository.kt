@@ -47,6 +47,9 @@ class SettingsRepository @Inject constructor(
             syncBackupPolicyOverThreshold = p[KEY_SYNC_BACKUP_POLICY]
                 ?.let { runCatching { SyncBackupPolicy.valueOf(it) }.getOrNull() } ?: SyncBackupPolicy.ASK,
             editorEditableLimitKb = p[KEY_EDITOR_LIMIT_KB] ?: 512,
+            notifyOnFileOpComplete = p[KEY_NOTIFY_FILEOP] ?: true,
+            notifyOnExtractComplete = p[KEY_NOTIFY_EXTRACT] ?: true,
+            notifyOnSyncComplete = p[KEY_NOTIFY_SYNC] ?: true,
         )
     }
 
@@ -75,6 +78,12 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setEditorEditableLimitKb(kb: Int) = edit { it[KEY_EDITOR_LIMIT_KB] = kb }
 
+    suspend fun setNotifyOnFileOpComplete(enabled: Boolean) = edit { it[KEY_NOTIFY_FILEOP] = enabled }
+
+    suspend fun setNotifyOnExtractComplete(enabled: Boolean) = edit { it[KEY_NOTIFY_EXTRACT] = enabled }
+
+    suspend fun setNotifyOnSyncComplete(enabled: Boolean) = edit { it[KEY_NOTIFY_SYNC] = enabled }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         ds.edit(block)
     }
@@ -92,5 +101,8 @@ class SettingsRepository @Inject constructor(
         val KEY_SYNC_BACKUP_THRESHOLD = intPreferencesKey("sync_backup_threshold_mb")
         val KEY_SYNC_BACKUP_POLICY = stringPreferencesKey("sync_backup_policy")
         val KEY_EDITOR_LIMIT_KB = intPreferencesKey("editor_editable_limit_kb")
+        val KEY_NOTIFY_FILEOP = booleanPreferencesKey("notify_fileop_complete")
+        val KEY_NOTIFY_EXTRACT = booleanPreferencesKey("notify_extract_complete")
+        val KEY_NOTIFY_SYNC = booleanPreferencesKey("notify_sync_complete")
     }
 }

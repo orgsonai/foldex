@@ -12,6 +12,8 @@ import androidx.work.Data
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.zerotoship.foldex.core.data.notify.OpCompletionNotifier
+import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.SyncJobRepository
 import com.zerotoship.foldex.core.model.StorageProvider
 import com.zerotoship.foldex.sync.engine.SyncEngine
@@ -19,6 +21,7 @@ import com.zerotoship.foldex.sync.model.SyncProgress
 import com.zerotoship.foldex.sync.model.SyncResult
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
 
 /**
  * 1 件の SyncJob を実行する CoroutineWorker。SyncScheduler が定期/単発でエンキューする。
@@ -35,6 +38,8 @@ class SyncWorker @AssistedInject constructor(
     private val jobRepository: SyncJobRepository,
     private val storage: StorageProvider,
     private val scheduler: SyncScheduler,
+    private val settingsRepo: SettingsRepository,
+    private val opNotifier: OpCompletionNotifier,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -54,10 +59,25 @@ class SyncWorker @AssistedInject constructor(
             setProgressAsync(progress.toData())
         }
 
+        // 完了をシステム通知する (設定が ON のときだけ)。リトライ予定のときは「まだ終わって
+        // いない」ので通知しない。最終結果 (成功 / リトライ尽きた失敗) のときだけ知らせる。
+        val notifyOnDone = runCatching { settingsRepo.settings.first().notifyOnSyncComplete }.getOrDefault(true)
         return when (result.outcome) {
-            SyncResult.Outcome.SUCCESS -> Result.success(result.toData())
+            SyncResult.Outcome.SUCCESS -> {
+                if (notifyOnDone) {
+                    opNotifier.notify("同期が完了しました", "「${job.name}」: ${result.toSummaryLine()}")
+                }
+                Result.success(result.toData())
+            }
             SyncResult.Outcome.PARTIAL, SyncResult.Outcome.FAILED ->
-                if (runAttemptCount < job.retryCount) Result.retry() else Result.failure(result.toData())
+                if (runAttemptCount < job.retryCount) {
+                    Result.retry()
+                } else {
+                    if (notifyOnDone) {
+                        opNotifier.notify("同期が完了しました (一部失敗)", "「${job.name}」: ${result.toSummaryLine()}")
+                    }
+                    Result.failure(result.toData())
+                }
         }
     }
 

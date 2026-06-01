@@ -14,6 +14,7 @@ import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.Protocol
 import com.zerotoship.foldex.core.model.toUserMessage
+import com.zerotoship.foldex.core.data.notify.OpCompletionNotifier
 import com.zerotoship.foldex.core.data.repo.OpenWithMode
 import com.zerotoship.foldex.core.data.repo.OpenWithRepository
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
@@ -50,6 +51,7 @@ class FileBrowserViewModel @Inject constructor(
     private val trashRepo: TrashRepository,
     private val homeShortcutRepo: com.zerotoship.foldex.core.data.repo.HomeShortcutRepository,
     private val sharedClipboard: com.zerotoship.foldex.ui.common.SharedClipboard,
+    private val opNotifier: OpCompletionNotifier,
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("foldex_browser", Context.MODE_PRIVATE)
@@ -915,6 +917,16 @@ class FileBrowserViewModel @Inject constructor(
                 loadFilesSync(destDir)
             }
             emit(SnackbarEvent(msg, actionLabel = "元に戻す", onAction = undo))
+            // 設定が ON なら完了をシステム通知 (画面を離れていても気づけるように)。
+            if (settingsRepo.settings.first().notifyOnFileOpComplete) {
+                val destName = (destDir as? FileUri.Local)?.let { File(it.absolutePath).name }
+                val where = if (destName.isNullOrEmpty()) "" else "「$destName」に"
+                val title = when (clipboard) {
+                    is ClipboardOperation.Copy -> "コピーが完了しました"
+                    is ClipboardOperation.Cut -> "移動が完了しました"
+                }
+                opNotifier.notify(title, "$where${nodes.size} 件")
+            }
         }
     }
 
@@ -1786,6 +1798,9 @@ class FileBrowserViewModel @Inject constructor(
         loadFilesSync(destDir)
         _state.value = _state.value.copy(isLoading = false, opProgress = null)
         emit(SnackbarEvent("「$baseName/」に展開しました"))
+        if (settingsRepo.settings.first().notifyOnExtractComplete) {
+            opNotifier.notify("解凍が完了しました", "「$baseName」に展開しました")
+        }
         clearSelection()
     }
 

@@ -42,4 +42,10 @@ data class UserSettings(
      * 入力レイテンシが厳しくなる端末があるため、ユーザーが好みで上げ下げできる。
      */
     val editorEditableLimitKb: Int = 512,
+    /** コピー・移動 (貼り付け) の完了をシステム通知するか。 */
+    val notifyOnFileOpComplete: Boolean = true,
+    /** ZIP 解凍の完了をシステム通知するか。 */
+    val notifyOnExtractComplete: Boolean = true,
+    /** 同期の完了をシステム通知するか。 */
+    val notifyOnSyncComplete: Boolean = true,
 )

@@ -124,6 +124,27 @@ fun SettingsScreen(
             }
 
             HorizontalDivider()
+            SettingsSectionHeader("通知")
+            SwitchRow(
+                title = "コピー・移動の完了を通知",
+                subtitle = "コピー/切り取り貼り付けが終わったらお知らせ",
+                checked = settings.notifyOnFileOpComplete,
+                onCheckedChange = viewModel::setNotifyOnFileOpComplete,
+            )
+            SwitchRow(
+                title = "解凍の完了を通知",
+                subtitle = "ZIP の展開が終わったらお知らせ",
+                checked = settings.notifyOnExtractComplete,
+                onCheckedChange = viewModel::setNotifyOnExtractComplete,
+            )
+            SwitchRow(
+                title = "同期の完了を通知",
+                subtitle = "バックグラウンド同期が終わったらお知らせ",
+                checked = settings.notifyOnSyncComplete,
+                onCheckedChange = viewModel::setNotifyOnSyncComplete,
+            )
+
+            HorizontalDivider()
             SettingsSectionHeader("ゴミ箱")
             SettingRow(title = "削除の行き先", subtitle = "ファイルを削除したときの動作", wide = true) {
                 ChipsControl {
