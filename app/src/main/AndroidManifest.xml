@@ -90,6 +90,16 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
+        <!-- 同期ワーカー (SyncWorker) は WorkManager の SystemForegroundService 経由で前景化する。
+             Android 14 (API 34) 以降、setForeground で要求する型 (dataSync) がマニフェスト宣言の
+             部分集合でないと、このサービスの startForeground がメインスレッドでクラッシュする
+             (foregroundServiceType 0x1 is not a subset of 0x0)。WorkManager ライブラリ側の
+             宣言は型なしなので、ここで dataSync 型を merge して上書きする。 -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <!-- 内蔵ビューア (画像/テキスト/Markdown/HTML/音声) -->
         <activity
             android:name=".ui.viewer.ViewerActivity"
