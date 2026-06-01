@@ -277,7 +277,7 @@ fun MediaCollectionScreen(
                                     if (state.isSelectionMode) {
                                         viewModel.toggleSelection(item.contentUri)
                                     } else {
-                                        openItem(context, item, state.kind)
+                                        openItem(context, item, state.kind, visible)
                                     }
                                 },
                                 onLongClick = { viewModel.toggleSelection(item.contentUri) },
@@ -419,14 +419,18 @@ private fun NoPermissionContent(onGrant: () -> Unit, inner: PaddingValues) {
     }
 }
 
-private fun openItem(context: android.content.Context, item: MediaItem, kind: MediaKind) {
+private fun openItem(
+    context: android.content.Context,
+    item: MediaItem,
+    kind: MediaKind,
+    visible: List<MediaItem>,
+) {
     val file = item.filePath?.let { File(it).takeIf { f -> f.exists() } }
     if (file != null) {
         val category = if (kind == MediaKind.IMAGE) Category.IMAGE else Category.VIDEO
-        val siblings: List<String> = file.parentFile?.listFiles()
-            ?.filter { it.isFile }
-            ?.map { it.absolutePath }
-            ?: emptyList()
+        // 画面で見えている順序 (DATE_MODIFIED DESC + フォルダ絞り込み + 画像のみ) をそのまま使う。
+        // 旧実装は File.parentFile.listFiles() を使っており FS順 + 画像以外混入の問題があった。
+        val siblings: List<String> = visible.mapNotNull { it.filePath }
         context.startActivity(
             ViewerActivity.intent(
                 context = context,

@@ -54,18 +54,28 @@ class SyncJobsViewModel @Inject constructor(
     val events: Flow<Event> = _events.receiveAsFlow()
 
     fun runNow(job: SyncJob) {
-        scheduler.runNow(job)
-        _events.trySend(Event.Message("「${job.name}」を実行キューに入れました"))
+        // WorkManager の enqueue は通常成功するが、Android 14+ の FGS 制約や、
+        // WorkManager / Hilt の初期化異常で同期的に例外を投げてプロセスを落とすケースがある。
+        // ここで握って UI スレッドに伝搬させないことで、少なくとも「無音でアプリが閉じる」のは防ぐ。
+        runCatching {
+            scheduler.runNow(job)
+        }.onSuccess {
+            _events.trySend(Event.Message("「${job.name}」を実行キューに入れました"))
+        }.onFailure { e ->
+            _events.trySend(Event.Message("実行の登録に失敗: ${e.javaClass.simpleName}: ${e.message ?: ""}"))
+        }
     }
 
     fun setEnabled(job: SyncJob, enabled: Boolean) = viewModelScope.launch {
         val updated = job.copy(enabled = enabled)
         repository.upsert(updated)
-        scheduler.apply(updated)
+        runCatching { scheduler.apply(updated) }.onFailure { e ->
+            _events.trySend(Event.Message("スケジューラ更新に失敗: ${e.javaClass.simpleName}"))
+        }
     }
 
     fun delete(job: SyncJob) = viewModelScope.launch {
-        scheduler.cancel(job.id)
+        runCatching { scheduler.cancel(job.id) }
         repository.delete(job.id)
         _events.trySend(Event.Message("「${job.name}」を削除しました"))
     }

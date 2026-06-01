@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import android.content.Context
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,7 +48,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -116,14 +120,29 @@ fun SyncJobEditScreen(
 
             SectionHeader("対象フォルダ")
             DirectionDropdown(state.direction) { d -> viewModel.update { it.copy(direction = d) } }
+            var showLocalPicker by remember { mutableStateOf(false) }
             OutlinedTextField(
                 value = state.localPath,
                 onValueChange = { v -> viewModel.update { it.copy(localPath = v) } },
                 label = { Text("ローカルのフォルダ") },
                 supportingText = { Text("端末内のフォルダの絶対パス (例: /storage/emulated/0/DCIM)") },
                 singleLine = true,
+                trailingIcon = {
+                    IconButton(onClick = { showLocalPicker = true }) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "フォルダを選ぶ")
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (showLocalPicker) {
+                LocalFolderPickerDialog(
+                    onDismiss = { showLocalPicker = false },
+                    onPick = { picked ->
+                        viewModel.update { it.copy(localPath = picked) }
+                        showLocalPicker = false
+                    },
+                )
+            }
             ConnectionDropdown(
                 connections = connections,
                 selectedId = state.connectionId,
@@ -264,6 +283,111 @@ private fun ToggleRow(
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
+}
+
+/** 端末内のローカルフォルダを候補から選ぶダイアログ。
+ *  SAF を経由しないため、選んだパスはそのまま同期の localPath にセットできる。
+ *  /storage/XXXX-XXXX 形式の SD カード/OTG も列挙対象 (要 MANAGE_EXTERNAL_STORAGE)。 */
+@Composable
+private fun LocalFolderPickerDialog(
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val candidates = remember { collectLocalFolderCandidates(context) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("ローカルフォルダを選ぶ") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (candidates.isEmpty()) {
+                    Text(
+                        "候補が見つかりません。ストレージへのアクセス権限を確認してください。",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                } else {
+                    candidates.forEach { c ->
+                        TextButton(
+                            onClick = { onPick(c.path) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.Start,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(c.label, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    c.path,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (c.note != null) {
+                                    Text(
+                                        c.note,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+    )
+}
+
+private data class LocalFolderCandidate(
+    val label: String,
+    val path: String,
+    val note: String? = null,
+)
+
+/** 内部ストレージの標準サブフォルダと、リムーバブル (SD/OTG) ボリュームを列挙する。 */
+private fun collectLocalFolderCandidates(context: Context): List<LocalFolderCandidate> {
+    val list = mutableListOf<LocalFolderCandidate>()
+    val ext = android.os.Environment.getExternalStorageDirectory()
+    if (ext != null && ext.exists()) {
+        list += LocalFolderCandidate("内部ストレージ", ext.absolutePath)
+        listOf(
+            "Download" to "ダウンロード",
+            "DCIM" to "DCIM (カメラ)",
+            "Pictures" to "画像",
+            "Movies" to "動画",
+            "Music" to "音楽",
+            "Documents" to "ドキュメント",
+        ).forEach { (dir, label) ->
+            val f = java.io.File(ext, dir)
+            if (f.exists()) list += LocalFolderCandidate(label, f.absolutePath)
+        }
+    }
+    val seen = mutableSetOf<String>()
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        runCatching {
+            val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+            sm?.storageVolumes?.forEach { vol ->
+                if (vol.isRemovable) {
+                    val dir = vol.directory
+                    if (dir != null && seen.add(dir.absolutePath)) {
+                        val label = runCatching { vol.getDescription(context) }.getOrNull() ?: "SDカード"
+                        list += LocalFolderCandidate(label, dir.absolutePath)
+                    }
+                }
+            }
+        }
+    }
+    runCatching {
+        java.io.File("/storage").listFiles()?.forEach { f ->
+            if (f.isDirectory && f.name != "self" && f.name != "emulated" && seen.add(f.absolutePath)) {
+                val note = if (!f.canRead()) "全ファイルへのアクセス権限が必要" else null
+                list += LocalFolderCandidate("SD: ${f.name}", f.absolutePath, note)
+            }
+        }
+    }
+    return list
 }
 
 private fun scheduleTypeLabel(t: ScheduleType): String = when (t) {

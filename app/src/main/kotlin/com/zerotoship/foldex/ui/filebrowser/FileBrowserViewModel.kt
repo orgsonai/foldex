@@ -1846,11 +1846,37 @@ class FileBrowserViewModel @Inject constructor(
                 if (dir.isDirectory) entries += QuickAccessEntry(FileUri.Local(dir.absolutePath), label, kind)
             }
         }
-        // 取り外し可能ストレージ (SD カード / USB) — /storage 直下の emulated 以外のボリューム
+        // 取り外し可能ストレージ (SD カード / USB) の検出。
+        // API 30+: StorageManager 経由が確実 (Android 11+ で /storage を listFiles できないため)。
+        // フォールバック: /storage 直下の列挙 (MANAGE_EXTERNAL_STORAGE 権限があれば API 26-29 では動く)。
+        // canRead() を判定すると権限付与前に SDカード候補が消えるので外し、選択時に読めなければ
+        // 案内する方針に変更。
+        val seen = mutableSetOf<String>()
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+                sm?.storageVolumes?.forEach { vol ->
+                    if (vol.isRemovable) {
+                        val dir = vol.directory
+                        if (dir != null && seen.add(dir.absolutePath)) {
+                            val label = runCatching { vol.getDescription(context) }.getOrNull()
+                                ?: "SDカード"
+                            entries += QuickAccessEntry(
+                                FileUri.Local(dir.absolutePath), label, QuickAccessKind.SD_CARD,
+                            )
+                        }
+                    }
+                }
+            }
+        }
         runCatching {
             File("/storage").listFiles()?.forEach { vol ->
-                if (vol.name != "emulated" && vol.name != "self" && vol.isDirectory && vol.canRead()) {
-                    entries += QuickAccessEntry(FileUri.Local(vol.absolutePath), "SDカード", QuickAccessKind.SD_CARD)
+                if (vol.name != "emulated" && vol.name != "self" && vol.isDirectory && seen.add(vol.absolutePath)) {
+                    entries += QuickAccessEntry(
+                        FileUri.Local(vol.absolutePath),
+                        "SDカード (${vol.name})",
+                        QuickAccessKind.SD_CARD,
+                    )
                 }
             }
         }

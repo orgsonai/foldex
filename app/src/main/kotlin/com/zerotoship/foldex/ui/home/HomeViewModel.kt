@@ -190,9 +190,28 @@ class HomeViewModel @Inject constructor(
         File(ext, "Music").let { if (it.exists()) add(PresetPath("音楽", it.absolutePath, it.canRead())) }
         val termux = File("/data/data/com.termux/files/home")
         add(PresetPath("Termux ホーム", termux.absolutePath, accessible = termux.canRead(), note = "別アプリの領域。root か Termux 側の共有設定が必要。"))
+        // 取り外し可能ストレージ (SD / OTG): /storage/XXXX-XXXX 形式の直接アクセス。
+        // SAF より大幅に高速。MANAGE_EXTERNAL_STORAGE 権限があれば File API で読み書き可能。
+        val seen = mutableSetOf<String>()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            runCatching {
+                val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+                sm?.storageVolumes?.forEach { vol ->
+                    if (vol.isRemovable) {
+                        val dir = vol.directory
+                        if (dir != null && seen.add(dir.absolutePath)) {
+                            val label = runCatching { vol.getDescription(context) }.getOrNull()
+                                ?: "SDカード"
+                            add(PresetPath(label, dir.absolutePath, accessible = dir.canRead()))
+                        }
+                    }
+                }
+            }
+        }
         File("/storage").listFiles()?.forEach { f ->
-            if (f.isDirectory && f.name != "self" && f.name != "emulated") {
-                add(PresetPath("SD: ${f.name}", f.absolutePath, accessible = f.canRead(), note = "SAF 経由のアクセスを推奨"))
+            if (f.isDirectory && f.name != "self" && f.name != "emulated" && seen.add(f.absolutePath)) {
+                add(PresetPath("SD: ${f.name}", f.absolutePath, accessible = f.canRead(),
+                    note = if (!f.canRead()) "全ファイルへのアクセス権限が必要" else null))
             }
         }
     }
