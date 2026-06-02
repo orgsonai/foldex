@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -83,10 +82,6 @@ fun MainScreen(
     val currentRoute = backStackEntry?.destination?.route
     val context = LocalContext.current
 
-    // ファイルブラウザの現在状態。戻る瞬間に「リモートを開いているか」を実状態から判定するために観測する
-    // (開いた時点のフラグだと再生成や経路で取りこぼすため、ここでは現在のルート種別を直接見る)。
-    val browserState by browserViewModel.state.collectAsStateWithLifecycle()
-
     fun selectTab(tab: TopTab) {
         navController.navigate(tab.route) {
             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -126,17 +121,11 @@ fun MainScreen(
     // HOME 以外の **タブルート** にいるときに端末の戻るボタンが押されたら、(子の BackHandler が
     // 処理しなければ) 終了ではなく HOME に戻す。サブルート (server/new, settings/trash 等) は
     // NavController の通常の popBackStack に任せる。
+    // リモート最上位で戻ったときの接続一覧への遷移は FileBrowserScreen(onExitRemote) が処理する。
+    // ここでは「HOME 以外のタブルートで、子が処理しなかった戻る」を HOME に集約するだけ。
     val isTabRoot = currentRoute != null && TopTab.entries.any { it.route == currentRoute }
     BackHandler(enabled = isTabRoot && currentRoute != TopTab.HOME.route) {
-        // FILES タブのルート (子の BackHandler が階層を上がりきった時) で戻る場合、
-        // いま開いているのがリモート接続なら HOME の前に接続一覧へ戻す。判定は breadcrumbs の
-        // 根 (= 開いた起点の URI) が Remote かどうかで行う (現在地がサブフォルダでも根で判断)。
-        val rootIsRemote = browserState.breadcrumbs.firstOrNull()?.uri is FileUri.Remote
-        if (currentRoute == TopTab.FILES.route && rootIsRemote) {
-            selectTab(TopTab.CONNECTIONS)
-        } else {
-            selectTab(TopTab.HOME)
-        }
+        selectTab(TopTab.HOME)
     }
 
     // SAF ピッカー (HOME の SAF タイル or 権限タイルから呼ぶ用)。選択後はファイルブラウザで開く。
@@ -223,7 +212,11 @@ fun MainScreen(
                 )
             }
             composable(TopTab.FILES.route) {
-                FileBrowserScreen(viewModel = browserViewModel)
+                FileBrowserScreen(
+                    viewModel = browserViewModel,
+                    // リモートの最上位で戻ったら接続一覧へ (どの経路で開いても「リモートのみ」接続へ戻す)。
+                    onExitRemote = { selectTab(TopTab.CONNECTIONS) },
+                )
             }
             composable(TopTab.CONNECTIONS.route) {
                 ConnectionsScreen(

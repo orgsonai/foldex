@@ -139,6 +139,8 @@ import kotlinx.coroutines.launch
 fun FileBrowserScreen(
     viewModel: FileBrowserViewModel = hiltViewModel(),
     connectionsViewModel: ConnectionsViewModel = hiltViewModel(),
+    // リモート表示の最上位で戻ったときに呼ばれる (= 接続一覧へ戻す)。ローカル/SAF では使わない。
+    onExitRemote: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val connections by connectionsViewModel.connections.collectAsStateWithLifecycle()
@@ -216,17 +218,22 @@ fun FileBrowserScreen(
         }
     }
 
+    // リモート接続を開いているか (breadcrumbs の根が Remote)。最上位で戻ったら接続一覧へ抜ける。
+    val isRemoteSession = state.breadcrumbs.firstOrNull()?.uri is FileUri.Remote
     // 端末の戻るボタン:
     //   ドロワーが開いていれば閉じる > 選択解除 > 検索を閉じる > フォルダ階層を1つ上がる
-    //   どれも無い (＝ホーム階層で何も開いていない) ときは無効 → 既定の挙動 (アプリ終了) に任せる。
+    //   リモートの最上位 (これ以上 up できない) なら接続一覧へ戻す (onExitRemote)。
+    //   ローカル/SAF のホーム階層では無効 → 親 (MainScreen) の戻る (= HOME) に任せる。
     BackHandler(
-        enabled = drawerState.isOpen || state.isSelectionMode || state.isSearchActive || state.canGoUp,
+        enabled = drawerState.isOpen || state.isSelectionMode || state.isSearchActive ||
+            state.canGoUp || isRemoteSession,
     ) {
         when {
             drawerState.isOpen -> drawerScope.launch { drawerState.close() }
             state.isSelectionMode -> viewModel.clearSelection()
             state.isSearchActive -> viewModel.closeSearch()
-            else -> viewModel.navigateUp()
+            state.canGoUp -> viewModel.navigateUp()
+            isRemoteSession -> onExitRemote()
         }
     }
 
