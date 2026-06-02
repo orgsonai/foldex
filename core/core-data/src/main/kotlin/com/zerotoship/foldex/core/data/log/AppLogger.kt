@@ -1,6 +1,8 @@
 package com.zerotoship.foldex.core.data.log
 
 import android.content.Context
+import android.net.Uri
+import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -8,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.PrintWriter
@@ -30,6 +33,7 @@ import javax.inject.Singleton
 @Singleton
 class AppLogger @Inject constructor(
     @ApplicationContext private val context: Context,
+    settingsRepository: SettingsRepository,
 ) {
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
@@ -37,6 +41,23 @@ class AppLogger @Inject constructor(
     /** 直近の書き込み時刻 (ms)。Compose 側はこれを観測して画面を再読み込みする。 */
     private val _lastWriteAt = MutableStateFlow(0L)
     val lastWriteAt: StateFlow<Long> = _lastWriteAt.asStateFlow()
+
+    /**
+     * 永久ログの追記先 (任意)。設定の URI を購読してキャッシュし、書き込みのたびに
+     * このファイルへも追記する。ホットパスで DataStore を読まないよう @Volatile で保持。
+     */
+    @Volatile
+    private var permanentUri: Uri? = null
+
+    init {
+        ioScope.launch {
+            settingsRepository.settings
+                .map { it.permanentLogUri }
+                .collect { raw ->
+                    permanentUri = raw?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                }
+        }
+    }
 
     enum class Level { INFO, WARN, ERROR }
 
@@ -83,7 +104,17 @@ class AppLogger @Inject constructor(
                     sb.append('\n').append(sw.toString().trimEnd())
                 }
                 sb.append('\n')
-                log.appendText(sb.toString())
+                val text = sb.toString()
+                log.appendText(text)
+                // 永久保存先が設定されていれば、同じ 1 行をユーザー指定の .log へも追記。
+                // "wa" = 追記モード。ファイルが消された / 権限が切れた場合は黙って諦める。
+                permanentUri?.let { uri ->
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri, "wa")?.use { os ->
+                            os.write(text.toByteArray())
+                        }
+                    }
+                }
                 _lastWriteAt.value = System.currentTimeMillis()
             }
         }

@@ -1,6 +1,9 @@
 package com.zerotoship.foldex.ui.settings
 
 import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
@@ -37,7 +41,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,9 +58,27 @@ fun AppLogScreen(
     viewModel: AppLogViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val permanentLogUri by viewModel.permanentLogUri.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
     var confirmClear by remember { mutableStateOf(false) }
+
+    // 永久ログの保存先 (.log) をユーザーに手動作成させる。CreateDocument は MIME と既定ファイル名を取る。
+    val createLogFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            viewModel.setPermanentLog(uri.toString())
+            Toast.makeText(context, "永久ログの保存先を設定しました", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // 新しい行が追加されたら自動で末尾へスクロール。
     LaunchedEffect(state.lines.size) {
@@ -77,6 +101,13 @@ fun AppLogScreen(
                         Icon(Icons.Default.Refresh, contentDescription = "再読み込み")
                     }
                     IconButton(onClick = {
+                        val text = state.filteredLines.joinToString("\n")
+                        if (text.isNotEmpty()) {
+                            clipboard.setText(AnnotatedString(text))
+                            Toast.makeText(context, "ログをコピーしました", Toast.LENGTH_SHORT).show()
+                        }
+                    }) { Icon(Icons.Default.ContentCopy, contentDescription = "ログをコピー") }
+                    IconButton(onClick = {
                         val f = viewModel.logFile()
                         if (f.exists() && f.length() > 0) {
                             val uri = FileProvider.getUriForFile(
@@ -98,6 +129,33 @@ fun AppLogScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // 永久ログ: ユーザーが選んだ .log ファイルへ書き込みのたびに累計追記する。
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (permanentLogUri == null) "永久保存: オフ" else "永久保存: オン",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (permanentLogUri == null) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { createLogFile.launch("foldex.log") }) {
+                    Text(if (permanentLogUri == null) "保存先を設定" else "保存先を変更")
+                }
+                if (permanentLogUri != null) {
+                    TextButton(onClick = {
+                        viewModel.setPermanentLog(null)
+                        Toast.makeText(context, "永久保存を解除しました", Toast.LENGTH_SHORT).show()
+                    }) { Text("解除") }
+                }
+            }
+            HorizontalDivider()
+
             // フィルタ: 全部 / 情報 / 警告以上 / エラー
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),

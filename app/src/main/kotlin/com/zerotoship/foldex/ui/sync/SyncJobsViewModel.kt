@@ -74,6 +74,11 @@ class SyncJobsViewModel @Inject constructor(
         }
     }
 
+    /** ドラッグ並び替えの確定保存。[orderedIds] の順序を永続化する。 */
+    fun applyOrder(orderedIds: List<String>) = viewModelScope.launch {
+        runCatching { repository.reorder(orderedIds) }
+    }
+
     fun delete(job: SyncJob) = viewModelScope.launch {
         runCatching { scheduler.cancel(job.id) }
         repository.delete(job.id)

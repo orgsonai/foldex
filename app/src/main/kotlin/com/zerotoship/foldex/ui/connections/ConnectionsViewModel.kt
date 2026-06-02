@@ -70,7 +70,8 @@ class ConnectionsViewModel @Inject constructor(
                 portText = connection.port.toString(),
                 username = connection.username.orEmpty(),
                 password = "",
-                share = connection.share,
+                // 共有名と初期パスを 1 本の「パス」に結合して表示 (例: public + /docs → public/docs)。
+                share = connection.share + connection.initialPath,
                 domain = connection.domain.orEmpty(),
                 anonymous = connection.authMethod == AuthMethod.ANONYMOUS,
                 hostKeyFingerprint = "",
@@ -79,7 +80,7 @@ class ConnectionsViewModel @Inject constructor(
                 charset = connection.charset,
                 basePath = "/",
                 useHttps = true,
-                initialPath = connection.initialPath,
+                initialPath = "",
                 sftpAuthMode = SftpAuthMode.PASSWORD,
                 sftpPrivateKeyPem = "",
                 sftpPublicKeyOpenSsh = "",
@@ -305,14 +306,11 @@ class ConnectionsViewModel @Inject constructor(
     }
 
     private fun saveSmb(draft: EditingState) {
-        if (draft.share.isBlank()) {
-            sendEvent(ConnectionEvent.Message("共有名は必須"))
-            return
-        }
         viewModelScope.launch {
             val authMethod = if (draft.anonymous) AuthMethod.ANONYMOUS else AuthMethod.PASSWORD
-            // 「共有名」フィールドに `share/sub/path` 形式で入力されたら、先頭セグメントが share、
+            // 「パス」フィールドに `share/sub/path` 形式で入力されたら、先頭セグメントが share、
             // 残りを initialPath として分解する (SMB プロトコル仕様: share は単一の名前)。
+            // 空欄も許可 (share = "" / 初期パスはルート)。
             val rawShare = draft.share.trim().trim('/')
             val firstSlash = rawShare.indexOf('/')
             val parsedShare = if (firstSlash >= 0) rawShare.substring(0, firstSlash) else rawShare
@@ -423,6 +421,13 @@ class ConnectionsViewModel @Inject constructor(
             sendEvent(ConnectionEvent.Message(if (isNew) "接続を追加しました" else "接続を更新しました"))
         } catch (t: Throwable) {
             sendEvent(ConnectionEvent.Message("保存エラー: ${t.message}"))
+        }
+    }
+
+    /** ドラッグ並び替えの確定保存。[orderedIds] の順序を永続化する。 */
+    fun applyOrder(orderedIds: List<String>) {
+        viewModelScope.launch {
+            runCatching { repository.reorder(orderedIds) }
         }
     }
 

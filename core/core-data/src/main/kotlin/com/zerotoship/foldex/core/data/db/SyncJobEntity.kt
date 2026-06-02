@@ -46,4 +46,7 @@ data class SyncJobEntity(
     val updatedAt: Long,
     val lastRunAt: Long?,
     val lastRunResult: String?,
+
+    /** ドラッグ並び替え順。小さいほど上。同値は updatedAt の新しい順。Room v5→v6 は destructive で吸収。 */
+    val sortOrder: Int = 0,
 )

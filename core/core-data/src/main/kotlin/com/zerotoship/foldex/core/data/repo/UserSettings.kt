@@ -48,4 +48,10 @@ data class UserSettings(
     val notifyOnExtractComplete: Boolean = true,
     /** 同期の完了をシステム通知するか。 */
     val notifyOnSyncComplete: Boolean = true,
+    /**
+     * 実行ログを永久累計保存する SAF ドキュメント URI (任意)。
+     * ユーザーが手動で作成した `.log` ファイルを指す。設定されていれば [com.zerotoship.foldex.core.data.log.AppLogger]
+     * が書き込みのたびにこのファイルへも追記する。null なら永久保存オフ (アプリ内ログのローテのみ)。
+     */
+    val permanentLogUri: String? = null,
 )

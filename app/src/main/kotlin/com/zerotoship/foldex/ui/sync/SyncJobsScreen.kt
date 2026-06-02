@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Sync
@@ -46,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.SyncJob
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,19 +95,39 @@ fun SyncJobsScreen(
                 Text("同期ジョブがありません。FAB から追加してください", style = MaterialTheme.typography.bodyMedium)
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-                items(state.jobs, key = { it.id }) { job ->
-                    SyncJobRow(
-                        job = job,
-                        runStatus = state.statuses[job.id]
-                            ?: com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE,
-                        onRunNow = { viewModel.runNow(job) },
-                        onToggleEnabled = { enabled -> viewModel.setEnabled(job, enabled) },
-                        onEdit = { onEdit(job) },
-                        onOpenBackups = { onOpenBackups(job) },
-                        onDelete = { pendingDelete = job },
-                    )
-                    HorizontalDivider()
+            // ドラッグ中はローカル liveOrder に楽観更新し、ドロップ時に確定保存する。
+            var liveOrder by remember(state.jobs) { mutableStateOf(state.jobs) }
+            val listState = rememberLazyListState()
+            val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+                liveOrder = liveOrder.toMutableList().apply {
+                    add(to.index, removeAt(from.index))
+                }
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().padding(padding),
+            ) {
+                items(liveOrder, key = { it.id }) { job ->
+                    ReorderableItem(reorderState, key = job.id) { _ ->
+                        val dragHandle = Modifier.longPressDraggableHandle(
+                            onDragStopped = {
+                                val newIds = liveOrder.map { it.id }
+                                if (newIds != state.jobs.map { it.id }) viewModel.applyOrder(newIds)
+                            },
+                        )
+                        SyncJobRow(
+                            job = job,
+                            runStatus = state.statuses[job.id]
+                                ?: com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE,
+                            dragHandleModifier = dragHandle,
+                            onRunNow = { viewModel.runNow(job) },
+                            onToggleEnabled = { enabled -> viewModel.setEnabled(job, enabled) },
+                            onEdit = { onEdit(job) },
+                            onOpenBackups = { onOpenBackups(job) },
+                            onDelete = { pendingDelete = job },
+                        )
+                        HorizontalDivider()
+                    }
                 }
             }
         }
@@ -136,9 +160,17 @@ private fun SyncJobRow(
     onEdit: () -> Unit,
     onOpenBackups: () -> Unit,
     onDelete: () -> Unit,
+    dragHandleModifier: Modifier = Modifier,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // このハンドルを長押し = ドラッグ開始。
+            Icon(
+                Icons.Default.DragHandle,
+                contentDescription = "ドラッグして並び替え",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = dragHandleModifier.padding(end = 8.dp),
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(

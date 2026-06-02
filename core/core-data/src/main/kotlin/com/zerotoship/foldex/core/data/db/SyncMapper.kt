@@ -42,7 +42,7 @@ internal fun SyncJobEntity.toModel(): SyncJob = SyncJob(
     lastRunResult = lastRunResult,
 )
 
-internal fun SyncJob.toEntity(): SyncJobEntity = SyncJobEntity(
+internal fun SyncJob.toEntity(sortOrder: Int = 0): SyncJobEntity = SyncJobEntity(
     id = id,
     name = name,
     enabled = enabled,
@@ -69,6 +69,7 @@ internal fun SyncJob.toEntity(): SyncJobEntity = SyncJobEntity(
     updatedAt = updatedAt,
     lastRunAt = lastRunAt,
     lastRunResult = lastRunResult,
+    sortOrder = sortOrder,
 )
 
 internal fun SyncStateEntity.toModel(): SyncState = SyncState(

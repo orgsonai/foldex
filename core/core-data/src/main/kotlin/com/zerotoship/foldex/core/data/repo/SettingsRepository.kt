@@ -50,6 +50,7 @@ class SettingsRepository @Inject constructor(
             notifyOnFileOpComplete = p[KEY_NOTIFY_FILEOP] ?: true,
             notifyOnExtractComplete = p[KEY_NOTIFY_EXTRACT] ?: true,
             notifyOnSyncComplete = p[KEY_NOTIFY_SYNC] ?: true,
+            permanentLogUri = p[KEY_PERMANENT_LOG_URI],
         )
     }
 
@@ -84,6 +85,11 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setNotifyOnSyncComplete(enabled: Boolean) = edit { it[KEY_NOTIFY_SYNC] = enabled }
 
+    /** 永久ログの保存先 URI。null/空 で永久保存オフ。 */
+    suspend fun setPermanentLogUri(uri: String?) = edit {
+        if (uri.isNullOrBlank()) it.remove(KEY_PERMANENT_LOG_URI) else it[KEY_PERMANENT_LOG_URI] = uri
+    }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         ds.edit(block)
     }
@@ -104,5 +110,6 @@ class SettingsRepository @Inject constructor(
         val KEY_NOTIFY_FILEOP = booleanPreferencesKey("notify_fileop_complete")
         val KEY_NOTIFY_EXTRACT = booleanPreferencesKey("notify_extract_complete")
         val KEY_NOTIFY_SYNC = booleanPreferencesKey("notify_sync_complete")
+        val KEY_PERMANENT_LOG_URI = stringPreferencesKey("permanent_log_uri")
     }
 }

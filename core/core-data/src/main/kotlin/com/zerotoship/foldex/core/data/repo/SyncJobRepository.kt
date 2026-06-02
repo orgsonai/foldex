@@ -31,7 +31,16 @@ class SyncJobRepository @Inject constructor(
             createdAt = if (job.createdAt > 0) job.createdAt else now,
             updatedAt = now,
         )
-        jobDao.upsert(merged.toEntity())
+        // 編集保存でドラッグ並び順が消えないよう、既存の sortOrder を引き継ぐ。
+        val existingOrder = jobDao.findById(job.id)?.sortOrder ?: 0
+        jobDao.upsert(merged.toEntity(sortOrder = existingOrder))
+    }
+
+    /** ドラッグ並び替えの確定保存。[orderedIds] の並び順を sortOrder として書き込む。 */
+    suspend fun reorder(orderedIds: List<String>) {
+        orderedIds.forEachIndexed { index, id ->
+            jobDao.updateSortOrder(id, index)
+        }
     }
 
     suspend fun delete(id: String) {

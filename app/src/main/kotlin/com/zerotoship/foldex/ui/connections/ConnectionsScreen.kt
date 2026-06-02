@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.AlertDialog
@@ -56,6 +58,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.Protocol
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -158,36 +162,61 @@ fun ConnectionsScreen(
                 }
             }
         } else {
-            LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
-                items(connections, key = { it.id }) { connection ->
-                    ListItem(
-                        headlineContent = { Text(connection.name) },
-                        supportingContent = {
-                            Text(connection.summary(), style = MaterialTheme.typography.bodySmall)
-                        },
-                        leadingContent = {
-                            Icon(Icons.Outlined.Storage, contentDescription = null)
-                        },
-                        trailingContent = {
-                            Row {
-                                IconButton(onClick = { viewModel.startEdit(connection) }) {
-                                    Icon(Icons.Default.Edit, contentDescription = "編集")
+            // ドラッグ中はローカル liveOrder に楽観更新し、ドロップ時に ViewModel へ確定保存する
+            // (StateFlow を毎フレーム更新するとドラッグ位置と競合してチラつくため)。
+            var liveOrder by remember(connections) { mutableStateOf(connections) }
+            val listState = rememberLazyListState()
+            val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+                liveOrder = liveOrder.toMutableList().apply {
+                    add(to.index, removeAt(from.index))
+                }
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.padding(padding).fillMaxSize(),
+            ) {
+                items(liveOrder, key = { it.id }) { connection ->
+                    ReorderableItem(reorderState, key = connection.id) { _ ->
+                        val dragHandle = Modifier.longPressDraggableHandle(
+                            onDragStopped = {
+                                val newIds = liveOrder.map { it.id }
+                                if (newIds != connections.map { it.id }) viewModel.applyOrder(newIds)
+                            },
+                        )
+                        ListItem(
+                            headlineContent = { Text(connection.name) },
+                            supportingContent = {
+                                Text(connection.summary(), style = MaterialTheme.typography.bodySmall)
+                            },
+                            leadingContent = {
+                                // このハンドルを長押し = ドラッグ開始。行の長押しは従来どおり編集。
+                                Icon(
+                                    Icons.Default.DragHandle,
+                                    contentDescription = "ドラッグして並び替え",
+                                    modifier = dragHandle,
+                                )
+                            },
+                            trailingContent = {
+                                Row {
+                                    IconButton(onClick = { viewModel.startEdit(connection) }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "編集")
+                                    }
+                                    IconButton(onClick = { pendingDelete = connection }) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "削除",
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
                                 }
-                                IconButton(onClick = { pendingDelete = connection }) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "削除",
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
-                                }
-                            }
-                        },
-                        modifier = Modifier.combinedClickable(
-                            onClick = { onOpen(connection) },
-                            onLongClick = { viewModel.startEdit(connection) },
-                        ),
-                    )
-                    HorizontalDivider()
+                            },
+                            modifier = Modifier.combinedClickable(
+                                onClick = { onOpen(connection) },
+                                onLongClick = { viewModel.startEdit(connection) },
+                            ),
+                        )
+                        HorizontalDivider()
+                    }
                 }
             }
         }
@@ -383,22 +412,15 @@ private fun SmbExtraFields(
     state: ConnectionsViewModel.EditingState,
     onUpdate: ((ConnectionsViewModel.EditingState) -> ConnectionsViewModel.EditingState) -> Unit,
 ) {
+    // 共有名と初期パスを 1 本の「パス」に統合。先頭セグメントが共有名、残りが初期パス。
+    // 空欄も許可 (その場合 share は空 = ホスト直下相当)。分解は ViewModel.saveSmb 側で行う。
     OutlinedTextField(
         value = state.share,
         onValueChange = { v -> onUpdate { it.copy(share = v) } },
-        label = { Text("共有名") },
+        label = { Text("パス (共有名/フォルダ)") },
         singleLine = true,
-        supportingText = { Text("share 単体 (例: public)。フォルダパスは下の「初期パス」へ") },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = state.initialPath,
-        onValueChange = { v -> onUpdate { it.copy(initialPath = v) } },
-        label = { Text("初期パス (任意)") },
-        singleLine = true,
-        placeholder = { Text("/sub/folder") },
-        supportingText = { Text("接続を開いた直後にここへ自動移動") },
+        placeholder = { Text("public/sub/folder") },
+        supportingText = { Text("先頭が共有名。例: public または public/docs。空欄も可 (その場合は / )") },
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(8.dp))
