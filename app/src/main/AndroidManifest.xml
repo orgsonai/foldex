@@ -29,6 +29,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 定期同期のアラームを端末再起動後に貼り直すため (アラームは再起動で消える) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- 他アプリ起動可否の判定用クエリ宣言 (Android 11+) -->
     <queries>
@@ -99,6 +101,21 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+
+        <!-- 時刻指定同期 (毎日/毎週/毎月/日時) のアラーム発火を受けて即時実行する。
+             自前の明示インテントのみ届くので exported=false。 -->
+        <receiver
+            android:name="com.zerotoship.foldex.sync.scheduler.SyncAlarmReceiver"
+            android:exported="false" />
+
+        <!-- 端末再起動後にアラームを貼り直す。BOOT_COMPLETED を受けるため exported=true。 -->
+        <receiver
+            android:name="com.zerotoship.foldex.sync.scheduler.SyncBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- 内蔵ビューア (画像/テキスト/Markdown/HTML/音声) -->
         <activity

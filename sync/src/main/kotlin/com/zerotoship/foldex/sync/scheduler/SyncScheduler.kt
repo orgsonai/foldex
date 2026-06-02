@@ -1,6 +1,10 @@
 package com.zerotoship.foldex.sync.scheduler
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -28,22 +32,37 @@ class SyncScheduler @Inject constructor(
 ) {
     private val workManager: WorkManager get() = WorkManager.getInstance(context)
 
-    /** ジョブ設定を WorkManager に反映する (保存/更新の直後に呼ぶ)。 */
+    /** ジョブ設定を WorkManager / AlarmManager に反映する (保存/更新の直後に呼ぶ)。 */
     fun apply(job: SyncJob) {
-        // 種別が変わった可能性があるので、まず両方の登録を解除してから貼り直す。
+        // 種別が変わった可能性があるので、まず全ての登録を解除してから貼り直す。
         cancelPeriodic(job.id)
         cancelScheduled(job.id)
+        cancelAlarm(job.id)
         if (!job.enabled) return
         if (job.schedule.isSimpleInterval) enqueuePeriodic(job) else scheduleNext(job)
     }
 
-    /** 次回実行を予約する (DAILY/WEEKLY/MONTHLY は実行完了後の再予約にも使う)。 */
+    /**
+     * 次回実行を AlarmManager で予約する (DAILY/WEEKLY/MONTHLY/DATETIME)。
+     *
+     * 以前は WorkManager の `setInitialDelay` で予約していたが、遅延付き WorkManager は
+     * Doze 中に次のメンテナンス枠まで延期され「定刻に動かない / アプリを開くまでキュー中」に
+     * なるため、`setAndAllowWhileIdle` の標準アラームで起こす方式に変更した (特別権限なし)。
+     * 発火は [SyncAlarmReceiver] が受け、そこで即時 WorkManager 実行をエンキューする。
+     * DAILY/WEEKLY/MONTHLY の次回再予約は受信側 ([SyncAlarmReceiver]) と完了後の [SyncWorker] が行う。
+     */
     fun scheduleNext(job: SyncJob) {
         if (!job.enabled) return
         val next = job.schedule.nextFireTimeMillis() ?: return
-        val delayMs = (next - System.currentTimeMillis()).coerceAtLeast(0L)
+        val pi = alarmPendingIntent(job.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            ?: return
+        val am = context.getSystemService(AlarmManager::class.java) ?: return
+        runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi) }
+    }
+
+    /** アラーム発火時の即時実行 (遅延なし)。制約はジョブ設定に従う。 */
+    fun fireNow(job: SyncJob) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
             .setConstraints(syncConstraints(job))
             .setInputData(workDataOf(SyncWorker.KEY_JOB_ID to job.id))
             .addTag(tagFor(job.id))
@@ -93,15 +112,35 @@ class SyncScheduler @Inject constructor(
         workManager.enqueueUniqueWork(oneShotName(job.id), ExistingWorkPolicy.REPLACE, request)
     }
 
-    /** ジョブに紐づく定期/予約/単発の作業をすべて取り消す (ジョブ削除時など)。 */
+    /** ジョブに紐づく定期/予約/単発/アラームをすべて取り消す (ジョブ削除時など)。 */
     fun cancel(jobId: String) {
         cancelPeriodic(jobId)
         cancelScheduled(jobId)
+        cancelAlarm(jobId)
         workManager.cancelUniqueWork(oneShotName(jobId))
     }
 
     private fun cancelPeriodic(jobId: String) = workManager.cancelUniqueWork(periodicName(jobId))
     private fun cancelScheduled(jobId: String) = workManager.cancelUniqueWork(scheduledName(jobId))
+
+    private fun cancelAlarm(jobId: String) {
+        val pi = alarmPendingIntent(jobId, PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE) ?: return
+        context.getSystemService(AlarmManager::class.java)?.cancel(pi)
+        pi.cancel()
+    }
+
+    /**
+     * ジョブ固有のアラーム用 PendingIntent。data Uri をジョブごとに変えて識別を分ける
+     * (extras は filterEquals の対象外のため)。FLAG_NO_CREATE 指定時は未登録なら null。
+     */
+    private fun alarmPendingIntent(jobId: String, flags: Int): PendingIntent? {
+        val intent = Intent(context, SyncAlarmReceiver::class.java).apply {
+            action = SyncAlarmReceiver.ACTION_FIRE
+            data = Uri.parse("foldex://sync-alarm/$jobId")
+            putExtra(SyncAlarmReceiver.EXTRA_JOB_ID, jobId)
+        }
+        return PendingIntent.getBroadcast(context, jobId.hashCode(), intent, flags)
+    }
 
     private fun periodicName(jobId: String) = "sync-periodic-$jobId"
     private fun scheduledName(jobId: String) = "sync-scheduled-$jobId"
