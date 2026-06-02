@@ -1,7 +1,7 @@
 package com.zerotoship.foldex.ui.connections
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -177,6 +177,8 @@ fun ConnectionsScreen(
             ) {
                 items(liveOrder, key = { it.id }) { connection ->
                     ReorderableItem(reorderState, key = connection.id) { _ ->
+                        // 行全体を長押し = ドラッグ開始。タップ = 開く。編集は右の鉛筆ボタンから。
+                        // (以前は長押し=編集だったが、並び替えのつもりで編集画面に飛んでしまうため変更)
                         val dragHandle = Modifier.longPressDraggableHandle(
                             onDragStopped = {
                                 val newIds = liveOrder.map { it.id }
@@ -189,12 +191,7 @@ fun ConnectionsScreen(
                                 Text(connection.summary(), style = MaterialTheme.typography.bodySmall)
                             },
                             leadingContent = {
-                                // このハンドルを長押し = ドラッグ開始。行の長押しは従来どおり編集。
-                                Icon(
-                                    Icons.Default.DragHandle,
-                                    contentDescription = "ドラッグして並び替え",
-                                    modifier = dragHandle,
-                                )
+                                Icon(Icons.Default.DragHandle, contentDescription = "長押しで並び替え")
                             },
                             trailingContent = {
                                 Row {
@@ -210,10 +207,9 @@ fun ConnectionsScreen(
                                     }
                                 }
                             },
-                            modifier = Modifier.combinedClickable(
-                                onClick = { onOpen(connection) },
-                                onLongClick = { viewModel.startEdit(connection) },
-                            ),
+                            modifier = Modifier
+                                .clickable { onOpen(connection) }
+                                .then(dragHandle),
                         )
                         HorizontalDivider()
                     }

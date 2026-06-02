@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -77,10 +78,9 @@ fun SyncJobEditScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is SyncJobEditEvent.Saved -> {
-                    snackbar.showSnackbar("保存しました")
-                    onSaved()
-                }
+                // 保存できたら待たずにすぐ一覧へ戻る (snackbar.showSnackbar はサスペンドして
+                // 数秒待つため、ここでメッセージを出すと戻りが遅れる)。一覧に戻ること自体が完了の合図。
+                is SyncJobEditEvent.Saved -> onSaved()
                 is SyncJobEditEvent.Message -> snackbar.showSnackbar(event.text)
             }
         }
@@ -136,6 +136,7 @@ fun SyncJobEditScreen(
             )
             if (showLocalPicker) {
                 LocalFolderPickerDialog(
+                    initialPath = state.localPath,
                     onDismiss = { showLocalPicker = false },
                     onPick = { picked ->
                         viewModel.update { it.copy(localPath = picked) }
@@ -285,49 +286,101 @@ private fun ToggleRow(
     }
 }
 
-/** 端末内のローカルフォルダを候補から選ぶダイアログ。
- *  SAF を経由しないため、選んだパスはそのまま同期の localPath にセットできる。
- *  /storage/XXXX-XXXX 形式の SD カード/OTG も列挙対象 (要 MANAGE_EXTERNAL_STORAGE)。 */
+/** 端末内のローカルフォルダをブラウズして選ぶダイアログ。
+ *  上部のショートカット (内部ストレージ/Download/DCIM/SD…) でジャンプし、サブフォルダを
+ *  タップして掘り下げ、「このフォルダを選択」で確定する。SAF を経由しないので、選んだ
+ *  絶対パスをそのまま同期の localPath にできる (要 MANAGE_EXTERNAL_STORAGE)。 */
 @Composable
 private fun LocalFolderPickerDialog(
+    initialPath: String,
     onDismiss: () -> Unit,
     onPick: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val candidates = remember { collectLocalFolderCandidates(context) }
+    val rootPath = remember {
+        android.os.Environment.getExternalStorageDirectory()?.absolutePath ?: "/storage/emulated/0"
+    }
+    // 既存のパスが有効なフォルダならそこから開始、なければ内部ストレージ直下から。
+    var current by remember {
+        val start = java.io.File(initialPath).takeIf { it.isDirectory } ?: java.io.File(rootPath)
+        mutableStateOf(start)
+    }
+    val subDirs = remember(current.absolutePath) {
+        runCatching {
+            current.listFiles()
+                ?.filter { it.isDirectory && !it.isHidden }
+                ?.sortedBy { it.name.lowercase(Locale.getDefault()) }
+        }.getOrNull() ?: emptyList()
+    }
+    val canGoUp = current.parentFile != null && current.absolutePath != "/" && current.absolutePath != "/storage"
+
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("ローカルフォルダを選ぶ") },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                if (candidates.isEmpty()) {
-                    Text(
-                        "候補が見つかりません。ストレージへのアクセス権限を確認してください。",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                } else {
-                    candidates.forEach { c ->
-                        TextButton(
-                            onClick = { onPick(c.path) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.Start,
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // ジャンプ用ショートカット (横スクロール)。
+                if (candidates.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    ) {
+                        candidates.forEach { c ->
+                            FilterChip(
+                                selected = current.absolutePath == c.path,
+                                onClick = { current = java.io.File(c.path) },
+                                label = { Text(c.label) },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                // 現在地 + 上へ。
+                Text(
+                    current.absolutePath,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TextButton(
+                    onClick = { current.parentFile?.let { current = it } },
+                    enabled = canGoUp,
+                ) { Text("⬆ 上のフォルダへ") }
+                HorizontalDivider()
+                // サブフォルダ一覧。
+                Column(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                ) {
+                    if (subDirs.isEmpty()) {
+                        Text(
+                            "このフォルダ以下にサブフォルダはありません",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    } else {
+                        subDirs.forEach { d ->
+                            TextButton(
+                                onClick = { current = d },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text(c.label, style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    c.path,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                if (c.note != null) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(
+                                        Icons.Default.FolderOpen,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 8.dp),
+                                    )
                                     Text(
-                                        c.note,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error,
+                                        d.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
@@ -336,7 +389,8 @@ private fun LocalFolderPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+        confirmButton = { TextButton(onClick = { onPick(current.absolutePath) }) { Text("このフォルダを選択") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
     )
 }
 
