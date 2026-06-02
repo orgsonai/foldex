@@ -121,8 +121,6 @@ fun MainScreen(
     // HOME 以外の **タブルート** にいるときに端末の戻るボタンが押されたら、(子の BackHandler が
     // 処理しなければ) 終了ではなく HOME に戻す。サブルート (server/new, settings/trash 等) は
     // NavController の通常の popBackStack に任せる。
-    // リモート最上位で戻ったときの接続一覧への遷移は FileBrowserScreen(onExitRemote) が処理する。
-    // ここでは「HOME 以外のタブルートで、子が処理しなかった戻る」を HOME に集約するだけ。
     val isTabRoot = currentRoute != null && TopTab.entries.any { it.route == currentRoute }
     BackHandler(enabled = isTabRoot && currentRoute != TopTab.HOME.route) {
         selectTab(TopTab.HOME)
@@ -212,11 +210,7 @@ fun MainScreen(
                 )
             }
             composable(TopTab.FILES.route) {
-                FileBrowserScreen(
-                    viewModel = browserViewModel,
-                    // リモートの最上位で戻ったら接続一覧へ (どの経路で開いても「リモートのみ」接続へ戻す)。
-                    onExitRemote = { selectTab(TopTab.CONNECTIONS) },
-                )
+                FileBrowserScreen(viewModel = browserViewModel)
             }
             composable(TopTab.CONNECTIONS.route) {
                 ConnectionsScreen(
