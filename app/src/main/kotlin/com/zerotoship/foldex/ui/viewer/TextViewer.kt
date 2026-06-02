@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
@@ -212,6 +213,10 @@ private fun SoraEditor(
             setLineNumberEnabled(true)
             // カーソルブリンクを少し遅くする (= 描画頻度減)。0 で完全停止だが視認性が下がる。
             setCursorBlinkPeriod(750)
+            // カーソル移動アニメーションを無効化。既定 ON だとカーソルが新しい位置へ「滑って」
+            // 追従するため、連続入力や (特に) 連続削除でカーソルが追いつかず、動きが遅い=ラグと
+            // 体感される。OFF にすると即座に移動して入力/削除がきびきび感じられる。
+            isCursorAnimationEnabled = false
         }
     }
 
@@ -311,7 +316,14 @@ private fun SoraEditor(
             factory = { editor },
             // 行番号 (gutter) がぴったり画面左端から描画されるとシステムジェスチャ領域 +
             // 視覚的に詰まって読みにくいので、左端に少し余白を入れる。
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 4.dp),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(start = 4.dp)
+                // 画面左端はシステムの「戻る」ジェスチャ領域 (~20dp) で、選択ハンドルを左端まで
+                // ドラッグしようとするとそのジェスチャに横取りされ、行頭文字までカーソル/選択を
+                // 伸ばせなかった。エディタ領域をジェスチャ対象から除外して端まで届くようにする。
+                .systemGestureExclusion(),
             update = { /* 状態反映は LaunchedEffect 側で行う */ },
         )
 
