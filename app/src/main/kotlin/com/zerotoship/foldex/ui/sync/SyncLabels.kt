@@ -3,8 +3,10 @@ package com.zerotoship.foldex.ui.sync
 import com.zerotoship.foldex.core.model.ConflictPolicy
 import com.zerotoship.foldex.core.model.ScheduleType
 import com.zerotoship.foldex.core.model.SyncDirection
+import com.zerotoship.foldex.core.model.SyncJob
 import com.zerotoship.foldex.core.model.SyncSchedule
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 internal fun directionLabel(direction: SyncDirection): String = when (direction) {
@@ -38,6 +40,27 @@ private fun timeLabel(minutesOfDay: Int): String =
     "%02d:%02d".format((minutesOfDay / 60).coerceIn(0, 23), (minutesOfDay % 60).coerceIn(0, 59))
 
 private val WEEKDAY_LABELS = listOf("月", "火", "水", "木", "金", "土", "日")
+
+/**
+ * 次回実行予定の表示文字列 (なければ null)。
+ * - 時刻指定 (毎日/毎週/毎月/日時): [SyncSchedule.nextFireTimeMillis] の結果。
+ * - INTERVAL: 前回実行 + 間隔の目安 (WorkManager 制御なので「目安」表記)。
+ * - 手動のみ / 無効: null。
+ */
+internal fun nextRunLabel(job: SyncJob): String? {
+    if (!job.enabled) return null
+    val s = job.schedule
+    val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
+    return when {
+        s.isManualOnly -> null
+        s.type == ScheduleType.INTERVAL -> {
+            val base = job.lastRunAt ?: System.currentTimeMillis()
+            val next = base + s.intervalMinutes.toLong() * 60_000L
+            "${fmt.format(Date(next))} 目安"
+        }
+        else -> s.nextFireTimeMillis()?.let { fmt.format(Date(it)) }
+    }
+}
 
 internal fun scheduleLabel(s: SyncSchedule): String = when (s.type) {
     ScheduleType.INTERVAL -> intervalLabel(s.intervalMinutes)

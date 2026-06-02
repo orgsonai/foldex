@@ -43,6 +43,8 @@ class SyncEngine @Inject constructor(
         val startedAt = System.currentTimeMillis()
         val tracker = ProgressTracker(onProgress)
         tracker.enterScanning()
+        // 実行の境界をログに残す (詳細な per-file ログは Executor の onAction が出す)。
+        appLogger.info("Sync(${job.name})", "── 同期を開始しました ──")
 
         return try {
             val localRoot = FileUri.fromStorageString(job.localUri)

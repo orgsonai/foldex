@@ -64,9 +64,11 @@ fun AppLogScreen(
     val listState = rememberLazyListState()
     var confirmClear by remember { mutableStateOf(false) }
 
-    // 永久ログの保存先 (.log) をユーザーに手動作成させる。CreateDocument は MIME と既定ファイル名を取る。
+    // 永久ログの保存先 (.log) をユーザーに手動作成させる。
+    // MIME に "text/plain" を使うと SAF が拡張子 .txt を補って "foldex.log.txt" になってしまうため、
+    // 標準拡張子を持たない "application/octet-stream" を使い、指定した "foldex.log" のまま作らせる。
     val createLogFile = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain"),
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
         if (uri != null) {
             runCatching {

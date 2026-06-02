@@ -105,26 +105,29 @@ internal class Executor(
                                     when (done.kind) {
                                         TransferKind.UPLOAD -> {
                                             uploaded.incrementAndGet()
-                                            onAction("Upload: ${action.path} (${done.bytes}B)", ActionLevel.INFO)
+                                            // 転送先 (リモート) に既にあれば「更新」、無ければ「新規」。
+                                            val kind = if (currentRemote.containsKey(action.path)) "更新" else "新規"
+                                            onAction("アップロード($kind): ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
                                         }
                                         TransferKind.DOWNLOAD -> {
                                             downloaded.incrementAndGet()
-                                            onAction("Download: ${action.path} (${done.bytes}B)", ActionLevel.INFO)
+                                            val kind = if (currentLocal.containsKey(action.path)) "更新" else "新規"
+                                            onAction("ダウンロード($kind): ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
                                         }
                                         TransferKind.CONFLICT -> {
                                             conflicts.incrementAndGet()
-                                            onAction("両側更新→転送: ${action.path} (${done.bytes}B)", ActionLevel.INFO)
+                                            onAction("両側更新→転送: ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
                                         }
                                     }
                                 }
                                 Done.Delete -> {
                                     deleted.incrementAndGet()
                                     val side = when (action) {
-                                        is SyncAction.DeleteRemote -> "remote"
-                                        is SyncAction.DeleteLocal -> "local"
+                                        is SyncAction.DeleteRemote -> "リモート"
+                                        is SyncAction.DeleteLocal -> "ローカル"
                                         else -> "?"
                                     }
-                                    onAction("Delete($side): ${action.path}", ActionLevel.INFO)
+                                    onAction("削除($side): ${action.path}", ActionLevel.INFO)
                                 }
                             }
                         } catch (e: CancellationException) {
@@ -132,7 +135,14 @@ internal class Executor(
                         } catch (e: Exception) {
                             failed.incrementAndGet()
                             errors.add(SyncResult.ActionError(action.path, e.message ?: e.toString()))
-                            onAction("失敗: ${action.path} — ${e.message}", ActionLevel.ERROR)
+                            val what = when (action) {
+                                is SyncAction.Upload -> "アップロード"
+                                is SyncAction.Download -> "ダウンロード"
+                                is SyncAction.DeleteRemote, is SyncAction.DeleteLocal -> "削除"
+                                is SyncAction.Conflict -> "両側更新の転送"
+                                is SyncAction.Skip -> "処理"
+                            }
+                            onAction("失敗($what): ${action.path} — ${e.message ?: e.toString()}", ActionLevel.ERROR)
                         }
                         tracker.actionCompleted()
                     }
@@ -323,4 +333,12 @@ internal class Executor(
     private companion object {
         const val COPY_BUFFER_SIZE = 64 * 1024
     }
+}
+
+/** ログ表示用にバイト数を読みやすい単位へ整形する。 */
+private fun humanBytes(b: Long): String = when {
+    b >= 1024L * 1024 * 1024 -> "%.1fGB".format(b / (1024.0 * 1024 * 1024))
+    b >= 1024L * 1024 -> "%.1fMB".format(b / (1024.0 * 1024))
+    b >= 1024L -> "%.1fKB".format(b / 1024.0)
+    else -> "${b}B"
 }
