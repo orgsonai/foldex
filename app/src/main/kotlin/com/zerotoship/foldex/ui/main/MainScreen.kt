@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -85,9 +86,9 @@ fun MainScreen(
     val currentRoute = backStackEntry?.destination?.route
     val context = LocalContext.current
 
-    // FILES タブで今開いている内容を「どこから開いたか」。ファイルルートで戻ったときの戻り先に使う。
-    // 接続タブからリモートを開いたら CONNECTIONS、それ以外 (HOME のタイル等) は HOME。
-    var filesOrigin by remember { mutableStateOf(TopTab.HOME) }
+    // FILES タブの内容を「接続タブから開いたか」。ファイルルートで戻ったときの戻り先判定に使う。
+    // rememberSaveable: アクティビティ再生成 (構成変更等) で値が HOME 相当に戻らないように保持する。
+    var filesFromConnections by rememberSaveable { mutableStateOf(false) }
 
     fun selectTab(tab: TopTab) {
         navController.navigate(tab.route) {
@@ -101,7 +102,7 @@ fun MainScreen(
     // 受け取りは MainActivity が `pendingShortcut` で保持し、一度処理したら null に戻す。
     androidx.compose.runtime.LaunchedEffect(shortcutAction) {
         when (shortcutAction) {
-            "files" -> { filesOrigin = TopTab.HOME; selectTab(TopTab.FILES) }
+            "files" -> { filesFromConnections = false; selectTab(TopTab.FILES) }
             "connections" -> selectTab(TopTab.CONNECTIONS)
             "server" -> selectTab(TopTab.SERVER)
             "sync" -> selectTab(TopTab.SYNC)
@@ -120,7 +121,7 @@ fun MainScreen(
     androidx.compose.runtime.LaunchedEffect(sharedUris) {
         if (sharedUris.isNotEmpty()) {
             browserViewModel.receiveSharedFiles(sharedUris)
-            filesOrigin = TopTab.HOME
+            filesFromConnections = false
             selectTab(TopTab.FILES)
             onSharedUrisConsumed()
         }
@@ -132,8 +133,8 @@ fun MainScreen(
     val isTabRoot = currentRoute != null && TopTab.entries.any { it.route == currentRoute }
     BackHandler(enabled = isTabRoot && currentRoute != TopTab.HOME.route) {
         // FILES タブのルートで戻る場合、接続タブから開いたリモートなら HOME の前に接続一覧へ戻す。
-        if (currentRoute == TopTab.FILES.route && filesOrigin == TopTab.CONNECTIONS) {
-            filesOrigin = TopTab.HOME
+        if (currentRoute == TopTab.FILES.route && filesFromConnections) {
+            filesFromConnections = false
             selectTab(TopTab.CONNECTIONS)
         } else {
             selectTab(TopTab.HOME)
@@ -143,7 +144,7 @@ fun MainScreen(
     // SAF ピッカー (HOME の SAF タイル or 権限タイルから呼ぶ用)。選択後はファイルブラウザで開く。
     val safLauncher = rememberSafTreeLauncher { treeUri ->
         browserViewModel.onSafRootPicked(treeUri)
-        filesOrigin = TopTab.HOME
+        filesFromConnections = false
         selectTab(TopTab.FILES)
     }
 
@@ -185,14 +186,14 @@ fun MainScreen(
                     browserViewModel = browserViewModel,
                     onOpenLocalFolder = { path ->
                         browserViewModel.open(FileUri.Local(path), displayName = path.substringAfterLast('/').ifEmpty { path })
-                        filesOrigin = TopTab.HOME
+                        filesFromConnections = false
                         selectTab(TopTab.FILES)
                     },
                     onOpenFunction = { fn ->
                         when (fn) {
                             HomeFunction.INTERNAL_STORAGE -> {
                                 browserViewModel.openLocalRoot()
-                                filesOrigin = TopTab.HOME
+                                filesFromConnections = false
                                 selectTab(TopTab.FILES)
                             }
                             HomeFunction.TRASH -> navController.navigate("settings/trash")
@@ -217,12 +218,12 @@ fun MainScreen(
                             )
                         }
                         // HOME のショートカットから開いた場合は戻り先も HOME。
-                        filesOrigin = TopTab.HOME
+                        filesFromConnections = false
                         selectTab(TopTab.FILES)
                     },
                     onOpenUri = { uri, name ->
                         browserViewModel.open(uri, displayName = name)
-                        filesOrigin = TopTab.HOME
+                        filesFromConnections = false
                         selectTab(TopTab.FILES)
                     },
                     onPickFolder = { safLauncher.launch(null) },
@@ -251,7 +252,7 @@ fun MainScreen(
                             )
                         }
                         // ファイルルートで戻ったとき接続一覧に帰れるよう起点を記録。
-                        filesOrigin = TopTab.CONNECTIONS
+                        filesFromConnections = true
                         selectTab(TopTab.FILES)
                     },
                 )
@@ -333,7 +334,7 @@ fun MainScreen(
                             FileUri.Local(path),
                             displayName = path.substringAfterLast('/').ifEmpty { path },
                         )
-                        filesOrigin = TopTab.HOME
+                        filesFromConnections = false
                         selectTab(TopTab.FILES)
                     },
                 )
