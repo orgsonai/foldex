@@ -74,6 +74,7 @@ import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
 import io.github.rosemoe.sora.widget.schemes.SchemeDarcula
 import io.github.rosemoe.sora.widget.schemes.SchemeGitHub
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -201,7 +202,8 @@ private fun SoraEditor(
 
     // CodeEditor インスタンスを Composable のライフサイクルで保持。
     val editor = remember {
-        CodeEditor(context).apply {
+        // 標準 CodeEditor ではなく、長押し→そのままドラッグで範囲選択できる派生クラスを使う。
+        DragSelectCodeEditor(context).apply {
             // 補完ポップアップ等は非コード用途なので無効化。
             getComponent(EditorAutoCompletion::class.java).isEnabled = false
             // 等幅 + 13sp 既定。サイズは Sora 内部で px なので sp→px 変換。
@@ -217,6 +219,9 @@ private fun SoraEditor(
             // 追従するため、連続入力や (特に) 連続削除でカーソルが追いつかず、動きが遅い=ラグと
             // 体感される。OFF にすると即座に移動して入力/削除がきびきび感じられる。
             isCursorAnimationEnabled = false
+            // 選択ハンドル (しずく) を一回り大きくする。掴み判定はハンドルの矩形 + 約7dp なので、
+            // ハンドルを拡大するとラフにドラッグしても掴めるようになる (= 大体の位置で掴める)。
+            handleStyle.setScale(1.5f)
         }
     }
 
@@ -230,24 +235,30 @@ private fun SoraEditor(
     }
 
     // 編集イベントを購読して Undo/Redo の有効状態を反映。
-    // 毎キーストロークで Compose state を書くとスナップショット書込みのオーバーヘッドで
-    // 入力レイテンシが出るので、150ms debounce してまとめて反映 (人間の連続タイプには十分短い)。
+    // 毎キーストロークで Compose state を書くとスナップショット書込みのオーバーヘッドで入力
+    // レイテンシが出る。さらに以前のようにキーストローク毎にコルーチンを起動/キャンセルすると
+    // メインスレッドにも細かい負荷が乗るため、変更通知は CONFLATED チャネルに trySend するだけ
+    // (= 確保ゼロ・非ブロッキング) にし、収集側で「150ms 静かになったらまとめて 1 回反映」する
+    // trailing debounce にして入力経路を軽くする。
+    val changeTick = remember { Channel<Unit>(Channel.CONFLATED) }
     DisposableEffect(editor) {
-        var pendingJob: kotlinx.coroutines.Job? = null
         val sub = editor.subscribeAlways(ContentChangeEvent::class.java) { _ ->
-            pendingJob?.cancel()
-            pendingJob = scope.launch {
-                kotlinx.coroutines.delay(150)
-                val newCanUndo = editor.canUndo()
-                val newCanRedo = editor.canRedo()
-                if (canUndo != newCanUndo) canUndo = newCanUndo
-                if (canRedo != newCanRedo) canRedo = newCanRedo
-                if (status != null) status = null
-            }
+            changeTick.trySend(Unit)
         }
-        onDispose {
-            sub.unsubscribe()
-            pendingJob?.cancel()
+        onDispose { sub.unsubscribe() }
+    }
+    LaunchedEffect(editor) {
+        while (true) {
+            changeTick.receive() // 最初の変更を待つ
+            // 150ms 入力が途切れるまで待つ (途切れない限り反映しない = recomposition を抑制)
+            while (kotlinx.coroutines.withTimeoutOrNull(150) { changeTick.receive() } != null) {
+                // 連続入力中は何もせず待ち続ける
+            }
+            val newCanUndo = editor.canUndo()
+            val newCanRedo = editor.canRedo()
+            if (canUndo != newCanUndo) canUndo = newCanUndo
+            if (canRedo != newCanRedo) canRedo = newCanRedo
+            if (status != null) status = null
         }
     }
 
