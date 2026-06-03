@@ -81,6 +81,12 @@ class SyncWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * expedited ワーカーの前景化情報。Android 12 未満では expedited 実行に前景サービスを使うため
+     * WorkManager がこの値を要求する (12 以降は JobScheduler の expedited job として走る)。
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo()
+
     /** 長時間ワーカー用の前景通知 (IMPORTANCE_LOW = 無音)。Android 14+ は dataSync 型を明示。 */
     private fun createForegroundInfo(): ForegroundInfo {
         ensureChannel()

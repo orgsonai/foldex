@@ -89,6 +89,12 @@ class DiffEngine(
         val ls = localSideState(l, p)
         val rs = remoteSideState(r, p)
 
+        // 両側とも前回同期から無変化 → 何もしない (既に同期済み)。
+        // ストレージ間で mtime が食い違っても、各側がスナップショットと一致していれば同期済みとみなす。
+        // これが無いと SMB 等がアップロード時に付け直す mtime で sameContent(l, r) が偽になり、
+        // 「ローカルもリモートも変えていないのに毎回 競合(両側更新)→再転送」になってしまう。
+        if (ls == SideState.SAME && rs == SideState.SAME) return SyncAction.Skip(path, SkipReason.UNCHANGED)
+
         // 両側に存在し内容が完全一致 → 既に同期済み
         if (l != null && r != null && sameContent(l, r)) return SyncAction.Skip(path, SkipReason.UNCHANGED)
 

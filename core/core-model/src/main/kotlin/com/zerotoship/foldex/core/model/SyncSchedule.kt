@@ -51,16 +51,21 @@ data class SyncSchedule(
     val isSimpleInterval: Boolean
         get() = type == ScheduleType.INTERVAL && intervalMinutes >= MIN_INTERVAL_MINUTES
 
-    /** 実行後にまた次回をスケジュールし直す必要がある種別か (DATETIME は 1 回限りなので不要)。 */
+    /**
+     * 実行後にまた次回をスケジュールし直す必要がある種別か (DATETIME は 1 回限りなので不要)。
+     * INTERVAL も AlarmManager 方式で「次回時刻」を都度貼り直すため対象に含める。
+     */
     val isRecurringOneShot: Boolean
-        get() = type == ScheduleType.DAILY || type == ScheduleType.WEEKLY || type == ScheduleType.MONTHLY
+        get() = type == ScheduleType.DAILY || type == ScheduleType.WEEKLY ||
+            type == ScheduleType.MONTHLY || isSimpleInterval
 
     /**
      * [from] (epoch ms) より後で最初に実行すべき時刻 (epoch ms)。実行予定がなければ null。
-     * INTERVAL / 手動のみ の場合も null (それらは PeriodicWorkRequest 側で扱う)。
+     * INTERVAL は [from] + 間隔。手動のみ (間隔 < 最小値) は null。
      */
     fun nextFireTimeMillis(from: Long = System.currentTimeMillis()): Long? = when (type) {
-        ScheduleType.INTERVAL -> null
+        ScheduleType.INTERVAL ->
+            if (intervalMinutes >= MIN_INTERVAL_MINUTES) from + intervalMinutes * 60_000L else null
         ScheduleType.DATETIME -> dateTimeMillis.takeIf { it > from }
         ScheduleType.DAILY -> nextWithTime(from) { true }
         ScheduleType.WEEKLY -> {

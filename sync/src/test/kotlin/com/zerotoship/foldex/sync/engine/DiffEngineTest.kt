@@ -151,6 +151,19 @@ class DiffEngineTest {
     }
 
     @Test
+    fun `bidirectional with both sides matching snapshot is skipped even if cross-storage mtimes differ`() {
+        // SMB 等はアップロード時にリモート側 mtime を付け直すため local.mtime != remote.mtime に
+        // なりうる。両側ともスナップショットと一致していれば「同期済み」で再転送してはいけない。
+        val actions = diff(
+            direction = SyncDirection.BIDIRECTIONAL,
+            local = mapOf("a.txt" to e("a.txt", 10L, 100L)),
+            remote = mapOf("a.txt" to e("a.txt", 10L, 555L)), // mtime だけ食い違う
+            previous = mapOf("a.txt" to state("a.txt", 10L, 100L, 10L, 555L)),
+        )
+        assertEquals(listOf(SyncAction.Skip("a.txt", SkipReason.UNCHANGED)), actions)
+    }
+
+    @Test
     fun `keep both produces a conflict action with a rename plan`() {
         val actions = diff(
             policy = ConflictPolicy.KEEP_BOTH,

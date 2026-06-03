@@ -5,25 +5,25 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.zerotoship.foldex.core.model.SyncJob
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * SyncJob のスケジュールを WorkManager へ橋渡しする — 仕様書 §8-K。
+ * SyncJob のスケジュールを WorkManager / AlarmManager へ橋渡しする — 仕様書 §8-K。
  *
- * - `INTERVAL` (>= 15 分): `PeriodicWorkRequest` で定期実行 (WorkManager 標準制約)。
- * - `DAILY` / `WEEKLY` / `MONTHLY` / `DATETIME`: 次回実行時刻を算出して `OneTimeWorkRequest` を
- *   `setInitialDelay` で予約する。実行後に [scheduleNext] を呼んで次回を再予約する
- *   (PeriodicWorkRequest では「毎日 2 時」のような時刻指定ができないため)。
+ * - すべての定期種別 (`INTERVAL` / `DAILY` / `WEEKLY` / `MONTHLY` / `DATETIME`) は次回実行時刻を
+ *   算出し、`AlarmManager.setAndAllowWhileIdle` でアラームを貼る ([scheduleNext])。発火は
+ *   [SyncAlarmReceiver] が受け、そこで expedited な `OneTimeWorkRequest` を即時実行する。
+ *   1 回限りの `DATETIME` 以外は実行のたびに次回を再予約する。
+ *   (旧実装は INTERVAL を `PeriodicWorkRequest` で回していたが、WorkManager の通常ジョブは
+ *   Doze 中に起動されず「スリープ解除まで動かない」ため、時刻指定と同じアラーム方式に統一した。)
  * - 手動のみ / 実行予定なし: 何も登録しない。[runNow] でのみ実行。
  */
 @Singleton
@@ -35,11 +35,12 @@ class SyncScheduler @Inject constructor(
     /** ジョブ設定を WorkManager / AlarmManager に反映する (保存/更新の直後に呼ぶ)。 */
     fun apply(job: SyncJob) {
         // 種別が変わった可能性があるので、まず全ての登録を解除してから貼り直す。
+        // cancelPeriodic は旧バージョンが残した PeriodicWorkRequest の後始末を兼ねる。
         cancelPeriodic(job.id)
         cancelScheduled(job.id)
         cancelAlarm(job.id)
         if (!job.enabled) return
-        if (job.schedule.isSimpleInterval) enqueuePeriodic(job) else scheduleNext(job)
+        scheduleNext(job)
     }
 
     /**
@@ -60,25 +61,19 @@ class SyncScheduler @Inject constructor(
         runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi) }
     }
 
-    /** アラーム発火時の即時実行 (遅延なし)。制約はジョブ設定に従う。 */
+    /**
+     * アラーム発火時の即時実行 (遅延なし)。制約はジョブ設定に従う。
+     * expedited 指定により Doze 中でもクォータ内で即起動する (クォータ切れ時は通常実行に降格)。
+     * SyncWorker は実行開始後に自前で前景化するため、起動さえできれば最後まで走り切れる。
+     */
     fun fireNow(job: SyncJob) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(syncConstraints(job))
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .setInputData(workDataOf(SyncWorker.KEY_JOB_ID to job.id))
             .addTag(tagFor(job.id))
             .build()
         workManager.enqueueUniqueWork(scheduledName(job.id), ExistingWorkPolicy.REPLACE, request)
-    }
-
-    private fun enqueuePeriodic(job: SyncJob) {
-        val request = PeriodicWorkRequestBuilder<SyncWorker>(
-            job.schedule.intervalMinutes.toLong(), TimeUnit.MINUTES,
-        )
-            .setConstraints(syncConstraints(job))
-            .setInputData(workDataOf(SyncWorker.KEY_JOB_ID to job.id))
-            .addTag(tagFor(job.id))
-            .build()
-        workManager.enqueueUniquePeriodicWork(periodicName(job.id), ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     /**
@@ -102,10 +97,11 @@ class SyncScheduler @Inject constructor(
 
     enum class JobRunStatus { IDLE, ENQUEUED, RUNNING }
 
-    /** いますぐ 1 回だけ同期する (手動同期)。 */
+    /** いますぐ 1 回だけ同期する (手動同期)。画面OFF/Doze に入っても止まらないよう expedited 化。 */
     fun runNow(job: SyncJob) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(syncConstraints(job))
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .setInputData(workDataOf(SyncWorker.KEY_JOB_ID to job.id))
             .addTag(tagFor(job.id))
             .build()
@@ -147,8 +143,6 @@ class SyncScheduler @Inject constructor(
     private fun oneShotName(jobId: String) = "sync-now-$jobId"
 
     companion object {
-        /** WorkManager の最小定期実行間隔 (分)。 */
-        const val MIN_PERIODIC_MINUTES = 15
         private const val TAG_PREFIX = "sync-job:"
         fun tagFor(jobId: String) = "$TAG_PREFIX$jobId"
     }
