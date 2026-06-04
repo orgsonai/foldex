@@ -225,6 +225,25 @@ fun SettingsScreen(
                     }
                 }
             }
+            SwitchRow(
+                title = "キュー待ちの自動解除",
+                subtitle = "Wi-Fi 待ちなどでキューに溜まったままの同期を一定時間で解除",
+                checked = settings.syncQueueTimeoutEnabled,
+                onCheckedChange = viewModel::setSyncQueueTimeoutEnabled,
+            )
+            if (settings.syncQueueTimeoutEnabled) {
+                SettingRow(title = "解除までの時間", subtitle = "この時間を過ぎても開始しなければ自動で解除", wide = true) {
+                    ChipsControl {
+                        listOf(1, 5, 10, 30, 60).forEach { min ->
+                            FilterChip(
+                                selected = settings.syncQueueTimeoutMinutes == min,
+                                onClick = { viewModel.setSyncQueueTimeoutMinutes(min) },
+                                label = { Text(if (min >= 60) "${min / 60}時間" else "${min}分") },
+                            )
+                        }
+                    }
+                }
+            }
 
             HorizontalDivider()
             SettingsSectionHeader("ファイル")

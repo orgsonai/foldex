@@ -271,7 +271,7 @@ class FileBrowserViewModel @Inject constructor(
             }
             parent = parentUri(parent)
         }
-        return ViewMode.LIST
+        return ViewMode.DETAILED
     }
 
     private fun saveViewMode(uri: FileUri, mode: ViewMode, applyToSubtree: Boolean) {

@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
@@ -138,6 +139,7 @@ fun SyncJobsScreen(
                                 ?: com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE,
                             dragHandleModifier = dragHandle,
                             onRunNow = { viewModel.runNow(job) },
+                            onCancelRun = { viewModel.cancelRun(job) },
                             onToggleEnabled = { enabled -> viewModel.setEnabled(job, enabled) },
                             onEdit = { onEdit(job) },
                             onOpenBackups = { onOpenBackups(job) },
@@ -174,6 +176,7 @@ private fun SyncJobRow(
     job: SyncJob,
     runStatus: com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus,
     onRunNow: () -> Unit,
+    onCancelRun: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onEdit: () -> Unit,
     onOpenBackups: () -> Unit,
@@ -219,16 +222,31 @@ private fun SyncJobRow(
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            // 実行中はスピナー、それ以外は通常の Sync アイコン。
-            IconButton(onClick = onRunNow, enabled = runStatus == com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE) {
-                if (runStatus == com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.RUNNING) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(20.dp),
-                    )
-                } else {
-                    Icon(Icons.Default.Sync, contentDescription = "今すぐ同期")
-                }
+            // IDLE = 通常の Sync (今すぐ実行)。実行中 / キュー中 はタップで「解除」できる。
+            // 制約 (Wi-Fi 限定など) 未充足で「キュー中」のまま滞留したジョブの脱出口。
+            when (runStatus) {
+                com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE ->
+                    IconButton(onClick = onRunNow) {
+                        Icon(Icons.Default.Sync, contentDescription = "今すぐ同期")
+                    }
+                com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.ENQUEUED ->
+                    IconButton(onClick = onCancelRun) {
+                        Icon(Icons.Default.Close, contentDescription = "キュー待ちを解除")
+                    }
+                com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.RUNNING ->
+                    IconButton(onClick = onCancelRun) {
+                        Box(contentAlignment = Alignment.Center) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "実行を停止",
+                                modifier = Modifier.size(12.dp),
+                            )
+                        }
+                    }
             }
             IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "編集") }
             IconButton(onClick = onOpenBackups) { Icon(Icons.Default.History, contentDescription = "削除バックアップ") }

@@ -20,6 +20,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.NodeType
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // 行アイテムはスクロール中に大量に compose/measure されるため、
 // 無駄な描画 (選択時以外の background 塗り = overdraw) や余計なアロケーションを避ける。
@@ -71,12 +74,14 @@ fun FileDetailedItem(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    // 詳細表示では日付だけでなく時刻 (分まで) も出す。端末のタイムゾーン/ロケールに従う。
+    val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
     val subtitle = remember(node.size, node.lastModified) {
         buildString {
             if (node.size >= 0) append(formatSize(node.size))
-            node.lastModified?.let {
+            node.lastModified?.toEpochMilliseconds()?.let { ms ->
                 if (isNotEmpty()) append("  ")
-                append(it.toString().take(10))
+                append(dateFmt.format(Date(ms)))
             }
         }
     }

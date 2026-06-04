@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.WrapText
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -45,6 +46,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -66,6 +68,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.zerotoship.foldex.ui.components.FastScrollbar
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.widget.CodeEditor
@@ -199,6 +204,11 @@ private fun SoraEditor(
     var canRedo by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
+    // 未保存の編集が下書きとして退避されているかの目印。最初の編集で true、保存成功でリセット。
+    // 何も触っていない時に下書きを書かないようにするためのフラグ。
+    var dirty by remember(file) { mutableStateOf(false) }
+    // 前回の未保存下書きが見つかったとき、復元可否を尋ねるためのテキスト (null なら問わない)。
+    var draftToRestore by remember(file) { mutableStateOf<String?>(null) }
 
     // CodeEditor インスタンスを Composable のライフサイクルで保持。
     val editor = remember {
@@ -229,9 +239,18 @@ private fun SoraEditor(
     LaunchedEffect(file) {
         // ContentCreator を使うと巨大テキストでもメモリ効率良くロード可能。ここでは直接 setText で OK。
         editor.setText(initial)
-        // ロード直後は undo スタックが空。
+        // ロード直後は undo スタックが空 / 未編集扱い。
         canUndo = false
         canRedo = false
+        dirty = false
+        // 前回タスクキル等で残った下書きがあれば復元を提案する。ファイル内容と同じなら陳腐化と
+        // みなして黙って消す。
+        val draft = withContext(Dispatchers.IO) { EditorDraftStore.read(context, file) }
+        when {
+            draft == null -> Unit
+            draft != initial -> draftToRestore = draft
+            else -> withContext(Dispatchers.IO) { EditorDraftStore.clear(context, file) }
+        }
     }
 
     // 編集イベントを購読して Undo/Redo の有効状態を反映。
@@ -244,6 +263,7 @@ private fun SoraEditor(
     DisposableEffect(editor) {
         val sub = editor.subscribeAlways(ContentChangeEvent::class.java) { _ ->
             changeTick.trySend(Unit)
+            dirty = true
         }
         onDispose { sub.unsubscribe() }
     }
@@ -259,7 +279,26 @@ private fun SoraEditor(
             if (canUndo != newCanUndo) canUndo = newCanUndo
             if (canRedo != newCanRedo) canRedo = newCanRedo
             if (status != null) status = null
+            // 入力が落ち着いたタイミングで未保存テキストを下書きへ退避する。
+            // 読みは main、書き込みは IO に逃がす。
+            if (dirty) {
+                val snapshot = editor.text.toString()
+                withContext(Dispatchers.IO) { EditorDraftStore.save(context, file, snapshot) }
+            }
         }
+    }
+
+    // 画面が止まる (バックグラウンド回収 / タスクキルの直前) ときに、その時点の編集テキストを
+    // 同期的に下書きへ退避する。debounce が走る前にプロセスが消えても変更を残すための保険。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, editor, file) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && dirty) {
+                EditorDraftStore.save(context, file, editor.text.toString())
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // テーマ色の動的更新。Material 色を Sora の ColorScheme に流す。
@@ -402,8 +441,36 @@ private fun SoraEditor(
                         onSaveRemote(file) -> "保存しました"
                         else -> "リモートへの保存に失敗しました (再試行してください)"
                     }
+                    // ローカルへ書き出せた時点で下書きは陳腐化するので消す (リモート失敗時も
+                    // ローカルには反映済みなので、再オープン時の内容は下書きと一致する)。
+                    if (localOk) {
+                        dirty = false
+                        withContext(Dispatchers.IO) { EditorDraftStore.clear(context, file) }
+                    }
                     saving = false
                 }
+            },
+        )
+    }
+
+    // 前回の未保存編集が見つかったときの復元確認。
+    draftToRestore?.let { draft ->
+        AlertDialog(
+            onDismissRequest = { draftToRestore = null },
+            title = { Text("未保存の編集が見つかりました") },
+            text = { Text("前回このファイルを編集中にアプリが閉じられたようです。保存前の内容を復元しますか?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    editor.setText(draft)
+                    dirty = true
+                    draftToRestore = null
+                }) { Text("復元") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    scope.launch { withContext(Dispatchers.IO) { EditorDraftStore.clear(context, file) } }
+                    draftToRestore = null
+                }) { Text("破棄") }
             },
         )
     }

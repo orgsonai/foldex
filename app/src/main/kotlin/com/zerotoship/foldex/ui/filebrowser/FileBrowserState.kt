@@ -61,7 +61,7 @@ data class FileBrowserState(
     /** プルダウン更新中。`isLoading` と違って全画面 CircularProgressIndicator は出さず、上端のスピナーのみ。 */
     val isRefreshing: Boolean = false,
     val error: String? = null,
-    val viewMode: ViewMode = ViewMode.LIST,
+    val viewMode: ViewMode = ViewMode.DETAILED,
     val hasStoragePermission: Boolean = false,
     val hasSafRoot: Boolean = false,
     val selectedUris: Set<String> = emptySet(),

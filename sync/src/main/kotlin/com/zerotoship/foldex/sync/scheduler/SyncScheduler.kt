@@ -108,6 +108,16 @@ class SyncScheduler @Inject constructor(
         workManager.enqueueUniqueWork(oneShotName(job.id), ExistingWorkPolicy.REPLACE, request)
     }
 
+    /**
+     * いま実行中 / キュー待ちの 1 回分だけを取り消す (定期予約のアラームは残す)。
+     * 制約 (Wi-Fi 限定・要充電など) が満たされず ENQUEUED のまま滞留したジョブを、
+     * ユーザーが手動で解除するための入口。次回の定期実行予約 (AlarmManager) は維持する。
+     */
+    fun cancelRun(jobId: String) {
+        workManager.cancelUniqueWork(oneShotName(jobId))
+        cancelScheduled(jobId)
+    }
+
     /** ジョブに紐づく定期/予約/単発/アラームをすべて取り消す (ジョブ削除時など)。 */
     fun cancel(jobId: String) {
         cancelPeriodic(jobId)

@@ -49,6 +49,13 @@ data class UserSettings(
     /** 同期の完了をシステム通知するか。 */
     val notifyOnSyncComplete: Boolean = true,
     /**
+     * 手動同期がキュー (ENQUEUED) で待ち続けたとき、自動的に解除するか。
+     * Wi-Fi 限定 / 要充電などの制約が満たされないまま放置されたジョブを掃除する。
+     */
+    val syncQueueTimeoutEnabled: Boolean = true,
+    /** キュー待ちの自動解除までの分数 ([syncQueueTimeoutEnabled] が true のときのみ有効)。 */
+    val syncQueueTimeoutMinutes: Int = 10,
+    /**
      * 実行ログを永久累計保存する SAF ドキュメント URI (任意)。
      * ユーザーが手動で作成した `.log` ファイルを指す。設定されていれば [com.zerotoship.foldex.core.data.log.AppLogger]
      * が書き込みのたびにこのファイルへも追記する。null なら永久保存オフ (アプリ内ログのローテのみ)。

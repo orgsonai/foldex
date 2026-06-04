@@ -50,6 +50,8 @@ class SettingsRepository @Inject constructor(
             notifyOnFileOpComplete = p[KEY_NOTIFY_FILEOP] ?: true,
             notifyOnExtractComplete = p[KEY_NOTIFY_EXTRACT] ?: true,
             notifyOnSyncComplete = p[KEY_NOTIFY_SYNC] ?: true,
+            syncQueueTimeoutEnabled = p[KEY_SYNC_QUEUE_TIMEOUT_ON] ?: true,
+            syncQueueTimeoutMinutes = p[KEY_SYNC_QUEUE_TIMEOUT_MIN] ?: 10,
             permanentLogUri = p[KEY_PERMANENT_LOG_URI],
         )
     }
@@ -85,6 +87,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setNotifyOnSyncComplete(enabled: Boolean) = edit { it[KEY_NOTIFY_SYNC] = enabled }
 
+    suspend fun setSyncQueueTimeoutEnabled(enabled: Boolean) = edit { it[KEY_SYNC_QUEUE_TIMEOUT_ON] = enabled }
+
+    suspend fun setSyncQueueTimeoutMinutes(minutes: Int) = edit { it[KEY_SYNC_QUEUE_TIMEOUT_MIN] = minutes }
+
     /** 永久ログの保存先 URI。null/空 で永久保存オフ。 */
     suspend fun setPermanentLogUri(uri: String?) = edit {
         if (uri.isNullOrBlank()) it.remove(KEY_PERMANENT_LOG_URI) else it[KEY_PERMANENT_LOG_URI] = uri
@@ -110,6 +116,8 @@ class SettingsRepository @Inject constructor(
         val KEY_NOTIFY_FILEOP = booleanPreferencesKey("notify_fileop_complete")
         val KEY_NOTIFY_EXTRACT = booleanPreferencesKey("notify_extract_complete")
         val KEY_NOTIFY_SYNC = booleanPreferencesKey("notify_sync_complete")
+        val KEY_SYNC_QUEUE_TIMEOUT_ON = booleanPreferencesKey("sync_queue_timeout_enabled")
+        val KEY_SYNC_QUEUE_TIMEOUT_MIN = intPreferencesKey("sync_queue_timeout_minutes")
         val KEY_PERMANENT_LOG_URI = stringPreferencesKey("permanent_log_uri")
     }
 }
