@@ -260,6 +260,13 @@ docs: P1 達成サマリ
 - [x] **内蔵エディタの下書き自動保存** (`c53afae`, 0.2.27): `EditorDraftStore` で `cacheDir/editor-drafts/<sha256>.draft` にデバウンス保存、`ON_STOP` でフラッシュ、起動時に復元ダイアログ
 - [x] **アイコン微縮小** (`c53afae`, 0.2.27): ランチャー前景を 56dp → 52dp に
 
+#### P7 仕上げ第8回 — エディタ描画クラッシュ / SMB 接続復旧 / 同期ログ整理 (2026-06-08, `docs/P7-REVISIONS.md` §P) 🚧 作業途中・未コミット
+- [ ] **エディタの RenderNode クラッシュ回避** (未コミット): `isHardwareAcceleratedDrawAllowed=false` + `cacheRenderNodeForLongLines=false` で `Current state = RESET, new state = FLUSHED` を踏まなくする
+- [ ] **SMB 死セッションの追い出し** (未コミット): プール再利用判定の厳格化 + エラー時に当該接続だけ `release` して自動再接続。アプリ再起動不要に
+- [ ] **同期ログをスキップ排除 + 方向ヘッダー化** (未コミット): `── 同期開始: <方向> ──` + per-file 転送/エラーのみ。スキップログを撤去
+- [ ] **フォルダ名タップでパス手動入力ジャンプ** (未着手)
+> 次セッション: `sh ./gradlew` でビルド緑確認 → `versionName` 上げ → `fix(editor)`/`fix(smb)`/`fix(sync)` で分割コミット。
+
 ### スコープ外
 - F-Droid / Play 配布 (P8)
 - ~~LICENSE 確定 (P8)~~ → §J で前倒し確定 (GPL-3.0) → **§L で MIT に変更**。残りは各ソースへの SPDX ヘッダ付与 (P8)
