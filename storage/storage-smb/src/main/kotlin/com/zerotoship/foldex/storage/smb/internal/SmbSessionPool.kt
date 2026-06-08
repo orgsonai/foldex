@@ -35,10 +35,14 @@ internal class SmbSessionPool @Inject constructor(
                 "SmbSessionPool only handles Connection.Smb (got ${connection::class.simpleName})"
             }
             cache[connectionId]?.let { holder ->
-                // 接続が生きていて、かつキャッシュ時の host/port/share/username/domain が
-                // 現在の Connection と一致するなら再利用。一致しなければ張り直す
-                // (= 共有名や認証情報を編集したら即時反映)。
-                if (holder.share.isConnected && holder.matches(connection)) return holder.share
+                // トランスポート (TCP) と共有ツリーの両方が生きていて、かつキャッシュ時の
+                // host/port/share/username/domain が現在の Connection と一致するなら再利用。
+                // share.isConnected だけだと TCP が切れていてもツリー側のフラグが true のまま残り、
+                // 死んだセッションを再利用し続けてしまうため connection.isConnected も併せて見る。
+                // 一致しなければ張り直す (= 共有名や認証情報を編集したら即時反映)。
+                if (holder.connection.isConnected && holder.share.isConnected && holder.matches(connection)) {
+                    return holder.share
+                }
                 close(holder)
                 cache.remove(connectionId)
             }
