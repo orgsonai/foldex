@@ -29,6 +29,17 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
     private var anchorColumn = 0
 
     init {
+        // RenderNode によるハードウェアアクセラレーション描画キャッシュを無効化する。
+        // Sora は行ごとの描画を android.graphics.RenderNode に beginRecording/endRecording で
+        // 焼き込んで再利用するが、編集中の頻繁な無効化や再録画と描画の競合で
+        // フレームワークの RenderNode 状態機械が "Current state = RESET, new state = FLUSHED"
+        // (IllegalStateException) を投げ、エディタが開けず落ちることがある。
+        // キャッシュを切ると毎フレーム直接 drawText する経路になり、この状態遷移を踏まなくなる
+        // (テキスト編集用途では描画コストの増分は実用上問題にならない)。
+        isHardwareAcceleratedDrawAllowed = false
+        // 長い行専用の RenderNode キャッシュも同根なので合わせて切る。
+        props.cacheRenderNodeForLongLines = false
+
         subscribeAlways(SelectionChangeEvent::class.java) { e ->
             if (e.cause == SelectionChangeEvent.CAUSE_LONG_PRESS) {
                 // 長押しで選択された単語の左端を起点 (アンカー) にして、以降の移動で範囲を伸ばす。
