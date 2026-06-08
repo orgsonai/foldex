@@ -10,7 +10,6 @@ import com.zerotoship.foldex.core.model.StorageProvider
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.SyncDirection
 import com.zerotoship.foldex.core.model.SyncJob
-import com.zerotoship.foldex.sync.model.SkipReason
 import com.zerotoship.foldex.sync.model.SyncAction
 import com.zerotoship.foldex.sync.model.SyncProgress
 import com.zerotoship.foldex.sync.model.SyncResult
@@ -44,8 +43,8 @@ class SyncEngine @Inject constructor(
         val startedAt = System.currentTimeMillis()
         val tracker = ProgressTracker(onProgress)
         tracker.enterScanning()
-        // 実行の境界をログに残す (詳細な per-file ログは Executor の onAction が出す)。
-        appLogger.info("Sync(${job.name})", "── 同期を開始しました ──")
+        // 実行の境界と「どこからどこへ」をログに残す (詳細な per-file ログは Executor の onAction が出す)。
+        appLogger.info("Sync(${job.name})", "── 同期開始: ${directionLine(job)} ──")
 
         return try {
             val localRoot = FileUri.fromStorageString(job.localUri)
@@ -110,8 +109,8 @@ class SyncEngine @Inject constructor(
             }
 
             val tag = "Sync(${job.name})"
-            // 「なぜ転送されないか」を追えるよう、スキップの理由をログに残す。
-            logSkipReasons(tag, actions)
+            // スキップは件数が多く毎回同じものが並んでノイズになるためログに出さない。
+            // ログに残すのは「方向 (どこからどこへ)・転送したファイル・エラー」だけにする。
             val report = Executor(
                 direction = job.direction,
                 localProvider = storage,
@@ -159,28 +158,11 @@ class SyncEngine @Inject constructor(
         }
     }
 
-    /**
-     * スキップされたアクションの理由をログに出す。
-     * - 全体の内訳を 1 行 (例: `スキップ内訳: 同期済み 2199, 競合スキップ 1`)。
-     * - UNCHANGED 以外は「なぜ送られないか」が重要なので 1 件ずつ (件数が多い時は打ち切る)。
-     * UNCHANGED は通常運転で大量に出るため個別には出さない。
-     */
-    private fun logSkipReasons(tag: String, actions: List<SyncAction>) {
-        val skips = actions.filterIsInstance<SyncAction.Skip>()
-        if (skips.isEmpty()) return
-        val byReason = skips.groupingBy { it.reason }.eachCount()
-        appLogger.info(tag, "スキップ内訳: " + byReason.entries.joinToString(", ") { "${skipReasonLabel(it.key)} ${it.value}" })
-        val notable = skips.filter { it.reason != SkipReason.UNCHANGED }
-        notable.take(MAX_SKIP_LOG).forEach { appLogger.info(tag, "スキップ(${skipReasonLabel(it.reason)}): ${it.path}") }
-        if (notable.size > MAX_SKIP_LOG) appLogger.info(tag, "スキップ(ほか ${notable.size - MAX_SKIP_LOG} 件は省略)")
-    }
-
-    private fun skipReasonLabel(reason: SkipReason): String = when (reason) {
-        SkipReason.UNCHANGED -> "同期済み"
-        SkipReason.DELETE_DISABLED -> "削除無効のため未削除"
-        SkipReason.REMOTE_ONLY -> "リモートのみ(取り込まない)"
-        SkipReason.LOCAL_ONLY -> "ローカルのみ(送らない)"
-        SkipReason.CONFLICT_SKIPPED -> "競合スキップ"
+    /** ログ用に「どこからどこへ」を方向付きで 1 行にする (例: `ローカル → リモート`)。 */
+    private fun directionLine(job: SyncJob): String = when (job.direction) {
+        SyncDirection.TO_REMOTE -> "${job.localUri} → ${job.remoteUri} (アップロード)"
+        SyncDirection.TO_LOCAL -> "${job.remoteUri} → ${job.localUri} (ダウンロード)"
+        SyncDirection.BIDIRECTIONAL -> "${job.localUri} ⇄ ${job.remoteUri} (双方向)"
     }
 
     private suspend fun failed(
@@ -196,10 +178,5 @@ class SyncEngine @Inject constructor(
         appLogger.error("Sync(${job.name})", message, cause)
         tracker.done()
         return result
-    }
-
-    private companion object {
-        /** スキップを個別ログに出す最大件数 (これを超えた分は件数だけ残す)。 */
-        const val MAX_SKIP_LOG = 50
     }
 }

@@ -49,7 +49,7 @@ data class SyncResult(
         append(" / 転送 ").append(transferredCount)
         if (conflicts > 0) append(" (両側更新 ").append(conflicts).append(")")
         if (deleted > 0) append(" 削除 ").append(deleted)
-        if (skipped > 0) append(" スキップ ").append(skipped)
+        // スキップ件数は毎回大量に出てノイズになるためサマリには含めない。
         if (failed > 0) append(" 失敗 ").append(failed)
     }
 
