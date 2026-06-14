@@ -130,6 +130,12 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
 
+        <!-- 使用量分析 (gdu 風・フォルダ別サイズのドリルダウン) -->
+        <activity
+            android:name=".ui.usage.DiskUsageActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
         <!-- 外部アプリへファイルを渡すための FileProvider -->
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -73,6 +73,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.PieChart
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material3.BottomAppBar
@@ -543,6 +544,24 @@ fun FileBrowserScreen(
                                     },
                                     onClick = { viewModel.toggleShowHidden(); menuOpen = false },
                                 )
+                                if (curUri != null) {
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("使用量を分析") },
+                                        leadingIcon = { Icon(Icons.Outlined.PieChart, null) },
+                                        onClick = {
+                                            val name = state.breadcrumbs.lastOrNull()?.displayName ?: "使用量"
+                                            runCatching {
+                                                context.startActivity(
+                                                    com.zerotoship.foldex.ui.usage.DiskUsageActivity.intent(
+                                                        context, curUri.toStorageString(), name,
+                                                    ),
+                                                )
+                                            }
+                                            menuOpen = false
+                                        },
+                                    )
+                                }
                                 HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text("更新") },
