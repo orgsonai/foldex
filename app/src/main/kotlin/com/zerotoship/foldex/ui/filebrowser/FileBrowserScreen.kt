@@ -79,6 +79,7 @@ import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalDrawerSheet
@@ -328,6 +329,17 @@ fun FileBrowserScreen(
                             modifier = Modifier.padding(start = 8.dp))
                     },
                     actions = {
+                        // 検索範囲トグル: OFF = 現在のフォルダのみ / ON = サブフォルダも含めて再帰検索。
+                        FilterChip(
+                            selected = state.searchRecursive,
+                            onClick = { viewModel.setSearchRecursive(!state.searchRecursive) },
+                            label = { Text("サブフォルダ") },
+                            leadingIcon = if (state.searchRecursive) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                            } else {
+                                null
+                            },
+                        )
                         IconButton(onClick = { viewModel.closeSearch() }) {
                             Icon(Icons.Default.Close, contentDescription = "検索を閉じる")
                         }
@@ -656,6 +668,34 @@ fun FileBrowserScreen(
                             CircularProgressIndicator()
                         }
                     state.error != null -> ErrorContent(message = state.error!!, onRetry = { viewModel.refresh() })
+                    // 再帰検索モード: サブフォルダ含む結果を表示。走査中はその旨を出す。
+                    state.isSearchActive && state.searchRecursive -> when {
+                        state.recursiveResults.isEmpty() && state.isSearchScanning ->
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator()
+                                    Spacer(Modifier.height(12.dp))
+                                    Text("サブフォルダを検索中…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        state.recursiveResults.isEmpty() && state.searchQuery.isNotEmpty() ->
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("「${state.searchQuery}」に一致するファイルはサブフォルダにもありません",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        state.recursiveResults.isEmpty() -> EmptyContent()
+                        else -> FileListContent(
+                            files = state.recursiveResults,
+                            viewMode = state.viewMode,
+                            selectedUris = state.selectedUris,
+                            showBadge = state.showExtensionBadge,
+                            onFileClick = viewModel::onItemClick,
+                            onFileLongClick = viewModel::onItemLongClick,
+                        )
+                    }
                     state.filteredFiles.isEmpty() && state.searchQuery.isNotEmpty() ->
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("「${state.searchQuery}」に一致するファイルはありません",

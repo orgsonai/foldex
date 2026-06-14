@@ -68,6 +68,12 @@ data class FileBrowserState(
     val clipboard: ClipboardOperation? = null,
     val searchQuery: String = "",
     val isSearchActive: Boolean = false,
+    /** 検索範囲: false = 現在のフォルダのみ / true = サブフォルダも含めて再帰検索。 */
+    val searchRecursive: Boolean = false,
+    /** 再帰検索の結果 (サブフォルダ内のヒットも含む)。再帰モードのときだけ使う。 */
+    val recursiveResults: List<FileNode> = emptyList(),
+    /** 再帰検索のツリー走査が進行中か (スピナー表示用)。 */
+    val isSearchScanning: Boolean = false,
     val pendingDeleteNodes: List<FileNode> = emptyList(),
     val renameTarget: FileNode? = null,
     val pendingCreate: CreateKind? = null, // null = 非表示, FOLDER/FILE = ダイアログ表示中
@@ -107,14 +113,17 @@ data class FileBrowserState(
         get() = if (searchQuery.isEmpty()) files
                 else files.filter { matchesSearch(it, searchQuery) }
 
-    private fun matchesSearch(node: FileNode, query: String): Boolean =
-        if (query.contains('*') || query.contains('?')) {
-            buildGlobRegex(query).containsMatchIn(node.name)
-        } else {
-            node.name.contains(query, ignoreCase = true)
-        }
+    private fun matchesSearch(node: FileNode, query: String): Boolean = nameMatchesQuery(node.name, query)
 
     companion object {
+        /** ファイル名 [name] が検索文字列 [query] に一致するか (部分一致 / glob)。再帰検索でも使う。 */
+        fun nameMatchesQuery(name: String, query: String): Boolean =
+            if (query.contains('*') || query.contains('?')) {
+                buildGlobRegex(query).containsMatchIn(name)
+            } else {
+                name.contains(query, ignoreCase = true)
+            }
+
         fun buildGlobRegex(glob: String): Regex {
             val pattern = buildString {
                 for (c in glob) when (c) {

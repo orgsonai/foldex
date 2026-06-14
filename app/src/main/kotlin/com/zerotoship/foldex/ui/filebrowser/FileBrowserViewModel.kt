@@ -29,7 +29,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -215,6 +217,8 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     fun navigateTo(uri: FileUri, displayName: String) {
+        // 検索結果 (特に再帰のサブフォルダヒット) から潜るときは、前フォルダの結果を残さず検索を閉じる。
+        if (_state.value.isSearchActive) closeSearch()
         val newCrumbs = _state.value.breadcrumbs + BreadcrumbItem(uri, displayName)
         _state.value = _state.value.copy(
             breadcrumbs = newCrumbs,
@@ -1335,17 +1339,98 @@ class FileBrowserViewModel @Inject constructor(
 
     // --- Search ---
 
+    /** 再帰検索のツリー走査ジョブ。クエリ/範囲/フォルダが変わるたびに貼り直す。 */
+    private var recursiveSearchJob: Job? = null
+
     fun toggleSearch() {
         val active = !_state.value.isSearchActive
-        _state.value = _state.value.copy(isSearchActive = active, searchQuery = if (!active) "" else _state.value.searchQuery)
+        if (!active) {
+            closeSearch()
+            return
+        }
+        _state.value = _state.value.copy(isSearchActive = true)
     }
 
     fun setSearchQuery(query: String) {
         _state.value = _state.value.copy(searchQuery = query)
+        if (_state.value.searchRecursive) restartRecursiveSearch()
+    }
+
+    /** 検索範囲を「現在のフォルダのみ ⇄ サブフォルダも含む(再帰)」で切り替える。 */
+    fun setSearchRecursive(recursive: Boolean) {
+        if (_state.value.searchRecursive == recursive) return
+        _state.value = _state.value.copy(searchRecursive = recursive)
+        if (recursive) {
+            restartRecursiveSearch()
+        } else {
+            recursiveSearchJob?.cancel()
+            _state.value = _state.value.copy(recursiveResults = emptyList(), isSearchScanning = false)
+        }
     }
 
     fun closeSearch() {
-        _state.value = _state.value.copy(isSearchActive = false, searchQuery = "")
+        recursiveSearchJob?.cancel()
+        _state.value = _state.value.copy(
+            isSearchActive = false,
+            searchQuery = "",
+            searchRecursive = false,
+            recursiveResults = emptyList(),
+            isSearchScanning = false,
+        )
+    }
+
+    /**
+     * 現在フォルダ配下を再帰的に走査し、名前が検索文字列に一致するノードを集める。
+     * クエリ/範囲が変わるたびに古い走査をキャンセルして貼り直す。結果は逐次反映する。
+     */
+    private fun restartRecursiveSearch() {
+        recursiveSearchJob?.cancel()
+        val root = _state.value.currentUri
+        val query = _state.value.searchQuery
+        if (root == null || query.isEmpty()) {
+            _state.value = _state.value.copy(recursiveResults = emptyList(), isSearchScanning = false)
+            return
+        }
+        _state.value = _state.value.copy(recursiveResults = emptyList(), isSearchScanning = true)
+        recursiveSearchJob = viewModelScope.launch {
+            val hits = ArrayList<FileNode>(64)
+            val showHidden = _state.value.showHidden
+            withContext(Dispatchers.IO) {
+                walkForSearch(root, query, showHidden, hits) {
+                    // 逐次反映: 集まった分のスナップショットを UI に流す (検索体感を上げる)。
+                    val snapshot = ArrayList(hits)
+                    viewModelScope.launch { _state.value = _state.value.copy(recursiveResults = snapshot) }
+                }
+            }
+            _state.value = _state.value.copy(recursiveResults = ArrayList(hits), isSearchScanning = false)
+        }
+    }
+
+    /** [dir] 配下を再帰走査し、名前一致ノードを [out] に積む。深さ優先・最大 5000 件で打ち切り。 */
+    private suspend fun walkForSearch(
+        dir: FileUri,
+        query: String,
+        showHidden: Boolean,
+        out: MutableList<FileNode>,
+        onBatch: () -> Unit,
+    ) {
+        if (out.size >= MAX_RECURSIVE_SEARCH_HITS) return
+        val children = ArrayList<FileNode>()
+        runCatching {
+            storage.list(dir, com.zerotoship.foldex.core.model.ListOptions(showHidden = showHidden)).collect { children.add(it) }
+        }
+        var added = false
+        for (node in children) {
+            currentCoroutineContext().ensureActive()
+            if (FileBrowserState.nameMatchesQuery(node.name, query)) {
+                if (out.size < MAX_RECURSIVE_SEARCH_HITS) { out.add(node); added = true }
+            }
+        }
+        if (added) onBatch()
+        for (node in children) {
+            currentCoroutineContext().ensureActive()
+            if (node.type == NodeType.DIRECTORY) walkForSearch(node.uri, query, showHidden, out, onBatch)
+        }
     }
 
     // --- Favorites ---
@@ -2066,6 +2151,8 @@ class FileBrowserViewModel @Inject constructor(
         private const val KEY_SORT_BY = "sort_by"
         private const val KEY_SORT_ASC = "sort_ascending"
         private const val KEY_SHOW_HIDDEN = "show_hidden"
+        /** 再帰検索で集める最大ヒット数 (メモリ/描画保護のための上限)。 */
+        private const val MAX_RECURSIVE_SEARCH_HITS = 5000
 
         // 列挙中の部分結果を UI へ反映する最小間隔 (ミリ秒)。これより短い間隔の更新はスキップする。
         private const val FLUSH_INTERVAL_MS = 80L
