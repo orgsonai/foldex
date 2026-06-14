@@ -378,7 +378,10 @@ class FileBrowserViewModel @Inject constructor(
             // (例: `Dockerfile.bak`, `LICENSE`, `Makefile`, シェルスクリプトでも shebang 始まりだが
             //   拡張子なしのもの)。バイナリ誤判定を避けるため null バイト混入 / 非印字率で判定。
             val category = if (initialCategory == Category.UNKNOWN && localFile.isFile) {
-                if (looksLikeText(localFile)) Category.TEXT else initialCategory
+                // 空ファイル (0 バイト) は内容が無いだけの「まだ書いていないテキスト」とみなして
+                // 内蔵エディタで開けるようにする。looksLikeText は中身が無いと判定材料が無く false を
+                // 返すため、ここで先に空を拾わないと拡張子なしの新規空ファイルが外部アプリ送りになる。
+                if (localFile.length() == 0L || looksLikeText(localFile)) Category.TEXT else initialCategory
             } else initialCategory
             fun external(chooser: Boolean) = OpenRequest.External(
                 uri = fileProviderUri(localFile),
