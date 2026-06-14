@@ -15,6 +15,8 @@ import com.zerotoship.foldex.sync.model.SyncProgress
 import com.zerotoship.foldex.sync.model.SyncResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,10 +37,28 @@ class SyncEngine @Inject constructor(
     private val appLogger: com.zerotoship.foldex.core.data.log.AppLogger,
 ) {
 
+    /**
+     * アプリ全体で「同時に走る同期は常に 1 本だけ」に直列化するためのロック。
+     *
+     * SyncEngine は @Singleton なのでこの 1 個のロックを全ジョブが共有する。複数のジョブを
+     * 同じ時刻に予約していると、それぞれ別の WorkManager ワーカーとして同時に起動し得る
+     * (一意名がジョブ毎に違うため)。並行して走ると、共有しているストレージ接続
+     * (例: SMB のセッションプール) や重なったフォルダを取り合い、片方が転送し終えた状態を
+     * もう片方が見て「転送 0」と記録したり、ディレクトリ一覧取得のラグで変更を取りこぼす。
+     * ここで実行全体を直列化し、1 本が完全に終わって (列挙→転送→ログ確定) から次を走らせる。
+     */
+    private val runMutex = Mutex()
+
     suspend fun run(
         job: SyncJob,
         storage: StorageProvider,
         onProgress: (SyncProgress) -> Unit = {},
+    ): SyncResult = runMutex.withLock { runExclusive(job, storage, onProgress) }
+
+    private suspend fun runExclusive(
+        job: SyncJob,
+        storage: StorageProvider,
+        onProgress: (SyncProgress) -> Unit,
     ): SyncResult {
         val startedAt = System.currentTimeMillis()
         val tracker = ProgressTracker(onProgress)
