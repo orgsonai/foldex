@@ -62,13 +62,17 @@ object TextDecoding {
             .onUnmappableCharacter(CodingErrorAction.REPORT)
         val input = ByteBuffer.wrap(bytes)
         val out = CharBuffer.allocate(8 * 1024)
-        while (input.hasRemaining()) {
+        // decode() を必ず最低 1 回呼ぶ (do/while)。空入力 (0 バイトのファイル) を while(hasRemaining())
+        // で回すと decode が一度も呼ばれず、デコーダが ST_RESET のまま flush(out) に入って
+        // IllegalStateException("Current state = RESET, new state = FLUSHED") を投げる。
+        // 空入力でも decode を 1 回通せば RESET→END に遷移し、後続の flush が正しく行える。
+        do {
             out.clear()
             val result = decoder.decode(input, out, /* endOfInput = */ true)
             if (result.isError) return false
             if (result.isUnderflow) break // 入力を読み切った
             // OVERFLOW なら out が満杯なだけ。クリアして続行。
-        }
+        } while (input.hasRemaining())
         out.clear()
         return !decoder.flush(out).isError
     }

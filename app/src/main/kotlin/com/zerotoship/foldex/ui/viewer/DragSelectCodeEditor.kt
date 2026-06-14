@@ -7,6 +7,7 @@ import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.util.IntPair
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.component.EditorTextActionWindow
+import io.github.rosemoe.sora.widget.component.Magnifier
 
 /**
  * 標準の Sora [CodeEditor] に「長押し → 指を離さず、そのままドラッグで範囲選択」を足したエディタ。
@@ -47,6 +48,16 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         isHardwareAcceleratedDrawAllowed = false
         // 長い行専用の RenderNode キャッシュも同根なので合わせて切る。
         props.cacheRenderNodeForLongLines = false
+
+        // 選択拡大鏡 (Magnifier) を無効化する。これがクラッシュの真因と判断した。
+        // Sora の Magnifier は内部で android.view.PixelCopy.request(Window, ...) を使い、
+        // ウィンドウのサーフェスを「ビューの描画レイヤーとは独立に」コピー/レンダリングする。
+        // そのため上の setLayerType(SOFTWARE) や RenderNode 無効化では一切抑えられず、
+        // "Current state = RESET, new state = FLUSHED" (framework/HWUI 由来の IllegalStateException)
+        // を踏み続けていた。本クラスは ACTION_MOVE のたびにドラッグ選択を更新するため Magnifier の
+        // 表示更新 (= PixelCopy) が高頻度で走り、コピー経路の状態機械が不正遷移して落ちる。
+        // 拡大鏡を切れば PixelCopy 経路そのものが消える (選択操作自体は従来どおり動く)。
+        getComponent(Magnifier::class.java).isEnabled = false
 
         subscribeAlways(SelectionChangeEvent::class.java) { e ->
             if (e.cause == SelectionChangeEvent.CAUSE_LONG_PRESS) {
