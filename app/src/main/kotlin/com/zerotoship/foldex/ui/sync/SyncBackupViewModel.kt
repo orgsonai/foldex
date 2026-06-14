@@ -47,14 +47,23 @@ data class GenerationView(
     val remoteCount: Int,
 )
 
-/** 一括復元前の上書き確認待ち。 */
+/**
+ * 一括復元の事前確認待ち。復元を実行する前に必ずこの状態を立て、
+ * 「何を (どのファイルを) どこへ書き戻すか」をプレビューしたうえでユーザーに復元可否を尋ねる。
+ */
 data class PendingBatchRestore(
     val generationId: String,
-    val totalFiles: Int,
+    val createdAt: Long,
+    /** 書き戻すローカル側ファイル。 */
+    val localFiles: List<SyncBackupRepository.BackupFile>,
+    /** 書き戻すリモート側ファイル。 */
+    val remoteFiles: List<SyncBackupRepository.BackupFile>,
     /** 衝突 (既に同じパスにファイルが存在する) のサンプル。表示用なので 20 件まで。 */
     val conflicts: List<String>,
     val totalConflicts: Int,
-)
+) {
+    val totalFiles: Int get() = localFiles.size + remoteFiles.size
+}
 
 @HiltViewModel
 class SyncBackupViewModel @Inject constructor(
@@ -106,29 +115,29 @@ class SyncBackupViewModel @Inject constructor(
     }
 
     /**
-     * 一括復元を要求 (衝突をチェック)。衝突があれば `pendingBatchRestore` に積み、
-     * UI のダイアログ確認後に [confirmBatchRestore] が実体を書き戻す。衝突なしなら即実行。
+     * 一括復元を要求。実際に書き戻す前に必ず確認ダイアログ用の状態 (`pendingBatchRestore`) を
+     * 積み、復元されるファイル一覧と衝突件数をプレビューさせてから [confirmBatchRestore] で実行する。
+     * (以前は衝突が無いと無言で即復元していたが、何が復元されるか確認できないため必ず尋ねる方式にした。)
      */
     fun requestBatchRestore(generationId: String) {
         viewModelScope.launch {
+            val gen = _state.value.generations.firstOrNull { it.gen.id == generationId }?.gen
             val files = backupRepo.filesIn(jobId, generationId)
             if (files.isEmpty()) {
                 _messages.send("このバックアップにはファイルがありません")
                 return@launch
             }
             val conflicts = withContext(Dispatchers.IO) { detectConflicts(files) }
-            if (conflicts.isEmpty()) {
-                executeBatchRestore(generationId, overwrite = false)
-            } else {
-                _state.value = _state.value.copy(
-                    pendingBatchRestore = PendingBatchRestore(
-                        generationId = generationId,
-                        totalFiles = files.size,
-                        conflicts = conflicts.take(20),
-                        totalConflicts = conflicts.size,
-                    ),
-                )
-            }
+            _state.value = _state.value.copy(
+                pendingBatchRestore = PendingBatchRestore(
+                    generationId = generationId,
+                    createdAt = gen?.createdAt ?: 0L,
+                    localFiles = files.filter { it.side == "local" },
+                    remoteFiles = files.filter { it.side == "remote" },
+                    conflicts = conflicts.take(20),
+                    totalConflicts = conflicts.size,
+                ),
+            )
         }
     }
 

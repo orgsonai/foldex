@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteForever
@@ -80,8 +78,8 @@ fun SyncBackupScreen(
                     item {
                         Text(
                             "delete 同期で削除されたファイルの世代バックアップです。" +
-                                "「一括復元」は ローカル分 (L) と リモート分 (R) を 1 タップでまとめて書き戻します。" +
-                                "既存ファイルがある場合は上書きの確認ダイアログが出ます。",
+                                "「復元」を押すと、書き戻されるファイルの一覧を確認してから復元するか選べます。" +
+                                "ローカル分とリモート分はまとめて書き戻し、既存ファイルがある場合は上書きするか選べます。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp),
@@ -104,10 +102,10 @@ fun SyncBackupScreen(
     }
 
     state.pendingBatchRestore?.let { pending ->
-        BatchRestoreConflictDialog(
+        RestoreConfirmDialog(
             pending = pending,
             onCancel = { viewModel.confirmBatchRestore(null) },
-            onSkipExisting = { viewModel.confirmBatchRestore(false) },
+            onRestoreSkippingExisting = { viewModel.confirmBatchRestore(false) },
             onOverwrite = { viewModel.confirmBatchRestore(true) },
         )
     }
@@ -118,7 +116,7 @@ fun SyncBackupScreen(
 
 @Composable
 private fun SideDetailDialog(detail: PendingDetail, onDismiss: () -> Unit) {
-    val sideLabel = if (detail.side == "local") "ローカル (L)" else "リモート (R)"
+    val sideLabel = if (detail.side == "local") "ローカル" else "リモート"
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("$sideLabel のバックアップ詳細") },
@@ -188,7 +186,7 @@ private fun GenerationRow(
                 if (view.localCount > 0) {
                     AssistChip(
                         onClick = onClickLocal,
-                        label = { Text("L ${view.localCount}") },
+                        label = { Text("ローカル ${view.localCount}件") },
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         ),
@@ -197,7 +195,7 @@ private fun GenerationRow(
                 if (view.remoteCount > 0) {
                     AssistChip(
                         onClick = onClickRemote,
-                        label = { Text("R ${view.remoteCount}") },
+                        label = { Text("リモート ${view.remoteCount}件") },
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                         ),
@@ -212,56 +210,96 @@ private fun GenerationRow(
     }
 }
 
+/**
+ * 一括復元の事前確認ダイアログ。
+ * 復元を実行する前に「どのファイルが、ローカル/リモートのどちらへ書き戻されるか」を一覧表示し、
+ * そのうえで復元するか尋ねる。既存ファイルとの衝突があるときは上書き/スキップを選べる。
+ */
 @Composable
-private fun BatchRestoreConflictDialog(
+private fun RestoreConfirmDialog(
     pending: PendingBatchRestore,
     onCancel: () -> Unit,
-    onSkipExisting: () -> Unit,
+    onRestoreSkippingExisting: () -> Unit,
     onOverwrite: () -> Unit,
 ) {
+    val hasConflict = pending.totalConflicts > 0
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("既存ファイルとの衝突") },
+        title = { Text("この内容を復元しますか?") },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column {
                 Text(
-                    "バックアップ ${pending.totalFiles} 件中、${pending.totalConflicts} 件は既に同じ場所にファイルが存在します。",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    "L = ローカル / R = リモート",
-                    style = MaterialTheme.typography.labelSmall,
+                    "${formatDate(pending.createdAt)} のバックアップ ・ 合計 ${pending.totalFiles} 件" +
+                        " (ローカル ${pending.localFiles.size} / リモート ${pending.remoteFiles.size})",
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
                 )
-                pending.conflicts.forEach { line ->
+                if (hasConflict) {
                     Text(
-                        line,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        "うち ${pending.totalConflicts} 件は既に同じ場所にファイルがあります。" +
+                            "「上書きで復元」を選ぶとそのファイルを置き換えます。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
-                if (pending.totalConflicts > pending.conflicts.size) {
-                    Text(
-                        "...他 ${pending.totalConflicts - pending.conflicts.size} 件",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                HorizontalDivider(Modifier.padding(top = 8.dp, bottom = 4.dp))
+                // 復元されるファイルの一覧 (プレビュー)。ローカル分→リモート分の順に並べる。
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                    if (pending.localFiles.isNotEmpty()) {
+                        item { RestoreSectionHeader("ローカルへ復元 (${pending.localFiles.size} 件)") }
+                        items(pending.localFiles) { f -> RestoreFileRow(f.relativePath, f.sizeBytes) }
+                    }
+                    if (pending.remoteFiles.isNotEmpty()) {
+                        item { RestoreSectionHeader("リモートへ復元 (${pending.remoteFiles.size} 件)") }
+                        items(pending.remoteFiles) { f -> RestoreFileRow(f.relativePath, f.sizeBytes) }
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onOverwrite) { Text("上書きで復元", color = MaterialTheme.colorScheme.error) }
+            if (hasConflict) {
+                TextButton(onClick = onOverwrite) { Text("上書きで復元", color = MaterialTheme.colorScheme.error) }
+            } else {
+                TextButton(onClick = onRestoreSkippingExisting) { Text("復元") }
+            }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = onSkipExisting) { Text("既存はスキップ") }
-                TextButton(onClick = onCancel) { Text("中止") }
+                if (hasConflict) {
+                    TextButton(onClick = onRestoreSkippingExisting) { Text("既存はスキップ") }
+                }
+                TextButton(onClick = onCancel) { Text(if (hasConflict) "中止" else "キャンセル") }
             }
         },
     )
+}
+
+@Composable
+private fun RestoreSectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun RestoreFileRow(path: String, sizeBytes: Long) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(
+            path,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            formatBytes(sizeBytes),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 private fun formatBytes(b: Long): String = when {

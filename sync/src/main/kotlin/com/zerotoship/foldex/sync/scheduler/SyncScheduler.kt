@@ -67,13 +67,7 @@ class SyncScheduler @Inject constructor(
      * SyncWorker は実行開始後に自前で前景化するため、起動さえできれば最後まで走り切れる。
      */
     fun fireNow(job: SyncJob) {
-        val request = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(syncConstraints(job))
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .setInputData(workDataOf(SyncWorker.KEY_JOB_ID to job.id))
-            .addTag(tagFor(job.id))
-            .build()
-        workManager.enqueueUniqueWork(scheduledName(job.id), ExistingWorkPolicy.REPLACE, request)
+        enqueueRun(job)
     }
 
     /**
@@ -99,13 +93,32 @@ class SyncScheduler @Inject constructor(
 
     /** いますぐ 1 回だけ同期する (手動同期)。画面OFF/Doze に入っても止まらないよう expedited 化。 */
     fun runNow(job: SyncJob) {
+        enqueueRun(job)
+    }
+
+    /**
+     * 手動・定期を問わず「このジョブを 1 回実行する」唯一の入口。
+     *
+     * 重要: 手動 ([runNow]) と定期発火 ([fireNow]) を同じ一意名 ([runName]) に集約し、
+     * [ExistingWorkPolicy.KEEP] で「同一ジョブの実行がまだ走っている/待機中なら新規をドロップ」する。
+     * これで同じジョブが**同時に二重実行されない**ことを保証する。
+     *
+     * 以前は手動と定期で別々の一意名を使っていたため、両者が並行して走り得た。並行すると、
+     * 片方が転送してログを残し、もう片方は (先に走った方が同期し終えた状態を見て)「転送 0」と
+     * 報告する — 「ログ無しで転送されている / 成功・転送0なのに実際は転送済み」という症状が出ていた。
+     * また定期発火が REPLACE で走行中ワーカーを途中キャンセルすると、その回の転送がログに残らない
+     * まま別の回が引き継ぐ、というズレも起きていた。実行を一意名で直列化してこれらを解消する。
+     */
+    private fun enqueueRun(job: SyncJob) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(syncConstraints(job))
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .setInputData(workDataOf(SyncWorker.KEY_JOB_ID to job.id))
             .addTag(tagFor(job.id))
             .build()
-        workManager.enqueueUniqueWork(oneShotName(job.id), ExistingWorkPolicy.REPLACE, request)
+        // KEEP: 既に未完了の実行があればそれを尊重し、新規はエンキューしない (= 二重実行の防止)。
+        // 走行中のジョブと重なった定期/手動の発火はこのティックをスキップする (次回で拾う)。
+        workManager.enqueueUniqueWork(runName(job.id), ExistingWorkPolicy.KEEP, request)
     }
 
     /**
@@ -114,6 +127,8 @@ class SyncScheduler @Inject constructor(
      * ユーザーが手動で解除するための入口。次回の定期実行予約 (AlarmManager) は維持する。
      */
     fun cancelRun(jobId: String) {
+        workManager.cancelUniqueWork(runName(jobId))
+        // 旧バージョンが別々の一意名で積んだ実行も後始末する (アップグレード時の取りこぼし防止)。
         workManager.cancelUniqueWork(oneShotName(jobId))
         cancelScheduled(jobId)
     }
@@ -123,6 +138,7 @@ class SyncScheduler @Inject constructor(
         cancelPeriodic(jobId)
         cancelScheduled(jobId)
         cancelAlarm(jobId)
+        workManager.cancelUniqueWork(runName(jobId))
         workManager.cancelUniqueWork(oneShotName(jobId))
     }
 
@@ -148,6 +164,10 @@ class SyncScheduler @Inject constructor(
         return PendingIntent.getBroadcast(context, jobId.hashCode(), intent, flags)
     }
 
+    /** 手動・定期を統合した、ジョブごとの唯一の実行用一意名 (二重実行防止の要)。 */
+    private fun runName(jobId: String) = "sync-run-$jobId"
+
+    // 以下は旧バージョンが使っていた一意名。後始末 (cancel) のためだけに残す。
     private fun periodicName(jobId: String) = "sync-periodic-$jobId"
     private fun scheduledName(jobId: String) = "sync-scheduled-$jobId"
     private fun oneShotName(jobId: String) = "sync-now-$jobId"

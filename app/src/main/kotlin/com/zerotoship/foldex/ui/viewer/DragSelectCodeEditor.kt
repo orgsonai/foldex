@@ -2,6 +2,7 @@ package com.zerotoship.foldex.ui.viewer
 
 import android.content.Context
 import android.view.MotionEvent
+import android.view.View
 import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.util.IntPair
 import io.github.rosemoe.sora.widget.CodeEditor
@@ -29,13 +30,20 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
     private var anchorColumn = 0
 
     init {
-        // RenderNode によるハードウェアアクセラレーション描画キャッシュを無効化する。
-        // Sora は行ごとの描画を android.graphics.RenderNode に beginRecording/endRecording で
-        // 焼き込んで再利用するが、編集中の頻繁な無効化や再録画と描画の競合で
-        // フレームワークの RenderNode 状態機械が "Current state = RESET, new state = FLUSHED"
-        // (IllegalStateException) を投げ、エディタが開けず落ちることがある。
-        // キャッシュを切ると毎フレーム直接 drawText する経路になり、この状態遷移を踏まなくなる
+        // ビュー全体をソフトウェアレイヤーで描画させる (= フレームワークの RenderNode/ハード
+        // ウェアレンダリング経路を一切通さない)。
+        // 内蔵エディタを開いた瞬間に "Current state = RESET, new state = FLUSHED"
+        // (IllegalStateException) で落ちることがあった。これはビューがアタッチ/レイアウトされる
+        // 際に、ビュー自身の RenderNode 状態機械が録画とフラッシュの競合で不正遷移するために起きる。
+        // 下の Sora 内部キャッシュ無効化だけでは「Sora が作る RenderNode」しか抑えられず、
+        // ビュー本体 (CodeEditor View) のハードウェアレイヤーが残るため稀に再発していた。
+        // ソフトウェアレイヤーに固定すると描画は毎回ソフトウェア Canvas へ直接行われ、RenderNode を
+        // まったく介さなくなるので、この状態遷移を構造的に踏めなくなり確実に開けるようになる
         // (テキスト編集用途では描画コストの増分は実用上問題にならない)。
+        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        // RenderNode によるハードウェアアクセラレーション描画キャッシュも合わせて無効化する。
+        // Sora は行ごとの描画を android.graphics.RenderNode に beginRecording/endRecording で
+        // 焼き込んで再利用するが、編集中の頻繁な無効化や再録画と描画の競合で同じ例外を投げ得る。
         isHardwareAcceleratedDrawAllowed = false
         // 長い行専用の RenderNode キャッシュも同根なので合わせて切る。
         props.cacheRenderNodeForLongLines = false
