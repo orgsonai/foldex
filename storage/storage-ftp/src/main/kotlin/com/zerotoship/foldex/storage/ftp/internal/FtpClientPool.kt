@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Zero to Ship
+
 package com.zerotoship.foldex.storage.ftp.internal
 
 import com.zerotoship.foldex.core.data.repo.ConnectionRepository

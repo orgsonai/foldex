@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Zero to Ship
+
 package com.zerotoship.foldex.sync.model
 
 /** 競合 (両側で変更) を実際にどう処理するか。ConflictResolver が ConflictPolicy から決定する。 */

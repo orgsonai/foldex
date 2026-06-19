@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Zero to Ship
+
 package com.zerotoship.foldex.server.internal
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider

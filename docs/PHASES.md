@@ -297,7 +297,7 @@ docs: P1 達成サマリ
 - [ ] エクスポート/インポート (要設計)
 - [ ] F-Droid 用 metadata
 - [ ] Reproducible Build
-- [x] LICENSE 確定 (P7 §J で GPL-3.0 → §L で MIT に変更) / [ ] 各ソースへの SPDX ヘッダ付与
+- [x] LICENSE 確定 (P7 §J で GPL-3.0 → §L で MIT に変更) / [x] 各ソースへの SPDX ヘッダ付与 (P8 で `.kt`/`.kts`/`.sh` の 215 ファイルに `// SPDX-License-Identifier: MIT` + `// Copyright (c) 2026 Zero to Ship` を付与, 0.2.38)
 - [ ] プライバシーポリシー (Play 向けに準備)
 - [ ] GitHub リリースワークフロー
 - [ ] `v1.0.0` タグ
@@ -315,4 +315,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-06-20 (P7 達成条件の「同期途中再開」を P8 へ正式移管し P7 達成条件を全て [x] に。第10回 (0.2.37) の実機確認 OK を反映。バージョン 0.2.37 / versionCode 39)
+最終更新: 2026-06-20 (P8 開始。各ソースへの SPDX ヘッダ付与を完了 (`.kt`/`.kts`/`.sh` の 215 ファイルに MIT SPDX ヘッダ + Copyright 行)。バージョン 0.2.38 / versionCode 40)

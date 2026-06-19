@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Zero to Ship
+
 # =========================================================
 # Foldex collect-knowledge.sh
 #   Claude のチャット版 (claude.ai) の「ナレッジ / プロジェクトファイル」へ

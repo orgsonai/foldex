@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Zero to Ship
+
 package com.zerotoship.foldex.sync.model
 
 /** 同期実行中の進捗スナップショット。UI / 通知へ伝えるための値型。 */

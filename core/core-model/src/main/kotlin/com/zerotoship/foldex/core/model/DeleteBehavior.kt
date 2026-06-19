@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Zero to Ship
+
 package com.zerotoship.foldex.core.model
 
 /** 削除操作の既定の行き先 (設定画面で選択)。 */
