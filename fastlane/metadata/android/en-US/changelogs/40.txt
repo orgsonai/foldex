@@ -1,0 +1,4 @@
+0.2.38 (P8 distribution prep)
+- Added SPDX-License-Identifier: MIT headers to all source files
+- Added privacy policy (docs/PRIVACY.md)
+- Added F-Droid metadata

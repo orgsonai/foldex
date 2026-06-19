@@ -1,0 +1,4 @@
+0.2.38 (P8 配布準備)
+・全ソースに SPDX-License-Identifier: MIT ヘッダを付与
+・プライバシーポリシーを追加 (docs/PRIVACY.md)
+・F-Droid 用 metadata を追加

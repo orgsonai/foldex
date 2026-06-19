@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Zero to Ship
+
 # =========================================================
 # Foldex phase-start.sh
 # 使い方: bash scripts/phase-start.sh P1

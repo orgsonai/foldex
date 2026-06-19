@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Zero to Ship
+
 package com.zerotoship.foldex.core.model
 
 /** delete 同期で「しきい値より大きいファイル」を削除する前にどうするか (グローバル設定)。 */

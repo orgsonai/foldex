@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Zero to Ship
+
 # =========================================================
 # Foldex phase-finish.sh
 # 使い方: bash scripts/phase-finish.sh P1
