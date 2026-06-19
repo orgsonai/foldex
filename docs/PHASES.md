@@ -276,6 +276,12 @@ docs: P1 達成サマリ
 - [x] **使用量分析 (gdu 風・ドリルダウン)** (`b23afe6` 0.2.35): メニュー「使用量を分析」→フォルダ別合計サイズをバー付きで大きい順表示・潜れる・リモート可・中断可
 > 全 5 コミット push 済み (`phase/P7-polish`)。リリースビルド緑。実機確認は §Q 引き継ぎメモ参照。
 
+#### P7 仕上げ第10回 — 内蔵エディタが空ファイルで `RESET → FLUSHED` で開けない不具合の真因確定と修正 (2026-06-14, `docs/P7-REVISIONS.md` §R / §S)
+- [x] **空ファイルで内蔵エディタが落ちる不具合を修正** (`a49d8ea` 0.2.37): 真因は `TextDecoding.isValidUtf8()` の `CharsetDecoder` 状態機械誤用。0 バイト入力では `while (hasRemaining)` が一度も回らず `decode()` が呼ばれない → `RESET` のまま `flush()` を呼んで `IllegalStateException`。`do/while` 化で `decode(endOfInput=true)` を必ず通し `RESET → END` に遷移させて修正。文字コード判定ロジックは不変。§Q-5 (`0.2.32`) で空ファイルを内蔵エディタ対応にしたことで踏むようになっていた経路
+- [x] **§R の調査メモ (コード変更なし)**: §P-1 / §Q-1 の「RenderNode を止める」仮説、§R-2 で疑った Magnifier/PixelCopy も全て無関係だったことを §S で確定。状態機械の文字列は `java.nio.charset.CharsetDecoder` 由来 (`/apex/com.android.art/javalib/core-oj.jar`)
+- [x] **§S-3 巻き込み変更 (要追認)**: 検証用に入れた `DragSelectCodeEditor` の Magnifier 無効化 (`getComponent(Magnifier::class.java).isEnabled = false`) を同梱コミット。§P-1 / §Q-1 由来の software layer / `cacheRenderNodeForLongLines=false` も真因と無関係のため別途撤去検討の余地あり
+> 1 コミット push 済み (`phase/P7-polish`)。リリースビルド緑 (オンデバイス)。実機未確認: ① 空ファイルが内蔵エディタで開くか、② 各種文字コードのファイルが従来どおり開くか。
+
 ### スコープ外
 - F-Droid / Play 配布 (P8)
 - ~~LICENSE 確定 (P8)~~ → §J で前倒し確定 (GPL-3.0) → **§L で MIT に変更**。残りは各ソースへの SPDX ヘッダ付与 (P8)
@@ -309,4 +315,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-06-04 (P7 仕上げ第7回 §O: エディタ堅牢化 (文字コード/長押しドラッグ/カーソルラグ) + 定期同期の Doze 実行 + 双方向ループ修正 + 詳細表示デフォルト化 + 同期キュー解除 + エディタ下書き保存。バージョン 0.2.27 / versionCode 29)
+最終更新: 2026-06-14 (P7 仕上げ第9回 §Q + 第10回 §R / §S を反映。第9回: エディタ確実起動 / 同期の二重実行根絶 / 削除復元プレビュー / 再帰検索 / 使用量分析 (0.2.31〜0.2.35)。第10回: 内蔵エディタが空ファイルで `RESET → FLUSHED` で開けない不具合の真因確定と修正 (`CharsetDecoder` 状態機械, 0.2.37)。バージョン 0.2.37 / versionCode 39)
