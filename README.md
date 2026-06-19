@@ -104,6 +104,10 @@ keyPassword=...
 
 [MIT](LICENSE) — Copyright (c) 2026 Zero to Ship。依存ライブラリ (smbj / Apache Commons / MINA SSHD / Apache FtpServer = Apache-2.0、xz = public domain) はいずれも MIT と互換。
 
+## プライバシー
+
+Foldex は個人情報を一切収集・送信しない。動作はすべて端末内で完結し、ネットワーク通信はユーザーが設定した SMB/SFTP/FTP/WebDAV 接続先との直接通信のみ。広告 SDK や解析 SDK は組み込んでいない。詳細は [`docs/PRIVACY.md`](docs/PRIVACY.md)。
+
 ## このリポジトリで Claude Code を使う場合
 
 [`CLAUDE.md`](CLAUDE.md) を最初に読むこと。フェーズ運用とコミット規約が書いてある。
