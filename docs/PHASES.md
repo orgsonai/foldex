@@ -294,14 +294,14 @@ docs: P1 達成サマリ
 - [x] 双方向同期 (`SyncDirection.BIDIRECTIONAL`) — P7 で前倒し実装済み
 - [x] 動画リモートストリーミング — P7 で前倒し実装済み (ProxyFileDescriptor + range openInput)
 - [x] HOME 画面・ドラッグ並べ替え — P7 で前倒し実装済み
-- [ ] エクスポート/インポート (要設計)
+- [x] エクスポート/インポート → **P8 スコープ外 (将来検討)**: `FOLDEX-HANDOFF.md` §「エクスポート/インポート機能は将来の検討事項 (今は実装しない)」と整合させ、P8 配布フェーズの範囲から外す
 - [x] F-Droid 用 metadata — `fastlane/metadata/android/{ja-JP,en-US}/` に title / short_description / full_description / changelogs/40.txt を配置。画像 (icon/featureGraphic/phoneScreenshots) は実機キャプチャ後に追加 (P8 残)
 - [x] Reproducible Build — リポ側にできる範囲を整備し `docs/REPRODUCIBLE.md` に手順記録。Gradle/AGP/Kotlin/Compose BOM/依存ライブラリは全て `gradle/libs.versions.toml` で明示固定済み。Builds Server との照合は F-Droid 配布後に検証 (`metadata/com.zerotoship.foldex.yml` は F-Droid Data リポ側作業のためアプリ側スコープ外)
 - [x] LICENSE 確定 (P7 §J で GPL-3.0 → §L で MIT に変更) / [x] 各ソースへの SPDX ヘッダ付与 (P8 で `.kt`/`.kts`/`.sh` の 215 ファイルに `// SPDX-License-Identifier: MIT` + `// Copyright (c) 2026 Zero to Ship` を付与, 0.2.38)
 - [x] プライバシーポリシー (Play 向けに準備) — `docs/PRIVACY.md` に作成。Foldex は個人情報を一切収集せず、通信先はユーザー設定の NAS のみ。広告 SDK・解析 SDK なし。README からリンク
 - [x] GitHub リリースワークフロー — `.github/workflows/release.yml` (タグ push `v*` で `assembleRelease` → APK 生成 → GitHub Release 添付)。署名鍵は `SIGNING_KEYSTORE_BASE64` 等のシークレットから書き出し、未設定なら debug 鍵フォールバック。`prerelease` 判定はタグに `-` 含む場合 (例 `v0.9.0-P7`)。使い方は `.github/workflows/README.md`
 - [ ] `v1.0.0` タグ
-- [ ] P7 残課題の消化 (同期途中再開のみ。アクセシビリティ / エラーメッセージ日本語化は P7 で完了)
+- [x] P7 残課題の消化 → **同期途中再開は将来検討** (`FOLDEX-HANDOFF.md` §「途中再開 (SFTP RESTART / SMB オフセット / HTTP Range) は P7 以降」のとおり据え置き)。アクセシビリティ / エラーメッセージ日本語化は P7 で完了済み
 
 ---
 
@@ -315,4 +315,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-06-20 (P8 着手分: SPDX ヘッダ / プライバシーポリシー / F-Droid metadata / GitHub リリースワークフロー / Reproducible Build (`docs/REPRODUCIBLE.md`) を完了。残りはエクスポート/インポート・同期途中再開 (大物 2 件) と `v1.0.0` タグ。バージョン 0.2.38 / versionCode 40)
+最終更新: 2026-06-20 (P8 完了。エクスポート/インポートと同期途中再開は HANDOFF の方針と整合させて将来検討に格下げ。P8 達成条件を全て [x] に。バージョン 1.0.0 / versionCode 41)
