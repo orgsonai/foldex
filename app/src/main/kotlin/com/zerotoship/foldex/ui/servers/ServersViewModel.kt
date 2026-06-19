@@ -38,6 +38,13 @@ class ServersViewModel @Inject constructor(
     private val _events = Channel<ServerEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
+    init {
+        // 起動失敗 (Wi-Fi 未接続 / ポート使用中 / 設定不備など) を UI に通知する。
+        viewModelScope.launch {
+            controller.startErrors.collect { msg -> _events.trySend(ServerEvent.Message(msg)) }
+        }
+    }
+
     fun start(config: ServerConfig) {
         controller.start(config.id)
         _events.trySend(ServerEvent.Message("「${config.name}」を起動しています…"))

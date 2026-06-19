@@ -13,6 +13,12 @@ sealed class Connection {
     abstract val authMethod: AuthMethod
     abstract val charset: String
 
+    /**
+     * 接続を開いたときに自動で navigate する相対パス (任意)。
+     * SMB は share 配下、SFTP/FTP は root からのパス。空文字なら "/" (ルート) を開く。
+     */
+    open val initialPath: String get() = ""
+
     data class Smb(
         override val id: String,
         override val name: String,
@@ -23,6 +29,7 @@ sealed class Connection {
         val share: String,
         val domain: String? = null,
         override val charset: String = "UTF-8",
+        override val initialPath: String = "",
     ) : Connection() {
         override val protocol: Protocol = Protocol.SMB
     }
@@ -36,6 +43,7 @@ sealed class Connection {
         override val authMethod: AuthMethod,
         val hostKeyFingerprint: String? = null,
         override val charset: String = "UTF-8",
+        override val initialPath: String = "",
     ) : Connection() {
         override val protocol: Protocol = Protocol.SFTP
     }
@@ -50,6 +58,7 @@ sealed class Connection {
         val useTls: Boolean = false,
         val passiveMode: Boolean = true,
         override val charset: String = "UTF-8",
+        override val initialPath: String = "",
     ) : Connection() {
         override val protocol: Protocol = Protocol.FTP
     }

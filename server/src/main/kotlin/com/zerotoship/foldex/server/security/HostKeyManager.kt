@@ -18,30 +18,39 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * SFTP サーバー用 Ed25519 ホスト鍵の生成・永続化・フィンガープリント計算。
+ * SFTP サーバー用ホスト鍵の生成・永続化・フィンガープリント計算。
  *
- * 永続化フォーマットは `[privateLen:int][privateKey PKCS8 DER][publicLen:int]
- * [publicKey X.509 SPKI DER]` の単純なバイナリ。BouncyCastle は Android で
- * Ed25519 を扱うために必要 (minSdk 26 では JCA に Ed25519 が無いため)。
+ * **アルゴリズム**: RSA 3072 を既定とする。理由: Apache MINA SSHD の
+ * `SecurityUtils.isEDDSACurveSupported()` は環境によって false にキャッシュされ、
+ * `signatureFactories` から ed25519 が落ちることがある (host key と一致する署名アルゴリズムが
+ * 無くなり SSH_MSG_DISCONNECT "no resolved signatures available")。RSA は Android 標準 JCE で
+ * 安定に動くため切替えた。
+ *
+ * **永続化フォーマット v2**: `[magic:int][algo:UTF][privateLen:int][priv PKCS8 DER]
+ * [publicLen:int][pub X.509 SPKI DER]`。magic で旧フォーマット (algo 無し / Ed25519 固定) を識別する。
+ * 旧フォーマットを読んだ場合は再生成にフォールバックする (アルゴリズム切替のため fingerprint も変わる)。
  */
 @Singleton
 class HostKeyManager @Inject constructor(
     private val repository: ServerConfigRepository,
 ) {
 
-    /** 新しい Ed25519 鍵ペアを生成。 */
+    /** 新しい RSA 3072 鍵ペアを生成。 */
     fun generate(): KeyPair {
-        BouncyCastleSetup.ensureInstalled()
-        val gen = KeyPairGenerator.getInstance("Ed25519", BouncyCastleProvider.PROVIDER_NAME)
+        val gen = KeyPairGenerator.getInstance("RSA")
+        gen.initialize(3072)
         return gen.generateKeyPair()
     }
 
-    /** 鍵ペアを単一バイト列にシリアライズ (永続化用)。 */
+    /** 鍵ペアを単一バイト列にシリアライズ (永続化用、v2 フォーマット)。 */
     fun serialize(keyPair: KeyPair): ByteArray {
         val priv = keyPair.private.encoded
         val pub = keyPair.public.encoded
+        val algo = keyPair.private.algorithm
         val out = ByteArrayOutputStream()
         DataOutputStream(out).use { d ->
+            d.writeInt(MAGIC_V2)
+            d.writeUTF(algo)
             d.writeInt(priv.size)
             d.write(priv)
             d.writeInt(pub.size)
@@ -50,19 +59,32 @@ class HostKeyManager @Inject constructor(
         return out.toByteArray()
     }
 
-    /** [serialize] の逆操作。 */
+    /** [serialize] の逆操作。旧 v1 フォーマット (Ed25519 固定) は明示的に拒否する → 呼び出し側で再生成。 */
     fun deserialize(bytes: ByteArray): KeyPair {
-        BouncyCastleSetup.ensureInstalled()
         DataInputStream(ByteArrayInputStream(bytes)).use { d ->
+            val magic = d.readInt()
+            require(magic == MAGIC_V2) { "Unsupported host key format: 0x${magic.toString(16)}" }
+            val algo = d.readUTF()
             val privLen = d.readInt()
             val priv = ByteArray(privLen).also { d.readFully(it) }
             val pubLen = d.readInt()
             val pub = ByteArray(pubLen).also { d.readFully(it) }
-            val kf = KeyFactory.getInstance("Ed25519", BouncyCastleProvider.PROVIDER_NAME)
+            // Ed25519 だけは BC 経由 (Android の JCA は持っていない)。RSA など他は標準 JCA。
+            val kf = if (algo.equals("Ed25519", ignoreCase = true)) {
+                BouncyCastleSetup.ensureInstalled()
+                KeyFactory.getInstance(algo, BouncyCastleProvider.PROVIDER_NAME)
+            } else {
+                KeyFactory.getInstance(algo)
+            }
             val privateKey = kf.generatePrivate(PKCS8EncodedKeySpec(priv))
             val publicKey = kf.generatePublic(X509EncodedKeySpec(pub))
             return KeyPair(publicKey, privateKey)
         }
+    }
+
+    private companion object {
+        // "Fol2" — host key blob v2 (algo 名を含む新フォーマット)。
+        const val MAGIC_V2: Int = 0x466F6C32
     }
 
     /**

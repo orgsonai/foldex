@@ -11,13 +11,18 @@ import com.zerotoship.foldex.server.NetworkBindingResolver
 import com.zerotoship.foldex.server.log.ServerLogger
 import com.zerotoship.foldex.server.security.Argon2idHasher
 import com.zerotoship.foldex.server.security.HostKeyManager
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
+import org.apache.sshd.common.signature.BuiltinSignatures
+import org.apache.sshd.server.ServerBuilder
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.sftp.server.SftpSubsystemFactory
 import java.nio.file.Path
@@ -40,6 +45,7 @@ class SftpServerManager @Inject constructor(
     private val hasher: Argon2idHasher,
     private val networkResolver: NetworkBindingResolver,
     private val logger: ServerLogger,
+    private val appLogger: com.zerotoship.foldex.core.data.log.AppLogger,
 ) {
     private val mutex = Mutex()
     private val running: MutableMap<String, SshServer> = mutableMapOf()
@@ -48,31 +54,64 @@ class SftpServerManager @Inject constructor(
     /** 起動中の設定 ID を UI から observe するための StateFlow。 */
     val runningIds: StateFlow<Set<String>> = _runningIds.asStateFlow()
 
+    private val _startErrors = MutableSharedFlow<String>(extraBufferCapacity = 8)
+
+    /** 起動に失敗したときのエラーメッセージ (UI で snackbar 表示する用)。 */
+    val startErrors: SharedFlow<String> = _startErrors.asSharedFlow()
+
     fun isRunning(configId: String): Boolean = configId in _runningIds.value
 
     suspend fun start(configId: String): Result<ServerConfig, StorageError> = mutex.withLock {
+        val result: Result<ServerConfig, StorageError> = try {
+            startLocked(configId)
+        } catch (t: Throwable) {
+            Result.Failure(
+                StorageError.IoError("SFTP サーバーの起動中に予期しないエラー: ${t.message}", t),
+            )
+        }
+        if (result is Result.Failure) {
+            val msg = "SFTP サーバーを起動できませんでした: ${result.error.message}"
+            _startErrors.tryEmit(msg)
+            // snackbar は表示が短い・画面遷移で消えるので、ログとしても残す
+            // (サーバー画面 → ログから後追いできる)。
+            runCatching {
+                logger.record(
+                    configId = configId,
+                    event = ServerLogEvent.SERVER_START_FAILED,
+                    clientAddress = "self",
+                    details = "type=SFTP,reason=${result.error.message}",
+                )
+            }
+            appLogger.error("Server/SFTP", msg)
+        }
+        result
+    }
+
+    // mutex.withLock の内側で実行する起動本体。失敗は Result.Failure で返し、
+    // 例外も呼び出し側 (start) で握りつぶして Result 化する (Service のクラッシュを防ぐため)。
+    private suspend fun startLocked(configId: String): Result<ServerConfig, StorageError> {
         if (running.containsKey(configId)) {
             val cfg = repository.findById(configId)
-                ?: return@withLock Result.Failure(StorageError.IoError("Server config not found"))
-            return@withLock Result.Success(cfg)
+                ?: return Result.Failure(StorageError.IoError("Server config not found"))
+            return Result.Success(cfg)
         }
         val config = repository.findById(configId)
-            ?: return@withLock Result.Failure(StorageError.IoError("Server config not found"))
+            ?: return Result.Failure(StorageError.IoError("Server config not found"))
         if (config.type != ServerType.SFTP) {
-            return@withLock Result.Failure(
+            return Result.Failure(
                 StorageError.IoError("Not an SFTP config: ${config.type}"),
             )
         }
         val rootPath = resolveLocalRoot(config.rootUri)
-            ?: return@withLock Result.Failure(
-                StorageError.IoError("rootUri must be a local path for now: ${config.rootUri}"),
+            ?: return Result.Failure(
+                StorageError.IoError("ルートパスはローカルパスである必要があります: ${config.rootUri}"),
             )
         val resolvedHost = networkResolver.resolve(config.bindAddress)
-            ?: return@withLock Result.Failure(
+            ?: return Result.Failure(
                 StorageError.IoError(
                     when (config.bindAddress) {
                         ServerConfig.BIND_WIFI_ONLY -> "Wi-Fi に接続されていないため起動できません"
-                        else -> "bindAddress を解決できませんでした: ${config.bindAddress}"
+                        else -> "バインドアドレスを解決できませんでした: ${config.bindAddress}"
                     },
                 ),
             )
@@ -81,8 +120,8 @@ class SftpServerManager @Inject constructor(
             server.start()
         } catch (t: Throwable) {
             runCatching { server.stop(true) }
-            return@withLock Result.Failure(
-                StorageError.IoError("Failed to start SFTP server: ${t.message}", t),
+            return Result.Failure(
+                StorageError.IoError("ポート ${config.port} で待ち受けを開始できませんでした: ${t.message}", t),
             )
         }
         running[configId] = server
@@ -94,7 +133,7 @@ class SftpServerManager @Inject constructor(
             clientAddress = "$resolvedHost:${config.port}",
             details = "type=SFTP,authMode=${config.authMode.name}",
         )
-        Result.Success(config)
+        return Result.Success(config)
     }
 
     suspend fun stop(configId: String) = mutex.withLock {
@@ -129,6 +168,35 @@ class SftpServerManager @Inject constructor(
         val server = SshServer.setUpDefaultServer()
         server.port = config.port
         server.host = host
+
+        // Android では setUpDefaultServer の defaults が空になることがある (BC が未登録で
+        // DH 系が unsupported になるなど)。FoldexApplication で BC を登録した上で、
+        // 念のため supported なものだけで再構築する。ignoreUnsupported=true で空エントリを除外。
+        if (server.keyExchangeFactories.isNullOrEmpty()) {
+            server.keyExchangeFactories = ServerBuilder.setUpDefaultKeyExchanges(true)
+        }
+        if (server.signatureFactories.isNullOrEmpty()) {
+            server.signatureFactories = ServerBuilder.setUpDefaultSignatureFactories(true)
+        }
+        // ホスト鍵は RSA 3072 を使うため、RSA 系の署名アルゴリズムが必ず含まれることを保証する。
+        // defaults が何らかの理由で RSA を落とすケース (環境依存の SecurityUtils 判定など) の保険。
+        run {
+            val sigs = (server.signatureFactories ?: emptyList()).toMutableList()
+            val have = sigs.map { it.name }.toMutableSet()
+            listOf(BuiltinSignatures.rsaSHA512, BuiltinSignatures.rsaSHA256, BuiltinSignatures.rsa)
+                .forEach { f ->
+                    if (f.isSupported && f.name !in have) {
+                        sigs.add(0, f); have.add(f.name)
+                    }
+                }
+            server.signatureFactories = sigs
+        }
+        if (server.cipherFactories.isNullOrEmpty()) {
+            server.cipherFactories = ServerBuilder.setUpDefaultCiphers(true)
+        }
+        if (server.macFactories.isNullOrEmpty()) {
+            server.macFactories = ServerBuilder.setUpDefaultMacs(true)
+        }
 
         server.keyPairProvider = SftpKeyPairProvider(config.id, hostKeyManager)
         server.subsystemFactories = listOf(SftpSubsystemFactory())

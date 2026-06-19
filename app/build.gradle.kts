@@ -1,9 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.compose.compiler)
+}
+
+// 正式リリース署名用の資格情報 (リポジトリ直下 keystore.properties・gitignore 済み)。
+// 無いマシンでは debug 鍵にフォールバックするので、共有開発に支障は出ない。
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
 
 android {
@@ -14,15 +23,43 @@ android {
         applicationId = "com.zerotoship.foldex"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 39
+        versionName = "0.2.37"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropsFile.exists()) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            // debug ビルドは Compose ランタイムチェック・JIT 未温め等で release の数倍重い。
+            // 起動時の体感を評価する場合は assembleRelease で確認する。
+            // release (com.zerotoship.foldex) と共存・区別できるよう、パッケージと
+            // バージョン名・表示名 (src/debug/res の app_name) をずらす。
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            isDebuggable = true
+        }
         release {
+            // R8/ProGuard は依存ライブラリ (SMB/SFTP/FTP/BouncyCastle/Sardine) のルール整備が
+            // 必要なため P9 (リリース準備) で有効化する。当面は OFF。
             isMinifyEnabled = false
+            isDebuggable = false
+            // keystore.properties があれば正式鍵で署名、無ければ debug 鍵にフォールバック。
+            signingConfig = if (keystorePropsFile.exists())
+                signingConfigs.getByName("release")
+            else
+                signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -87,6 +124,31 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.work.runtime.ktx)
     implementation(libs.androidx.hilt.work)
+
+    // P7: サムネ/ビューア/音声プレーヤー/Markdown/文字コード判定
+    implementation(libs.coil.compose)
+    implementation(libs.coil.video)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+    implementation(libs.media3.session)
+    implementation(libs.markwon.core)
+    implementation(libs.markwon.ext.tables)
+    implementation(libs.markwon.ext.strikethrough)
+    implementation(libs.markwon.ext.tasklist)
+    implementation(libs.markwon.linkify)
+    implementation(libs.juniversalchardet)
+
+    // ZIP 圧縮/解凍 + AES-256 パスワード暗号化 (P7)。
+    implementation(libs.zip4j)
+
+    // 大容量テキスト編集向け: Canvas 描画 + 仮想化のコードエディタ (P7 ポリッシュ)。
+    implementation(libs.sora.editor)
+
+    // HOME タイルのドラッグ並び替え (LazyVerticalGrid 対応)。
+    implementation(libs.reorderable)
+
+    // Application.onCreate で SFTP (Apache MINA SSHD) より先に BC を登録するため app から直接参照する。
+    implementation(libs.bouncycastle.bcprov)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.test.ext.junit)

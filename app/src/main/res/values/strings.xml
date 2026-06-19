@@ -13,4 +13,14 @@
     <string name="view_grid">Grid view</string>
     <string name="navigate_up">Up</string>
     <string name="refresh">Refresh</string>
+
+    <!-- App Shortcuts -->
+    <string name="shortcut_files_short">Files</string>
+    <string name="shortcut_files_long">Open file browser</string>
+    <string name="shortcut_connections_short">Connections</string>
+    <string name="shortcut_connections_long">Remote connections</string>
+    <string name="shortcut_servers_short">Servers</string>
+    <string name="shortcut_servers_long">Local servers</string>
+    <string name="shortcut_trash_short">Trash</string>
+    <string name="shortcut_trash_long">Open trash</string>
 </resources>

@@ -25,6 +25,34 @@ internal class SmbInputStream(private val file: SmbjFile) : InputStream() {
 }
 
 /**
+ * 任意オフセットから読み始めるための [InputStream]。`file.read(buf, fileOffset, ...)` で
+ * 位置指定読み取りし、ストリーミング seek を可能にする (動画再生の HTTP Range 相当)。
+ */
+internal class SmbRangeInputStream(
+    private val file: SmbjFile,
+    startOffset: Long,
+) : InputStream() {
+    private var position: Long = startOffset
+    private val singleByteBuf = ByteArray(1)
+
+    override fun read(): Int {
+        val n = read(singleByteBuf, 0, 1)
+        return if (n < 0) -1 else (singleByteBuf[0].toInt() and 0xFF)
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (len == 0) return 0
+        val n = file.read(b, position, off, len)
+        if (n > 0) position += n
+        return n
+    }
+
+    override fun close() {
+        runCatching { file.close() }
+    }
+}
+
+/**
  * smbj の [SmbjFile] を裏に持つ [OutputStream]。close 時に File ハンドルも閉じる。
  */
 internal class SmbOutputStream(private val file: SmbjFile) : OutputStream() {

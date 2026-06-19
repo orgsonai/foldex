@@ -1,0 +1,640 @@
+# P7 修正方針メモ (フィードバック反映)
+
+このファイルは P7 (`phase/P7-polish`) 進行中に orgson から出た追加修正依頼を整理したもの。
+仕様の真実は `FOLDEX-HANDOFF.md`。確定したら各章へ反映し、ここはチェックリストとして残す。
+
+依頼日: 2026-05-12
+
+### 進捗 (随時更新)
+- ✅ A: 一覧の逐次表示 + FastScrollbar (`d13b3d8`)
+- ✅ D: FileTypeRegistry / カテゴリ別アイコン・色分け / Coil サムネ (`7701313`)、
+  内蔵ビューア (画像/テキスト/音声) + 外部アプリ連携 + APK インストール (`7f1acba`)、
+  Markdown/HTML ビューア (`8553916`)、拡張子バッジ + 「ファイルの開き方」設定 (`2ab98a0`)、
+  テキスト簡易編集 (`42fe798`)。
+  **残りの小ポリッシュ**: 音声アルバムアートのサムネ (Coil 用の MediaMetadataRetriever フェッチャが必要)、動画サムネの確認。
+- ✅ C: AppBar を検索+⋮ に整理 (`61b08a7`)
+- 🟡 B/E:
+  - ✅ E ゴミ箱システム (`39e76ca`): DeleteBehavior(TRASH/PERMANENT/ASK) + TrashRepository + 設定 + TrashScreen + 削除フロー差し替え + 自動削除。
+  - ✅ B-3 ジョブ追加 UI の整理 (`2f3b281`): セクション見出し・説明文・例・glob 凡例・スケジュールのプリセットチップ。
+  - ✅ B-2 スケジュール拡張 (`6b2c48b`): ScheduleType + SyncSchedule、SyncJobEntity スキーマ拡張 (DB v3→4)、Scheduler を OneTimeWork の自己再スケジュール方式へ、編集画面に時刻/曜日/日/日時のピッカー。
+  - ✅ B-4 delete 同期の削除前バックアップ (`912c9d0`): SyncBackupRepository、設定 (世代数/しきい値/超過時の扱い)、SyncEngine→Executor で削除前に退避。バックアップ一覧/復元の UI は後続。
+  - ✅ B-1 双方向同期 (`ae5ec6b`): SyncDirection.BIDIRECTIONAL、DiffEngine の双方向判定 (SAME/NEW/MODIFIED/DELETED/NEVER 分類)、ConflictResolver/Executor が勝者で転送方向を決定、SyncEngine は双方向で片側ルート欠如を許容。
+
+**A〜E のすべて (双方向同期含む) 完了。** 小ポリッシュ (音声アルバムアートのサムネ `9bc9683`、削除前バックアップの一覧/復元 UI `9bc9683`) も対応済み。残課題は P7 本来のチェックリスト (アクセシビリティ、エラーメッセージ日本語化、同期途中再開、PDF 内蔵ビューア、テスト配布 APK)。
+
+### 確定した方針 (2026-05-12 ヒアリング)
+- B-1 双方向同期: **P7 で実装**。HANDOFF §8-B / PHASES P8 を更新する。
+- D 音声プレーヤー: **Media3 / ExoPlayer を依存追加**して簡易内蔵プレーヤーを作る。HANDOFF §10-G / §10-L を更新。
+- B-4 バックアップ容量しきい値・確認挙動の設定: **グローバル設定のみ**（ジョブ単位の上書きはしない）。
+- 着手順: **A (スクロール/表示性能) → D (内蔵ビューア/サムネ/既定アプリ) → C (AppBar) → B/E (同期拡張・ゴミ箱)** の順で進める。
+
+---
+
+## A. ファイル一覧のスクロール / 表示パフォーマンス
+
+> スクロールがやはり遅い。時間が経つと問題なくなるので読み込みかと思われる。大量にファイルがあるフォルダは表示されるまでに時間がかかる。これも即座に表示されるようにしてほしい。スクロールバーがない。右側に小さく表示させて、右端から左に軽くスライドするとスクロールバーを大きくしてタッチでスライドできるようにしてほしい。
+
+### 方針
+- [x] **初回表示の即時化**: `list()` の結果を一括取得してからまとめて描画する現状をやめ、ストリーム/ページングで「届いた分から即描画」する。
+  - `StorageProvider.list()` とは別に `listFlow()`（または既存 API を `Flow<List<FileNode>>` で chunk emit）を検討。少なくとも `storage-local` は段階 emit する。
+  - 並べ替え・フォルダ先頭固定は逐次反映でちらつかないよう、一定 chunk ごとに再ソートして差し替え。
+- [x] **スクロールが「時間が経つと直る」原因の特定**: サムネ生成・拡張子バッジ・mtime フォーマット・アイコン解決などを `LazyColumn`/`LazyVerticalGrid` の item composition 内で同期実行していないか確認。
+  - サムネは Coil の非同期ロード（プレースホルダ→差し替え）に統一。item 内で同期 I/O / 重い計算をしない。
+  - 日付文字列・サイズ文字列は `remember` でメモ化、できれば `FileNode` を UI 用 `FileRow` に一度だけ変換して保持。
+  - `key = { it.uriString }` を必ず指定。安定キーがないと再 composition が増える。
+  - `@Immutable` / Compose stability（`compose_stability.conf` 既存）を UI モデルに付与。
+- [x] **大量ファイルフォルダ対策**:
+  - ソートと「隠しファイル除外」を `Default` ディスパッチャの 1 回の処理にまとめ、メインスレッドでやらない。
+  - 1 万件級でも耐えるよう `LazyColumn` の item は完全に軽量化（ネストレイアウト削減）。
+- [x] **スクロールバー（ファストスクローラ）**:
+  - 通常時: 右端に細いトラック + つまみを薄く表示（スクロール中のみ濃く、停止後フェードアウト）。
+  - インタラクション: 右端付近から左方向にスワイプすると、つまみが拡大して掴める状態になり、ドラッグでファストスクロール。グリッド/リスト両対応。
+  - ドラッグ中は現在位置のラベル（先頭文字 or インデックス）をオーバーレイ表示。
+  - 自前 Composable（`FastScrollbar`）として `app/ui/components/` に実装。外部ライブラリは入れない方針（要確認なら別途）。
+
+---
+
+## B. 同期エンジン
+
+### B-1. 双方向同期の追加
+
+> 方向だが、双方向同期も追加してほしい。
+
+- [ ] `SyncDirection.BIDIRECTIONAL` を P7 で実装（**HANDOFF §8-B / PHASES P8 では「P8」扱い → P7 に前倒し**）。
+  - `SyncJobEntity.direction` に `"bidirectional"` を追加。
+  - state DB（`sync_states`）必須。両側の前回 size/mtime を見て「片側のみ変化＝伝播」「両側変化＝競合」「片側消失＝削除伝播（deleteEnabled 時のみ）」を判定。
+  - 競合は既存 `ConflictPolicy`（NEWER_WINS デフォルト / LOCAL_WINS / REMOTE_WINS / KEEP_BOTH / SKIP）をそのまま使用。
+  - ⚠ HANDOFF / PHASES の「双方向は P8」記述と矛盾するので、確定後に §8-B と PHASES.md を更新。
+
+### B-2. 定期同期のスケジュール指定を拡充
+
+> 定期同期の時間指定だが、毎日何時とか、週どの曜日に何時からとか、日付と時間とかで定期同期も選択肢に入れてほしい。
+
+- [ ] スケジュール種別を追加（現状は `intervalMinutes` の固定間隔のみ）:
+  - **間隔** (既存): n 分/時間ごと（WorkManager 最小 15 分制約は維持）。
+  - **毎日**: 指定時刻（例 02:00）。
+  - **毎週**: 曜日（複数可）＋時刻。
+  - **毎月**: 日（例 1 日、月末）＋時刻。
+  - **日時指定**: 特定の日付＋時刻に 1 回（または「毎年この日」）。
+- [ ] 実装: WorkManager の `OneTimeWorkRequest` を「次回発火時刻」へ `setInitialDelay` で予約し、実行完了後に次回をまた予約する自己再スケジュール方式（`PeriodicWorkRequest` では時刻指定が無理なため）。端末再起動時は `BootReceiver`（既存）で再登録。
+- [ ] `SyncJobEntity` スキーマ拡張: `scheduleType`（`interval|daily|weekly|monthly|datetime`）、`scheduleTime`（分単位 of day）、`scheduleDaysOfWeek`（ビットマスク）、`scheduleDayOfMonth`、`scheduleDateTime`（epoch、datetime 用）。`intervalMinutes` は `interval` 種別専用に。Room マイグレーション必要。
+
+### B-3. ジョブ追加 UI のわかりやすさ
+
+> ジョブ追加時の設定だが、下にある三つの入力ボックスに何をいれるのかよく分からない。もうちょっとわかりやすくしてほしい。
+
+- 該当: `includePatterns` / `excludePatterns` / `maxFileSize` の 3 入力（`sync/edit` 画面）。
+- [ ] ラベルと説明文を明確化:
+  - 「含めるファイル（glob）」例: `*.jpg, *.png` ／空なら全部。chip 入力 + 「例を見る」ヘルプ。
+  - 「除外するファイル（glob）」例: `**/.git/**, *.tmp`。
+  - 「これより大きいファイルは同期しない」: 数値 + 単位（MB/GB）ドロップダウン、空＝無制限。スライダ or プリセット（無制限/100MB/1GB/…）。
+- [ ] 各フィールドに inline help（`supportingText`）と、glob の簡単な凡例を出すボトムシート。
+- [ ] セクション見出しを付ける（「対象フォルダ」「フィルタ」「スケジュール」「競合と削除」「詳細（並列度・リトライ）」）。詳細はデフォルト折りたたみ。
+
+### B-4. delete 同期のバックアップ（世代管理）
+
+> delete 同期を ON にしている場合、削除するファイル・フォルダ構成をアプリ上で 3 世代分くらいバックアップを残しておいてほしい。自分側もリモート側のもどちらも残す。設定で xxxMB 以上の場合はバックアップするか確認 / 無確認でバックアップ / 無確認でバックアップ除外 など、容量と確認を設定可能に。
+
+- [x] **同期削除前バックアップ**: `deleteEnabled` なジョブで `DeleteLocal` / `DeleteRemote` を実行する直前に、対象をバックアップ領域へ退避してから削除。
+  - ローカル側: アプリ専用領域（例 `Android/data/com.zerotoship.foldex/files/sync-trash/<jobId>/<generation>/...`）にフォルダ構成ごと保存。
+  - リモート側: リモート上の隠しフォルダ（例 `.foldex-sync-trash/<jobId>/<generation>/...`）へ rename or copy。リモートに書けない場合はローカルへ退避（フォールバック）し、その旨をログ。
+  - **世代数 3**（設定可。1〜?）。同期実行ごとに 1 世代繰り上げ、古い世代を削除。
+- [x] **容量しきい値 × 挙動の設定**（ジョブ単位 or グローバル、要確認 → 暫定はジョブ単位、グローバルにデフォルト）:
+  - しきい値 `backupThreshold`（MB、未満は常にバックアップ）。
+  - しきい値超過時の `backupPolicyOverThreshold`: `ASK`（毎回確認ダイアログ）/ `BACKUP`（無確認でバックアップ）/ `SKIP`（無確認でバックアップせず削除）。
+  - バックグラウンド実行（WorkManager）で `ASK` の場合は通知で確認 or 「次回実行まで保留＋通知」。UI が無い時の挙動を要設計。
+- [ ] バックアップ領域の閲覧/復元 UI（`sync/history` か専用画面）。「この世代を復元」「破棄」。
+- [ ] サイズ集計と上限（サムネキャッシュ同様、設定で上限 → 古い世代から自動削除）。
+
+---
+
+## C. ヘッダー（AppBar）の情報過多
+
+> ヘッダーだが、お気に入りボタン・検索ボタン・表示種類・sync ボタンなど多くて、内部ストレージなどの名前がほとんど見えていない。いずれも見やすく修正してほしい。
+
+- [ ] AppBar の右側アクションを整理:
+  - 常時アイコン表示は **検索** と **オーバーフロー(⋮)** の 2 つだけに（HANDOFF §12-B の元設計に戻す）。
+  - 表示モード切替・ソート・隠しファイル・お気に入り追加・このフォルダで同期作成 などは ⋮ メニュー or ボトムシートへ集約。
+  - 表示モード切替だけは頻度が高いので、⋮ の最上段 or パンくず行右端に小さく置く案も検討。
+- [ ] タイトル（「内部ストレージ」「自宅NAS / Public」等）に十分な幅を確保。長い場合は ellipsis、タップでフルパス/接続情報のポップオーバー。
+- [ ] 接続中の帯域・状態表示はタイトル下の細い行 or パンくず行に小さく（タイトルを圧迫しない）。
+- [ ] FAB（貼り付け/新規作成）と被らないレイアウト確認。
+
+---
+
+## D. ファイル種別ごとの内蔵ビューア / 既定アプリ設定
+
+> txt・画像ファイル・HTML ビューア・mp3 再生などはアプリ内で簡易的に完結させてほしい。サムネイル表示もお願い。apk などはインストールできるように。その他対象外のファイルは外部アプリから開くなど、拡張子によって既定のアプリ選択とか設定からできるように。ゴミ箱システムも追加（後述 E）。
+
+- [x] **内蔵ビューア**（HANDOFF §10 を一部前倒し / 追加）:
+  - 画像: `ImageViewerScreen`（ズーム/回転/スワイプ/EXIF）。
+  - テキスト: `TextViewerScreen` + `TextEditorScreen`（簡易編集）。エンコーディング判定（juniversalchardet）。
+  - Markdown: `MarkdownViewerScreen`（Markwon）。
+  - **HTML ビューア（新規）**: ローカル/リモートの `.html`/`.htm` を `WebView` で簡易表示（JS は既定オフ、相対リソース読み込みは同一ディレクトリ限定）。`app/ui/viewer/HtmlViewerScreen.kt`。
+  - **mp3 等の音声再生（新規・方針変更）**: HANDOFF §10-G は「再生は外部のみ」だが、依頼により **簡易内蔵プレーヤー** を追加（`MediaPlayer`/`ExoPlayer` のどちらかで最小実装：再生/一時停止/シーク/曲名・アートワーク表示、バックグラウンド継続は要検討）。`AudioPlayerScreen.kt`。⚠ §10-G / §10-L と矛盾するので確定後に更新。
+  - 圧縮: `ArchiveExplorerScreen`（中身プレビュー）。
+- [x] **サムネイル表示**: Coil 3 ベース、メモリ+ディスク 2 層キャッシュ（HANDOFF §10-C）。画像/動画/音声アートワーク/（可能なら）PDF 1 ページ目。リモートは 10MB 制限でフォールバック。グリッド表示で特に効く。A 項のパフォーマンス対策と整合させる（item 内同期ロード禁止）。
+- [x] **APK**: タップ or メニューから `ACTION_VIEW`(`application/vnd.android.package-archive`) でインストール起動（`REQUEST_INSTALL_PACKAGES` 権限、`FileProvider` 経由、リモートは一旦ダウンロード）。
+- [x] **拡張子 → 既定アプリのマッピング設定**:
+  - 設定画面に「ファイルの開き方」セクション。拡張子（またはカテゴリ）ごとに「内蔵ビューア / 毎回選択 / 特定の外部アプリ」を選べる。
+  - 内部に `OpenWithPreferenceEntity(extOrCategory, mode, externalPackage?)` を持つ（Room or DataStore）。
+  - 未設定の拡張子は「内蔵対応があれば内蔵、なければ外部アプリ選択ダイアログ」。
+  - ビューア画面に「別のアプリで開く」「既定にする」アクション。
+
+---
+
+## E. ゴミ箱システム（ファイル操作全般）
+
+> ゴミ箱システムも追加してほしい。ON/OFF で、ゴミ箱に入れるか・完全削除か・毎回確認か、設定から選べるように。
+
+- [x] **削除時の挙動設定**（HANDOFF §11-H「ゴミ箱を使う OFF (P7)」を具体化）:
+  - `deleteBehavior`: `TRASH`（ゴミ箱へ移動）/ `PERMANENT`（完全削除）/ `ASK`（毎回ダイアログで選択）。
+  - 既存の「削除前の確認 ON/OFF」とは別軸（確認の有無 × 行き先）。
+- [x] **ゴミ箱の実体**:
+  - ローカル: アプリ専用領域（例 `Android/data/.../files/trash/`）に、元パス・削除日時のメタ付きで退避。SAF 領域や `MANAGE_EXTERNAL_STORAGE` 配下のファイルも一旦ここへ移動（クロスデバイス時はコピー＋削除）。
+  - リモート: 接続/共有のルート直下に `.foldex-trash/` を作って rename。書けない/対応してない場合はゴミ箱無効（＝確認の上で完全削除）か、ローカルへ退避するかを要検討。
+- [x] **ゴミ箱画面**: `files` タブのクイックアクセス or 設定から。一覧（元パス・削除日時・サイズ）、復元、完全削除、空にする。
+- [x] **自動削除**: 「n 日後に自動で空にする」設定（デフォルト 30 日 or 無効、要決定）＋サイズ上限。
+- [ ] 同期削除バックアップ（B-4）とは別物だが、退避先ディレクトリ構造・サイズ管理・復元 UI は共通化できると良い（`core-data` に `TrashRepository` を用意し、ゴミ箱と sync-trash の両方が使う）。
+
+---
+
+## F. 実機フィードバック対応（2026-05-13）
+
+実機で触った上での指摘。いずれも UI/パフォーマンス寄りで HANDOFF の確定事項とは矛盾しない（D のサムネ方針のみ縮小）。
+
+- [x] **設定画面の説明文が「…」で切れて読めない**: `SettingRow` を見直し、チップ群など横幅を食うコントロールはタイトル/説明の下に縦並びで配置（`wide`）。チップは `FlowRow` で折り返し。説明文は `maxLines` 制限を外して全文表示。
+- [x] **ファイル一覧のスクロールが重い**: 行のクリック/長押しを安定した関数参照（`viewModel::onItemClick` 等）で渡し、スクロール中の無駄な再コンポーズを抑制。`LazyColumn` の `key` を文字列生成から `FileUri` 自体に変更。サムネの `ImageRequest` を `remember` 化。**一覧のサムネは画像のみ**にして動画/音声アートのメタデータ抽出（重い）を一覧から外した（ビューアでは引き続き表示）。
+- [x] **フォルダ階層で左上が「戻る」に変わる → ハンバーガー固定に**: `navigationIcon` から「上へ」分岐を削除。上へ戻る操作はパンくず／端末の戻るボタンで行う（`BackHandler` は据え置き）。
+- [x] **テキストエディタ刷新**:
+  - 「編集」トグルを廃止し、ローカルのテキストは常時編集可能に。
+  - Undo / Redo / 保存 のアイコンボタンを追加（新 `BasicTextField(state)` の `undoState` を利用）。
+  - 巨大テキストで固まる問題: 編集は ~512KB までに制限し、それを超えるものは 1 行ずつ遅延描画する閲覧専用モード（`LazyColumn`）にフォールバック。内蔵で開ける上限は 2MB→4MB に拡大。
+
+---
+
+## G. P7 終盤の追加修正 (2026-05-13 〜 2026-05-16)
+
+実機検証を進めながら出てきた追加修正を時系列で記録。§A〜§F より新しい内容はここに追記する。HANDOFF / PHASES の確定事項にぶつかるものはコメントで明示する。
+
+### G-1. 起動時クラッシュ系
+- [x] **DB v3→v4 / v4→v5 マイグレーション失敗時の自動復旧** (`CoreDataModule.provideDatabase`): `Room.databaseBuilder().build()` 直後に `openHelper.writableDatabase` を強制オープン。`IllegalStateException` が出たら `context.deleteDatabase(...)` で物理削除→再構築する保険を追加。`fallbackToDestructiveMigration(dropAllTables=true)` でも一部端末・ビルド汚染で発火しないケースに対応。
+- [x] **SFTP `IllegalArgumentException("No user home")`** → `FoldexApplication.onCreate` で `System.setProperty("user.home", filesDir.path)` を必ず先に設定。
+- [x] **SFTP `KeyExchangeFactories not set`** → BouncyCastle のフル版を `Application.onCreate` で `Security.removeProvider("BC"); Security.addProvider(BouncyCastleProvider())`。`SshServer.setUpDefaultServer()` の各 default が空のときは `ServerBuilder.setUpDefault*(true)` で defensive 再構築。
+- [x] **UncaughtExceptionHandler**: スタックに `org.apache.mina|sshd|ftpserver` を含む例外 (FTP の `CoderMalfunctionError` 等) はプロセスを殺さず握り潰す。クラッシュは `externalFilesDir/crash/crash_*.txt` に 5 件ローテで保存。
+
+### G-2. 接続編集 / セッションプール
+- [x] **接続編集に「URL から入力」フィールド**: `sftp://user@host:22/path` / `smb://host/share/sub` / `webdavs://...` をパースして各欄に分解。ポート空欄許可 (`portText: String` + `effectivePort()` フォールバック)。
+- [x] **SFTP 公開鍵認証**: `SftpAuthMode { PASSWORD, PUBLIC_KEY }`、`SshClientKeyHelper.generate()` で RSA 3072 + PKCS#8 PEM + OpenSSH 公開鍵を生成 (Android 標準 JCA のみ依存)。UI に「鍵を生成」+「公開鍵をコピー」。
+- [x] **SMB の「共有名」と「初期パス」を分離**: `Connection.initialPath: String` を追加 (Room v4→v5 destructive)。「共有名」フィールドに `share/sub/path` が入っても自動で先頭セグメント=share、残り=initialPath に分解。
+- [x] **編集ダイアログを範囲外タップ/戻るキーで閉じない**: `AlertDialog(properties = DialogProperties(dismissOnClickOutside=false, dismissOnBackPress=false))`。「キャンセル」ボタン経由でのみ閉じる。
+- [x] **接続編集の即時反映**: `SmbSessionPool` / `SftpSessionPool` / `FtpClientPool` / `WebDavSessionStore` が `connectionId` だけでキャッシュを返してしまい、共有名や認証情報を変更してもアプリ再起動するまで反映されなかった。各 Holder に「プール時点の Connection 設定」を保持させ、`acquire` 時に signature (host / port / share / username / authMethod / fingerprint / basePath 等) を比較。一致しなければ close → 再接続。
+
+### G-3. FTP まわり
+- [x] **FTP 書き込み失敗の診断**: `FoldexFtpDiagnosticFtplet` を新設し、書き込み系コマンド (STOR/APPE/MKD/DELE/RNFR/RNTO) の 5xx 応答を `ServerLogEvent.FILE_OP_FAILED` に流す。`DataConnectionConfigurationFactory.passiveAddress / passiveExternalAddress` を listener と同じ host に明示し、`passivePorts = "30000-30100"` で固定。
+- [x] **FTP `NioFileSystemFactory`**: Apache FtpServer のデフォルト `NativeFileSystemFactory` (java.io.File / RandomAccessFile) を自前 NIO ベース実装に置換。`Files.newByteChannel(WRITE, CREATE, TRUNCATE_EXISTING)` を使う `NioFtpFile` + `NioFileSystemView`。
+- [x] **FTP `setRestartOffset` で範囲指定 read** (G-9 で追加、ストリーミング seek 用)。
+
+### G-4. ファイルブラウザ
+- [x] **タイトル長押し → パスをクリップボードへコピー / タップ → `PathInputDialog` で手動入力**: ローカル `/storage/...` / リモート `scheme://connId/path` / SAF `documentUri` を切り替え。
+- [x] **コピー/移動/共有保存の進捗バナー**: `FileBrowserState.opProgress: FileOpProgress?` + `FileOpProgressBanner.kt` (LinearProgressIndicator + 件数 + バイト + 現在ファイル名、80ms スロットル)。
+- [x] **DL バナー**: 「ダウンロード中…」snackbar を廃止し、上部に `ActiveDownloadsBanner` を常駐表示。
+- [x] **ペーストフッターをコンパクト化** (80dp → 48dp、`Surface + Row`)。
+- [x] **PullToRefreshBox** で一覧を引き下げ更新。
+- [x] **ソート / 隠しファイル切替** (`KEY_SORT_BY / KEY_SORT_ASC / KEY_SHOW_HIDDEN` に永続化、フォルダごとに表示モードも記憶)。
+- [x] **選択モードの overflow**: 共有 / 別アプリで開く / プロパティ / HOME に追加 / ZIP 圧縮 / ZIP 解凍。
+- [x] **ファイル作成**: `CreateFolderDialog` → `CreateDialog`、`CreateKind { FOLDER, FILE }` のセグメンテッドボタンで切替。新規ファイル作成後に内蔵対応カテゴリなら自動オープン。
+- [x] **コピー貼付の上書き確認**: 衝突時に `PasteOverwriteDialog` でユーザー確認。
+
+### G-5. HOME 画面
+- [x] **HOME 画面骨格** (新規モジュール `ui/home/`): 組み込みタイル (Files / Trash / Servers / Sync / Settings / Permissions / SAF / 画像 / 動画) + カスタム (LocalFolder / SafFolder / RemoteConnection)。BottomNav 先頭に追加、startDestination を `home` に変更。
+- [x] **タイル長押し → ドラッグで一気に並べ替え**: `sh.calvin.reorderable` を導入。長押しでドラッグ開始 (`longPressDraggableHandle`) → 任意位置でドロップ。タップ = タイル本来の動作。メニュー (改名 / 隠す / 削除) は右上の ⋮ ボタンへ移動。
+- [x] **タイル改名**: `HomeShortcutRepository.rename(id, label)` + 組み込みタイル用 `KEY_LABEL_OVERRIDES`。
+- [x] **非表示タイルの復元** (HOME 右上の ⋮ から `HiddenShortcutsDialog`)。
+- [x] **SAF tree を HOME に固定**: `HomeShortcut.SafFolder`、HOME +ボタンの追加ダイアログを `FlowRow` で「ローカル / SAF / リモート」3 モード対応 (3 つ目が見切れる問題も解決)。
+- [x] **画像 / 動画の横断ビュー** (HOME の組み込みタイル → `MediaCollectionScreen`): MediaStore を `DATE_MODIFIED DESC` で横断クエリ、`GridCells.Adaptive(110dp)` で Coil サムネ表示、フォルダグルーピング + 長押し選択 (削除/共有/外部/場所を開く)。
+
+### G-6. ビューア (画像 / PDF / Markdown / テキスト / 動画)
+- [x] **画像スワイプ**: `Modifier.transformable` が 1 指 pan も消費して HorizontalPager のスワイプを阻害する問題。`awaitEachGesture` + `awaitFirstDown(requireUnconsumed=false)` の自前実装で「ポインタが 2 本以上のとき」だけ zoom/pan を消費。1 指は Pager に渡す。
+- [x] **PDF**: `produceState` の `awaitDispose` でレンダラインスタンスを正しく close (`DisposableEffect(rendererState) { onDispose { rendererState?.close() } }` が delegate の現値を見るため null→new に切り替わった瞬間 new を即 close するクラッシュを解消)。`PdfBitmapCache` (LRU 12 ページ) + 専用 `EditorScrollbar` (28dp 当たり判定 + ドラッグでスクロール)。
+- [x] **テキストエディタを Sora-editor (0.23.5) に置換**: `BasicTextField` を撤廃し `CodeEditor` (AndroidView)。検索 / 折返し / 行番号 / Undo/Redo / 保存 / 貼付 のフッター。`EditorColorScheme` を Material 色から組み立て。編集上限を 8MB まで拡大 + ユーザー設定 (128KB〜8MB) を `editorEditableLimitKb` で導通。
+- [x] **エディタ入力ラグ軽減**: `ContentChangeEvent` ハンドラを 150ms debounce + 値変化時のみ Compose state 更新。`setCursorBlinkPeriod(750)` で描画頻度を下げる。
+- [x] **エディタフッターを IME 上に**: `AndroidManifest` の `ViewerActivity` に `windowSoftInputMode="adjustResize"` + Column に `imePadding()`。
+- [x] **動画**: WMV / `.asf` (VC-1/WMV9) は MediaCodec 非対応なので拡張子で予め判定し外部アプリ案内オーバーレイへ即フォールバック。`Player.Listener.onPlayerError` で再生エラー時も同じオーバーレイ。
+- [x] **Markdown**: テーブル / strikethrough / tasklist / linkify プラグイン追加。
+- [x] **拡張子なしテキスト自動判定**: `looksLikeText(file)` で先頭 8KB 走査 (NUL バイト / 制御文字 5% 超でバイナリ判定)。LICENSE / Dockerfile / Makefile / shebang スクリプトを内蔵エディタで開けるように。
+
+### G-7. SAF (Termux) 完全対応
+- [x] **`FileUri.Saf.pendingChildName` を追加**: 親 URI + これから作る子の名前を擬似 URI で表現。`mkdir` / `openOutput(CREATE_NEW)` は `DocumentFile.fromTreeUri(parent).createDirectory/createFile(name)` で実体生成。
+- [x] **`statSaf` を `fromTreeUri + findFile(name)` ベースに**: `fromSingleUri` は wrapper を返すだけで「常に存在」誤判定するバグを解消。
+- [x] **`list` を `fromTreeUri` 統一**: `fromSingleUri` ではサブフォルダ listing 不能だった。
+- [x] **`StorageProviderRouter.childUri` も SAF 対応**: cross-copy / paste / saveSharedFilesHere / createDialog すべて SAF 宛に動く。
+- [x] **`downloadSafToCache` で SAF ファイルを内蔵ビューアで開く / 編集後の書き戻し**: `PendingRemoteEdit` を `PendingEdit(sourceUri, mtimeAtOpen)` に一般化。`ON_RESUME` で `checkPendingUploads` が Remote / SAF 両方を見て `openOutput(OVERWRITE)`。
+
+### G-8. ZIP / 共有受信 / App Shortcuts
+- [x] **ZIP 圧縮/解凍** (zip4j 2.11.5): `ZipOps.compress/extract`、AES-256 / PKCS#5 パスワード対応。選択モード overflow から起動。リモート / SAF 宛でも `copyTreeIntoStorage` で書ける。`ZipExtractDialog` は password なしで試行→ `WrongPassword` 例外で再ダイアログ。
+- [x] **ACTION_SEND / SEND_MULTIPLE 共有受信**: AndroidManifest に intent-filter (`mimeType="*/*"`)。MainActivity が EXTRA_STREAM から複数 Uri を読み、表示名を `OpenableColumns.DISPLAY_NAME` で問い合わせ、`FileBrowserState.pendingShares` に積んで `ShareReceiveBanner` を表示。「ここに保存」で `openOutput(CREATE_NEW)`、同名は ` (N)` でユニーク化。
+- [x] **App Shortcuts** (`res/xml/shortcuts.xml`): Files / Connections / Servers / Trash の 4 つ。MainActivity の launchMode を `singleTask` に、intent extra `foldex.shortcut` を MainScreen が受けて `selectTab(...)`。
+
+### G-9. リモート動画ストリーミング (seek 対応)
+- [x] **`RemoteStreamProvider` (ContentProvider)** を新設。authority は `${applicationId}.streaming` (debug/release が共存可能)。
+- [x] **第1段階**: `ParcelFileDescriptor.createPipe()` + バックグラウンドで `StorageProviderRouter.openInput()` のストリームを write 側にフィード。再生開始は早いが seek 不可 (ExoPlayer のシークバー操作で停止)。
+- [x] **第2段階**: `StorageManager.openProxyFileDescriptor` + `ProxyFileDescriptorCallback` に置換。`onRead(offset, size, data)` ごとに `StorageProvider.openInputRange(uri, offset)` を呼び、連続位置のときは前回ストリームを使い回し、seek 時のみ閉じて再オープン。
+- [x] **`StorageProvider.openInputRange(uri, offset)` を追加**:
+  - SFTP: `RemoteFile.RemoteFileInputStream(fileOffset)`
+  - SMB: `SmbRangeInputStream` (`File.read(buf, fileOffset, ...)` 使用)
+  - FTP: `client.setRestartOffset(offset)` + `retrieveFileStream`
+  - WebDAV: HTTP `Range` ヘッダ (`206 Partial Content`)、非対応サーバは skip フォールバック
+  - 既定実装は `openInput()` + `skip()` (低速だが正しく動く)
+- [x] **VideoViewer**: `mediaUri: String?` パラメータを追加。非 null のときは ExoPlayer に直接渡し、ローカルファイルは `file.toURI()` を使う既存経路を維持。
+
+### G-10. その他の細かい改善
+- [x] **タブ / 画面遷移の即時化**: `NavHost(enterTransition = { EnterTransition.None }, exitTransition = { ExitTransition.None }, popEnterTransition = ..., popExitTransition = ...)`。フェードを撤廃。
+- [x] **同期 "競合" 表記の改善**: `SyncResult.toSummaryLine` を「転送 N (両側更新 M)」に書き換え、`transferredCount = uploaded + downloaded + conflicts` に修正 (競合は失敗ではなく解決済み転送として扱う)。
+- [x] **削除バックアップ拡張**: `SyncBackupRepository.restoreLocalFile(overwrite)` + `backupFile()` (リモート復元用ストリーム)。`SyncBackupViewModel.requestBatchRestore` で衝突チェック → ダイアログ → ローカル + リモート同時復元。世代に L/R chip + ファイル詳細表示。
+- [x] **同期ジョブの実行中チップ**: `SyncScheduler.observeStatus(jobId): Flow<JobRunStatus>` (WorkInfo タグから判定)。`SyncJobsScreen` の各行に「実行中」緑 / 「キュー中」橙の `JobStatusChip`。実行中は今すぐボタンをスピナーに置換 + 無効化。
+- [x] **詳細実行ログ**: `Executor.onAction(message, level)` コールバックを追加し、SyncEngine が各アクションを `AppLogger` に流す。
+- [x] **`AppLogger` 基盤**: Singleton、`externalFilesDir/logs/app.log` 256KB / 2 世代ローテ。`info` / `warn` / `error` (例外スタックも記録)。設定 → 実行ログから一覧 / フィルタ / 共有 / 消去。
+- [x] **サーバ起動失敗ログ**: `SftpServerManager` / `FtpServerManager` の `start()` Result.Failure 時に `AppLogger.error(...)` を呼ぶ。snackbar を見逃してもログから後追い可能。
+- [x] **キャッシュクリア** (設定の「ストレージ」): `cacheDir` + `externalCacheDir` を再帰削除、容量表示。
+- [x] **エディタ編集可能上限の設定** (128KB / 256KB / 512KB / 1MB / 2MB / 4MB / 8MB)。
+- [x] **アプリアイコン** 差し替え (mipmap-{m,h,xh,xxh,xxxh}dpi)。
+- [x] **ContentProvider authority を `${applicationId}.streaming` に**: debug / release 共存対応 (`INSTALL_FAILED_CONFLICTING_PROVIDER` の回避)。
+
+---
+
+## H. P7 仕上げの追加修正 (2026-05-26)
+
+実機検証後に出た追加依頼。すべて実機確認済み。HANDOFF の確定事項とは矛盾しない (機能追加・不具合修正)。
+
+- [x] **SAF のコピー/切り取り移動ができない問題を修正** (`fcf3be3`): `LocalStorageProvider.copyWithin/moveWithin` が SAF (`FileUri.Saf`) を「Cross-type copy not supported」で弾いていた。SAF↔SAF / SAF↔Local を `openInput/openOutput/mkdir/list/stat` だけで行う汎用コピー (`genericCopy`) を追加し、ディレクトリは実 URI に解決してから再帰。あわせて pendingChildName 付き SAF の `delete` が**親フォルダごと消しかねない**バグも修正 (findFile で子を解決してから削除)。
+- [x] **エディタの編集可能上限に「無制限」** (`35c7de4`): 設定チップに「無制限」(`UNLIMITED_EDITABLE_LIMIT_KB`) を追加。選択時は編集ロックと読み込み上限 (MAX_BYTES) の両方を外す。
+- [x] **ビューア/エディタをアプリのテーマ設定に追従** (`35c7de4`): `ViewerActivity` が `isSystemInDarkTheme()` 固定で手動のライト/ダーク設定を無視していた。`themeMode` + Material You を設定から解決して `FoldexTheme` に渡す。Sora の `isDark` も実テーマ由来 (surface の luminance) に。
+- [x] **ダークモードの行番号が背景に埋もれる問題を修正** (`61eb8d4`): Sora の `LINE_NUMBER_CURRENT` を本文色、スクロール時の行番号バブル (`LINE_NUMBER_PANEL` / `_TEXT`) を primary/onPrimary で高コントラスト化。
+- [x] **Markdown プレビューに掴めるファストスクロールバー** (`f634115`): `verticalScroll(ScrollState)` 向けのピクセル比率ベースの `FastScrollbar` を追加し MD プレビューへ設置 (既存の index ベース core には未変更)。
+- [x] **HOME のタイルを配色チップ付きデザインに刷新** (`70fe3dc`): 全タイルが同一の灰色カード + primary 一色アイコンで単調だったのを、機能ごとに色分けした角丸アイコンチップ入りタイルへ。配色はテーマ由来 (primary/secondary/tertiary/error/neutral コンテナ) で Material You・ライト/ダークに追従。アイコンも意味の合うものへ (設定=Settings, 権限=Shield, 同期=Sync, サーバ=Dns 等。従来は設定=錠前など誤マッピング)。
+- [x] **ZIP を展開せずに中身を閲覧 (ArchiveExplorer)** (`0f72628`): 仕様 §10「中身プレビュー」を実装。`ui/archive/ArchiveExplorer` (zip4j ヘッダ読み + 仮想ツリー + 単一エントリ展開) と `ArchiveExplorerActivity` (パンくず付きで潜れる一覧、ファイルタップで内蔵ビューア/外部表示、暗号化 zip はパスワード要求)。`openFile` が ZIP を `OpenRequest.Archive` 経由で本画面へ振り分け。全展開 (解凍) は従来どおり選択メニューから利用可能。
+- [x] **ライト/ダークの配色を整備** (`FoldexTheme.kt`): 当初フォールバックは primary だけ緑で残りが Material 既定の紫系 → 緑×紫がちぐはぐだった。最終形は **地の面 (background / surface / surfaceVariant / surfaceContainer 群) はニュートラルなグレー、緑は primary とアクセント container (HOME タイル等) だけ** に限定 (light/dark とも)。※途中で surface まで緑にしたら「全体的に緑っぽい」と指摘が出たためニュートラルへ戻した経緯あり。あわせて**動的カラーの既定を OFF** にし (`UserSettings.dynamicColor=false` + repo 既定 false)、既定の見た目を Forest Green テーマに統一 (設定でいつでも Material You に切替可)。
+- [x] **ステータスバー/ナビバーのアイコン視認性** (`FoldexTheme.kt`): `enableEdgeToEdge()` はシステムの dark/light を基準にアイコン明暗を決めるため、アプリを手動でライトにしても白アイコンのままで時計等が背景と同化していた。`SideEffect` で `WindowCompat` の `isAppearanceLight{Status,Navigation}Bars = !darkTheme` をアプリの実テーマに合わせて設定。
+
+---
+
+## I. P7 仕上げの追加修正 (2026-05-31)
+
+実機検証後の追加依頼 + 正式リリース署名構成 + GitHub 公開。`fix(filebrowser)` `fix(home)` `build` の 3 コミット (`7405d9f` / `c6e014d` / `3979e27`)。
+
+- [x] **親フォルダ消滅バグの修正** (`7405d9f`): `FileBrowserViewModel.executePaste` の上書き処理 (`storage.delete(destUri)` → `move/copy`) が、宛先が元 (`node.uri`) の祖先になっているケースで「元ごと巻き添えで消えて、その後の move/copy が失敗」していた致命バグを修正。再現条件: フォルダ `…/X/A` の中に同名フォルダ `…/X/A/A` があり、内側を切り取って `…/X` で「同名を上書き」貼り付けすると宛先 `…/X/A` が祖先になる。新規ヘルパ `pathsOverlapUnsafely(src, dest)` で「同一」または「どちらかが他方の祖先」を判定し、危険時は削除も移動もせず明示メッセージで拒否 (Local / Remote / SAF 全対応、SAF は docId のパス部で比較)。コピー側も同様にガード。
+- [x] **削除に進捗バナー** (`7405d9f`): `performDelete` で `opProgress` を設定し、件数ベースの「削除中…」「ゴミ箱へ移動中…」バナーを表示 (バイト進捗は取れないため不確定バー)。
+- [x] **圧縮・解凍に進捗バナー** (`7405d9f`): `ZipOps.compress/extract` に `fun interface ZipProgress` を追加し、zip4j の `runInThread=true` + `ProgressMonitor` ポーリング (60ms) で逐次バイト進捗を吸い出す。`executeZipCompress` / `executeZipExtract` は 80ms スロットルで `opProgress` を更新 (圧縮はファイル単位、解凍はアーカイブ全体)。例外は `pm.exception` 経由で再 throw し既存の `WrongPassword` 検出を保持。
+- [x] **HOME 起動時の並び替えチラつき解消** (`c6e014d`): DataStore (非同期) の初期ロード前は `BUILT_IN` 既定順を描き、ロード後に保存順へ並び替わるため Reorderable の配置アニメが走っていた。`HomeShortcutRepository` に SharedPreferences ベースの同期キャッシュ (`cachedShortcuts()` / `cacheShortcuts()`、`foldex_home_cache`) を追加し、`HomeViewModel.shortcuts` の `stateIn` 初期値に使用 + `onEach` で実値到着のたびに更新。前回と変化が無ければ完全に無動作で描ける。
+- [x] **正式リリース署名構成** (`3979e27`): リポ直下 `keystore.properties` (gitignore 済み) があれば PKCS12 のリリース鍵 (`release.keystore`、RSA-2048、10000日) で署名し、無いマシンでは debug 鍵にフォールバック。`signingConfigs { create("release") { ... } }` と `release { signingConfig = if (keystorePropsFile.exists()) … else … }` を `app/build.gradle.kts` に追加 (`java.util.Properties` を明示 import)。`release.keystore` / `keystore.properties` は `.gitignore` 既定で除外 (`*.keystore` / `keystore.properties`)。`apksigner verify` で `CN=Foldex, O=Zerotoship, C=JP`、SHA-256 `4F:8C:09:…:00:03` の APK v2 署名を確認済み。
+- [x] **GitHub 公開** (リモート: `git@github.com:orgsonai/foldex.git`): main + phase/P1〜P7-polish + v0.1.0-P1〜v0.6.0-P6 のタグ全てを push 済み。鍵 (`release.keystore`) と資格情報 (`keystore.properties`) は gitignore で除外され、リポジトリには含まれない。
+
+## J. P7 仕上げの追加修正 (2026-05-31, 第2回) — フォルダ操作の堅牢化 + ライセンス確定
+
+実機フィードバック (リモート→SAF コピー失敗 / 進捗 / 隠しファイル / 画面OFF / 切り取りの安全性) への対応とライセンス確定。コミット: `f403172` `e0177b5` `7b09ab4` `9fef4df` `3a36115` `dc9948d` `86ff749`。
+
+- [x] **ライセンス GPL-3.0 確定** (`f403172`): `LICENSE` を GNU GPL-3.0 全文 (gnu.org 原文) に置換。依存 (smbj / Apache Commons / MINA SSHD / Apache FtpServer = Apache-2.0、xz = public domain) はすべて GPL-3.0 互換であることを確認。README / FOLDEX-HANDOFF (§1) / CLAUDE.md の記述も「確定」に更新。
+- [x] **リモート→SAF フォルダ貼付の EISDIR 修正** (`e0177b5`): `StorageProviderRouter.crossCopy` が SAF 宛先を扱えていなかった。① `copyFile` が `OVERWRITE` で `openOutput` していたため、SAF の「親 + pendingChildName」擬似 URI で親ディレクトリ自身を `openOutputStream` し `open failed: EISDIR (Is a directory)` を出していた → `CREATE_NEW` に変更。② `copyDirectory` が宛先を実体 URI に解決せず再帰し階層が平坦化していた → `LocalStorageProvider.resolveDestDirectory` を新設し宛先 dir を実 URI に解決してから再帰。単一ファイルの remote→SAF も同根 (OVERWRITE→親EISDIR) で同時に解消。
+- [x] **隠しファイル/フォルダの取りこぼし修正** (`e0177b5`): `copyDirectory` が `list(from)` を既定 (`showHidden=false`) で呼び `.zsh` 等が漏れていた → `ListOptions(showHidden=true)`。同プロバイダ内コピー (SMB/SFTP/FTP/WebDAV/Local) は元から raw list で隠しを含むため影響なし。`resolveDir` も `showHidden=true` 化。
+- [x] **フォルダ全体の進捗表示** (`9fef4df`): `executePaste` で貼付開始時に各ノードのツリーを実測 (`computeTreeStat`: サイズ/ファイル数/フォルダ数) し、フォルダ全体に対する累積バイトで進捗バーを出す。従来は「1ファイルずつの進捗」でフォルダ完了時刻が読めなかった。ノード境界で確定値へスナップして累積推定のズレを補正。zip 解凍/圧縮は元からアーカイブ/フォルダ全体の進捗。
+- [x] **コピー後のデータ一致検証** (`9fef4df`): コピー/移動の成功後に宛先ツリーを再実測し、元の実測値 (サイズ/ファイル数/フォルダ数) と一致するか検証 (`TreeStat` の等価比較)。隠しファイル漏れ・途中失敗・切断による欠損を検出し、不一致はエラー表示。成功時スナックバーに「(検証OK)」。
+- [x] **画面OFF/Doze 耐性** (`7b09ab4`): 長時間操作中に画面OFF→Doze で CPU/Wi-Fi が眠り転送がストール/切断していた。`FileOpService` (dataSync 前景サービス + `PARTIAL_WAKE_LOCK` + `WifiLock(FULL_HIGH_PERF)`、安全弁で最長2時間自動解放) を `app/.../fileop/` に追加。`FileBrowserViewModel` が `opProgress` の有無を監視して start/stop し、コピー/移動/解凍/共有保存を一括保護。app manifest に `WAKE_LOCK` / `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` / `POST_NOTIFICATIONS` と service 宣言を追加。`SyncWorker` も `setForeground` で長時間ワーカー化 (約10分上限での打ち切り回避、端末制限で前景化拒否時は通常ワーカーで継続)。
+- [x] **切り取りを「コピー→検証→元削除」に変更** (`3a36115`): 従来 `moveWithin` は検証なしでコピー後に元を削除しており欠損時のデータ消失リスクがあった。`executePaste` の Cut を「コピー → 一致検証 → 検証OK確認後に元削除」へ。検証失敗時は元を残し中途半端な宛先のみ掃除。ただし同一ファイルシステム上の Local→Local 移動は atomic rename (バイトコピーが無く欠損し得ない) を使用 (cross-fs/SAF/リモートはコピー経路)。`runPaste` ラッパで成功/失敗/例外いずれでも `opProgress` を畳み、前景サービス+WakeLock を確実に解放 (= コピー/切り取り終了で自動ロック解除)。`onCleared` でも解放。
+- [x] **debug ビルドを別名「Foldex (debug)」化** (`dc9948d` / `86ff749`): release (`com.zerotoship.foldex` / Foldex) と区別できるよう、debug は `applicationIdSuffix=".debug"` (既存) に加え `versionNameSuffix="-debug"` と表示名上書きを追加。`src/debug/res/values/strings.xml` だけだと **ja-JP 端末では main の `values-ja` (Foldex) が優先され効かない**ため、`src/debug/res/values-ja/strings.xml` も追加。
+
+### 引き継ぎメモ (2026-05-31 時点)
+
+- **ブランチ**: `phase/P7-polish`。上記 §J の 7 コミットは**ローカルのみ (未 push)**。
+- **ビルド確認**: `:app:assembleDebug` / `:app:assembleRelease` ともに成功 (`lintVitalRelease` 通過)。
+- **既知の限界 / フォローアップ**:
+  - 一致検証は宛先ツリーを再 walk するため、巨大なリモートフォルダではメタデータ列挙の往復コストが増える (バイト再読込はしない)。
+  - 前景サービスは Android 14 仕様上、処理中に無音 (IMPORTANCE_LOW) の常駐通知を 1 つ出す。
+  - 同一fs の Local→Local 切り取りは atomic rename なので検証をスキップ (rename はデータ欠損し得ないため意図的)。
+- **運用インシデント (要再設定)**: 実機検証中、release のインストール失敗 (Play Protect の `VERIFICATION_FAILURE`) を署名衝突と誤認し `adb uninstall com.zerotoship.foldex` を実行 → release のアプリ内データ (接続情報 / サーバー設定 / お気に入り / 同期ジョブ / SAF許可) を消失。`allowBackup=false` のため復旧不可。管理対象のファイル本体は無事。**release は再設定が必要**。debug は別パッケージ (`.debug`) で最初から共存しており衝突は無く、uninstall は不要だった (再発防止: 破壊的操作は事前確認)。
+- **実機状態 (Motorola, ja-JP)**: release `com.zerotoship.foldex` (Foldex / 0.1.0) と debug `com.zerotoship.foldex.debug` (Foldex (debug) / 0.1.0-debug) が共存インストール済み。検証用に一時無効化した Play Protect (`verifier_verify_adb_installs`) は有効 (=1) に復帰済み。
+- **未実施 / 次の判断**: `git push` (未)、P7 完了タグ付けの可否、実機での「隠しフォルダ込みコピー / 全体進捗 / 画面OFF継続」の最終確認。
+
+## K. P7 残課題の消化 + 進捗のファイル数表示 (2026-05-31, 第3回)
+
+P7 達成条件の残課題 (エラーメッセージ日本語化 / アクセシビリティ) を消化し、フォルダ操作の進捗にファイル数を追加。コミット: `7861e51` `feec716` `137945c` (+ docs)。
+
+- [x] **エラーメッセージの日本語化** (`7861e51`): `StorageError.toUserMessage()` を core-model に追加。`message` (診断用、英語の内部メッセージを含む / AppLogger 用) は温存し、UI 表示はこちらを使う。NotConnected / AuthenticationFailed / HostUnreachable / NotFound / AlreadyExists / PermissionDenied / Cancelled をカテゴリ単位の日本語に。IoError / ProtocolError / Unknown は呼び出し側が既に日本語文面を入れている場合だけ尊重し英語内部メッセージはカテゴリ日本語に丸める。`FileUri.displayName()` を追加 (URI 全体でなく末尾名)。FileBrowserViewModel のスナックバー/エラー表示を `toUserMessage()` へ。同期側 (`SyncResult.toSummaryLine`) は元から日本語のため変更なし。→ PHASES §7 完了に更新。
+- [x] **アクセシビリティ最低ライン** (`feec716`): 一覧の `FileLeadingIcon` でフォルダ種別と選択状態を TalkBack 読み上げ (フォルダ→「フォルダ」、選択中→「選択中」、通常ファイルは name + 拡張子バッジで伝わるため null 維持)。操作系 IconButton は調査の結果すべてラベル済み、行高 56/64dp で 48dp タップ領域を確保、コントラストは §H で整備済み。→ PHASES §7 完了に更新。※実機 TalkBack の通し確認は残 (運用)。
+- [x] **コピー/切り取り貼り付けの進捗にファイル数** (`137945c`): `FileOpProgress` に `filesTransferred` / `filesTotal` を追加。`executePaste` で `filesTotal = computeTreeStat の files 合計`、ノード完了で `completedFiles` 加算、フォルダ内は observer のファイル境界検出 (初回 / transferred 巻き戻り / total 変化) で `intraFiles` をカウント。バナーは `filesTotal>0` のとき「○○ / ○○ ファイル」を表示 (なければ従来の項目数)。削除/ZIP/保存は `filesTotal=0` で表示は従来どおり。
+
+### 引き継ぎメモ (第3回追記)
+- **未 push が増加**: §J の 7 + §K の 4 コミット (`7861e51` `6cd3cb3` `feec716` `5301dcf` `316b1fe` `137945c` + 本追記) がローカルのみ。
+- **P7 達成条件の残り**: 「同期途中再開」のみ (リモートの完全動作を実機で見届けた後に着手の前提)。他 (アクセシビリティ / エラー日本語化) は §K で完了。
+- **ファイル数進捗の限界**: フォルダ内のファイル数はバイト境界からの推定なので、空ファイル (0 バイトで observer が発火しない) は途中カウントに乗らないことがある。ノード完了時に確定値 (`completedFiles`) へスナップするので最終値は正しい。
+
+## L. ライセンスを GPL-3.0 → MIT に変更 (2026-05-31, 第4回)
+
+§J で GPL-3.0 に確定していたが、自由度重視の方針転換で **MIT** に変更。依存ライブラリは全て Apache-2.0 / public domain で MIT と互換のため問題なし。あわせてアプリ内にライセンス画面を新設した。
+
+- [x] **`LICENSE` を MIT 全文に差し替え** (GPL-3.0 全文 → MIT、Copyright (c) 2026 Zero to Ship)。
+- [x] **ドキュメントの記述を MIT に更新**: `README.md` のライセンス節 / `FOLDEX-HANDOFF.md` §1 / `CLAUDE.md` §1 の表を「MIT (確定)」に。
+- [x] **アプリ内ライセンス画面を新設** (`ui/settings/LicensesScreen.kt`): 設定 → 「ライセンス」をタップで開く。本アプリ本体 (MIT) + 依存ライブラリ (smbj / Apache Commons Net / MINA SSHD / Apache FtpServer = Apache-2.0、XZ for Java = public domain) を一覧表示し、タップで全文ダイアログ。全文は `assets/licenses/MIT.txt` / `Apache-2.0.txt` から読み込む。`MainScreen` に `settings/licenses` ルートを追加。設定の「ライセンス」行は固定文字列 `"GPL-3.0 (予定)"` → `"MIT © 2026 Zero to Ship"` + タップ遷移に変更。
+- 注: §J 行・PHASES §7/§8 の GPL 記述は当時の履歴としてそのまま残す (本 §L が後続の確定)。各ソースへの SPDX ヘッダ付与は引き続き P8。
+
+## M. 実機フィードバック対応 + 完了通知 (2026-06-01〜06-02, 第5回)
+
+実機 (Motorola, ja-JP, Android 14) で release 版を使い込んでの追加依頼。パッチ適用 → 解凍高速化 →
+Android 14 同期クラッシュの根治 → 完了通知の追加、の順で対応。コミット: `708102a` `3aa17e7`
+`0ce3e68` `cbd2ab3` `28945fc` (+ 本 docs 更新でバージョンを 0.2.1 に)。
+
+- [x] **foldex-patch の適用** (`708102a`): 別セッションで `foldex-patch/` に置かれていた 5 ファイルの修正を本体へ反映。
+  - 画像スライドの順序を画面表示順 (`MediaCollectionScreen` の `visible: List<MediaItem>`) に統一し、画像以外の混入を排除 (旧: `File.parentFile.listFiles()` の FS 順 + `isFile` のみ)。
+  - SD/OTG を `StorageManager.storageVolumes` (API 30+) で確実検出し `/storage/XXXX-XXXX` を直接アクセス候補に (FileBrowser QuickAccess / HOME 候補 / 同期のローカルフォルダ GUI ピッカー)。SAF より大幅に高速。`canRead()` 判定を外し権限未付与でも候補に出す。
+  - 同期実行 (`SyncJobsViewModel.runNow/setEnabled`) を `runCatching` で保護 (※無音クラッシュの**暫定**防御。根治は下の `0ce3e68`)。
+- [x] **ZIP 解凍の高速化 + 展開進捗** (`3aa17e7`): 旧 `executeZipExtract` はどんな展開先でも「キャッシュへ全展開 → 保存先へ全コピー」と全データを 2 回書いており、ローカル展開が遅く、後半の「展開中…」が無進捗で長時間ハングして見えていた。
+  - **ローカル展開先** (`FileUri.Local`) は zip4j で展開先フォルダへ**直接展開**し、コピー工程を廃止 (I/O 約半分、最後まで解凍バイト進捗が出続ける)。
+  - **SAF/リモート展開先**はキャッシュ経由を維持しつつ、コピー工程に `measureTree` で測った総バイト+総ファイル数ベースの進捗 (`filesTransferred/Total`) を追加。
+  - `finishZipExtract` / `measureTree` を切り出して成功・失敗の後始末を共通化。`copyTreeIntoStorage` に per-file コールバックを追加。
+- [x] **Android 14 で同期がクラッシュする問題を根治** (`0ce3e68`): `SyncWorker` は WorkManager の `SystemForegroundService` 経由で `dataSync` 型の前景サービスとして起動するが、このサービスは WorkManager ライブラリ側マニフェストで `foregroundServiceType` が未宣言 (=0)。Android 14 (API 34) は `setForeground` で要求する型 (0x1) がマニフェスト宣言の部分集合でないと、メインスレッドの `SystemForegroundService.startForeground` が `IllegalArgumentException` で即クラッシュする (`0x1 is not a subset of 0x0`)。実際の `startForeground` は Worker の coroutine 外で起きるため `runCatching` では捕捉できなかった。→ app マニフェストで `SystemForegroundService` に `android:foregroundServiceType="dataSync"` を `tools:node="merge"` で上書き宣言 (必要権限 FOREGROUND_SERVICE / FOREGROUND_SERVICE_DATA_SYNC は §J で宣言済み)。マージ後マニフェストに型付与を確認。
+- [x] **操作完了のシステム通知 + 設定で個別 ON/OFF** (`cbd2ab3`): 長時間操作が終わったとき、画面を離れていても気づけるように完了をシステム通知する。設定画面に「通知」セクションを新設し 3 トグルで個別制御 (**コピー・移動 / 解凍 / 同期**、既定すべて ON)。
+  - core-data: `UserSettings` に `notifyOnFileOpComplete/Extract/Sync` を追加、`SettingsRepository` に DataStore キーと setter。
+  - core-data: 完了通知の共通ユーティリティ `notify/OpCompletionNotifier` を新設 (チャンネル `foldex_op_done`、タップでアプリ起動、POST_NOTIFICATIONS 未許可でも例外を投げず無表示)。app (`FileBrowserViewModel` の貼付/解凍完了) と sync (`SyncWorker` の最終結果) の両方から呼ぶ。同期はリトライ予定時は通知しない (最終結果のみ)。
+- [x] **バージョン** (`28945fc` + 本 docs): `0.1.0` (code 1) → `0.2.0` (code 2、完了通知の追加に合わせ minor) → `0.2.1` (code 3、本 docs 更新の区切りで patch)。
+
+### 引き継ぎメモ (第5回追記)
+- **未 push が増加**: §J の 7 + §K の 4 + §M の 5 コミット (`708102a` `3aa17e7` `0ce3e68` `cbd2ab3` `28945fc` + 本 docs + バージョン 0.2.1) がローカルのみ。→ 本 §M 完了後に push 予定。
+- **実機状態 (Motorola, ja-JP, Android 14)**: release `com.zerotoship.foldex` を 0.2.1 で再インストール済み。同期クラッシュは解消を実機で確認。完了通知は POST_NOTIFICATIONS が許可なら表示 (起動時の許可ダイアログ導線は未実装 — 必要なら次回)。
+- **P7 達成条件の残り**: 「同期途中再開」のみ (§K から変わらず)。
+
+## N. 実機フィードバック対応 第6回 (2026-06-02〜06-03) — アイコン刷新 / 並び替え / ログ強化 / 定期同期の定刻化 / ナビ改善
+
+実機 (Motorola moto g66j 5G, ja-JP, Android 14) で使い込んでの追加依頼を 6 リリース (0.2.2〜0.2.7) に分けて対応。
+各コミットは本回新設の「コミット前にバージョンを上げる」ルールに従い versionName/Code を更新済み。
+
+- [x] **CLAUDE ルール追加** (`d3cf078`): 実コード変更コミットの前に `app/build.gradle.kts` の versionName/Code を上げる運用を foldex `CLAUDE.md` §0 に追加 (docs のみの変更は対象外)。
+- [x] **アイコン刷新 / 並び替え / ログ強化 / SMB パス統合** (`5ecfaad`, 0.2.2):
+  - アプリアイコンを新画像で全密度 (mdpi〜xxxhdpi) の `ic_launcher` / `_round` / `_foreground` に再生成。adaptive icon 構成は維持。
+  - **接続タブ / 同期タブのエントリーをドラッグで並び替え**可能に (既存の `sh.calvin.reorderable` を流用)。接続は既存 `sortOrder` 列を使用。同期は `SyncJobEntity.sortOrder` を新設し **Room v5→v6** (destructive migration)。`observeAll` を `sortOrder ASC, updatedAt DESC` に変更。編集保存で順序が消えないよう `SyncJobRepository.upsert` で既存 sortOrder を引き継ぐ。
+  - 実行ログ画面に**コピーボタン** + **永久ログ** (ユーザーが手動作成した `.log` へ書き込みのたび累計追記)。保存先 URI は `UserSettings.permanentLogUri` (DataStore) に保持し `AppLogger` が @Volatile でキャッシュして追記。
+  - SMB の「共有名」+「初期パス」を**「パス」1欄に統合**し未記入も許可 (先頭セグメントを share、残りを initialPath に分解。分解ロジックは元々 `saveSmb` にあったものを UI 側で集約)。
+- [x] **時刻指定の定期同期をアプリ未起動でも実行** (`50e7544`, 0.2.3): 遅延付き WorkManager (`setInitialDelay`) は Doze 中に次のメンテ枠まで延期され「定刻に動かない / アプリを開くまでキュー中」になっていた。→ DAILY/WEEKLY/MONTHLY/DATETIME を **AlarmManager `setAndAllowWhileIdle`** (特別権限なし) で起こす方式に変更。
+  - `SyncAlarmReceiver` (アラーム発火→即時 WorkManager 実行 + 繰り返しは次回再登録)、`SyncBootReceiver` (再起動後にアラーム再登録、`RECEIVE_BOOT_COMPLETED`) を新設。INTERVAL は従来の `PeriodicWorkRequest` のまま。
+  - ユーザー選択: アラームは「Doze 対応・標準アラーム (setAndAllowWhileIdle、数分の誤差あり)」、Wi-Fi 必須の既定は **ON のまま**。
+- [x] **保存後に一覧へ自動で戻る / 接続の長押し編集を廃止 / ローカルフォルダをブラウズ選択** (`39a204f`, 0.2.4):
+  - 同期ジョブ保存後、サスペンドする `snackbar.showSnackbar` を待たず即 `onSaved()` で一覧へ戻る。
+  - 接続リストの行の長押しを「編集」から「ドラッグ並び替え」に変更 (タップ=開く、編集は鉛筆ボタン)。並び替えのつもりで編集画面に飛ぶ問題を解消。
+  - 同期のローカルフォルダ選択を固定候補からフォルダブラウザに変更 (ショートカットでジャンプ→サブフォルダを掘り下げ→「このフォルダを選択」。全ファイルアクセス権限前提で `java.io.File` 探索)。
+- [x] **次回時刻表示 / 通知許可バナー / 詳細ログ / 永久ログ拡張子修正** (`353b9c0`, 0.2.5):
+  - 同期一覧に「次回」実行予定時刻を表示 (`SyncLabels.nextRunLabel`。時刻指定は正確、INTERVAL は前回+間隔の「目安」)。
+  - 同期画面に**通知 (POST_NOTIFICATIONS) 未許可時の案内バナー** (「許可する」=ランタイム要求 / 「設定を開く」=アプリ通知設定。ON_RESUME で再判定)。§M で「未実装」とした起動時許可導線の代替。
+  - 詳細同期ログを日本語化 + 新規/更新を区別 (`アップロード(新規/更新)` / `ダウンロード(新規/更新)` / `削除(ローカル/リモート)` / `失敗(種類): パス — 理由`、サイズは KB/MB)。新規/更新は転送先に既存パスがあるかで判定。実行ごとに `── 同期を開始しました ──` の区切りも記録。
+  - 永久ログ作成の MIME を `text/plain` → `application/octet-stream` に変更し、SAF が `.txt` を補って `foldex.log.txt` になる二重拡張子を回避。
+- [x] **リモートの戻るで HOME の前に接続一覧へ** (`add1461`→`be2ac80`→`e5ab221`→`b13bff6`, 0.2.6→0.2.7→0.2.8→0.2.9): リモートを開いている最上位で戻ったら HOME ではなく接続一覧へ戻す。
+  - 0.2.6: 「接続タブから開いたか」を `MainScreen` の `remember` フラグで持たせたが、**アクティビティ再生成で初期値に戻り**依然 HOME へ。
+  - 0.2.7: フラグを `rememberSaveable` 化したが**それでも HOME へ** (実機で再現)。
+  - 0.2.8: フラグを廃止し `MainScreen` 親 BackHandler で `browserViewModel.state` の根が Remote かを判定したが**まだ HOME へ**。→ 親 BackHandler がリモート最上位で発火していない (子の FileBrowser BackHandler が消費している) と判断。
+  - 0.2.9: 判定と遷移を `FileBrowserScreen` の BackHandler 側へ移動 (`isRemoteSession` で有効化し最上位で `onExitRemote()`)。だが **browserViewModel が共有のため、リモートを開いた後はローカルのファイルタブで戻っても breadcrumbs 根が Remote のままで接続経由になる副作用**が発生。
+  - **0.2.10 (`2048ef6`): 機能を全撤去しユーザー依頼で元の挙動に戻した**。`FileBrowserScreen`/`MainScreen` を 0.2.5 相当へ復元 (戻るは HOME に集約)。← 現行。
+    - 教訓: ファイルブラウザは**単一の共有 `FileBrowserViewModel`** でローカルもリモートも表示するため、「いまリモートか」を戻り先判定に使うと、リモート閲覧後にローカルへ切り替えても状態が残り誤爆する。再挑戦するなら「接続から開いたセッションか」を**リモートを閉じた時点でクリアする**設計 (例: ローカルを開いたら接続フラグを必ず false に) か、接続用に別 NavBackStackEntry を積む設計が要る。
+
+### 引き継ぎメモ (第6回追記)
+- **push**: §M までの未 push 分を含め、本 §N の 11 コミット (`d3cf078` `5ecfaad` `50e7544` `39a204f` `353b9c0` `add1461` `be2ac80` `e5ab221` `b13bff6` + docs 2 件) を `origin/phase/P7-polish` へ push。
+- **DB 破壊的マイグレーション注意**: §N で `sync_jobs` に列追加 → **Room v6**。本リポは `fallbackToDestructiveMigration(dropAllTables=true)` なので、0.2.2 以降への更新で**既存の接続/認証情報/同期ジョブ/サーバー設定が全消去**される (v4→v5 と同じ挙動)。実ユーザーのデータ保持が必要になったら正式マイグレーションへ切替を検討 (P8 候補)。
+- **実機状態 (Motorola moto g66j 5G, ja-JP, Android 14)**: release `com.zerotoship.foldex` を 0.2.10 で再インストール済み。リモート→接続の戻り機能は撤去 (戻るは元どおり HOME)。
+- **未解決・要実機確認**: ① AlarmManager 定期同期の発火 (Doze 下) は実機未確認。一部 OEM の省電力で殺される場合あり (電池最適化除外の案内は未実装)。② 永久ログは既存 `.log.txt` には影響しないため作り直しが必要。③ リモートの戻り先は 0.2.6〜0.2.8 で直らず、0.2.9 で FileBrowser 側処理に変更 — 実機での再確認待ち。もし 0.2.9 でもダメなら、リモート最上位で `state.canGoUp`/`breadcrumbs` が想定と異なる (根が Remote でない/サイズが1でない) 可能性を疑う。
+- **作業ツリーの未追跡変更**: ルートの `foldex_icon.png` (未使用の旧アイコン元画像) が削除済みだが本セッションの commit には含めていない (削除者不明のため保留)。
+- **P7 達成条件の残り**: 「同期途中再開」のみ (§K から変わらず)。
+
+---
+
+## O. 実機フィードバック対応 第7回 (2026-06-03〜06-04) — テキストエディタ堅牢化 / 同期の Doze 対応 / 詳細表示デフォルト化
+
+### O-1. 内蔵エディタの体感改善 (`c6346ba` 0.2.11 → `86f20a3` 0.2.12 → `34552f3` 0.2.13)
+- [x] **カーソルアニメ無効化** (`c6346ba`): `isCursorAnimationEnabled=false`。新位置へ滑って追従する既定挙動が連続入力/削除で「動きが遅い」=ラグと体感される主因だった。即時移動でキビキビに。
+- [x] **左端まで選択可能** (`c6346ba`): `AndroidView` に `systemGestureExclusion()`。画面左端の戻るジェスチャ領域が選択ハンドルのドラッグを横取りし行頭文字を選べなかったのを回避。
+- [x] **長押し→そのままドラッグで範囲選択** (`86f20a3` → `34552f3`): 一度離してハンドルを掴み直す手間を撤廃。初版 (`86f20a3`) の自前タイマー方式は Sora の長押しと二重発火して競合 → `34552f3` で `SelectionChangeEvent(CAUSE_LONG_PRESS)` に相乗りする方式へ再実装。
+- [x] **ハンドル拡大** (`86f20a3`): `handleStyle.setScale(1.5f)`。ラフなドラッグでも掴めるように (掴み判定はハンドル矩形+約 7dp)。
+- [x] **入力経路の軽量化** (`86f20a3`): 編集イベントの Undo/Redo 反映を CONFLATED チャネル + trailing debounce に変更し、キーストローク毎のコルーチン起動/キャンセルを排除。
+- [x] **文字コード誤判定による文字化けを修正** (`34552f3`, 重大): `TextDecoding.detect` が juniversalchardet の結果をそのまま使い、ASCII 多めの UTF-8 を US-ASCII と誤判定 (かつ検出は先頭 64KB のみ) していた。判定を「BOM → ファイル全体が妥当な UTF-8 か → それ以外を検出器」の順に変更し、ASCII/UTF-8 は必ず UTF-8 に寄せる (無損失) ことで勝手に文字コードが変わって化けるのを防ぐ。
+
+### O-2. 定期同期の Doze 実行 / 双方向ループ修正 / 隠しファイル同期 (`aef5d2a`)
+- [x] **定期同期(時刻指定/INTERVAL)を AlarmManager + expedited WorkManager に統一**: 通常 WorkManager は Doze 中に起動されずスリープ解除まで動かなかったため、`fireNow`/`runNow` を expedited 化し、INTERVAL も PeriodicWork からアラーム経路へ寄せた。§N の 0.2.3 で時刻指定だけアラーム化していたのを INTERVAL にも拡張した形。
+- [x] **双方向同期の再転送ループを解消**: 「両側とも前回同期から無変化」を `UNCHANGED` スキップする分岐を追加。SMB 等が付け直す mtime で `sameContent` が偽になり毎回「両側更新 → 再転送」していたループを解消 (回帰テスト追加)。
+- [x] **隠しファイル/フォルダも同期対象に**: 同期の列挙を `showHidden=true` にし、`exclude` 指定以外の隠しファイル/フォルダも含むよう変更。
+- [x] **スキップ理由のログ出力**: 内訳+個別で「なぜ転送されないか」を追えるようにした。
+
+### O-3. アプリアイコン file5 刷新 + スプラッシュ背景調整 (`15d9fca` 0.2.25)
+- [x] **アイコン再生成**: file5 ベースで各密度に再生成。アダプティブ背景をアイコン地色 `#1E1F24` に合わせ、ランチャーのデバイス枠形へ自動マスクされるように。前景サイズ 56dp。旧 `foldex_icon.png` を削除。
+- [x] **Android 12+ スプラッシュ**: 背景/アイコン土台色を `#1E1F24` にし、白い広背景を解消 (`values-v31/themes.xml`)。
+
+### O-4. 詳細表示デフォルト化 / 時刻表示 / 同期キュー解除 / エディタ下書き保存 (`c53afae` 0.2.27)
+- [x] **フォルダのデフォルト表示を詳細 (`DETAILED`) に変更** (`FileBrowserState.kt` / `FileBrowserViewModel.kt`): フォルダ固有の保存値が無いとき従来は `LIST` だったが、ファイル情報が見えるほうが操作しやすい・端末画面が広いというユーザー判断を反映。
+- [x] **詳細表示に更新日時を分まで表示** (`FileListItem.kt`): `SimpleDateFormat("yyyy-MM-dd HH:mm")` で端末ロケール/TZ に従って整形。サブタイトルは「サイズ  日付時刻」の順 (折り返しなし、2スペース区切り)。
+- [x] **同期キュー滞留の解除策** (`SyncScheduler.cancelRun` + `SyncJobsViewModel` + `SyncJobsScreen`): expedited でも端末事情で `ENQUEUED` のまま進まないことが実機で発生していた。① 状態別ボタン (IDLE=「同期」/ ENQUEUED=「解除」/ RUNNING=スピナー+解除オーバーレイ) で手動キャンセル可能に。② 設定で「キュー待ちの自動解除」をオン/オフ + 解除までの時間 (1/5/10/30/60 分) を選択可能。`watchQueueTimeout` がジョブ開始 (RUNNING) 到達を待ち、タイムアウト時点で `ENQUEUED` のままなら `cancelRun` してスナックバー通知。
+- [x] **内蔵エディタの下書き自動保存** (`EditorDraftStore.kt` + `TextViewer.kt`): アプリ中断/強制終了で編集途中の変更が消える問題を解消。① 編集開始時に対象ファイル ID (絶対パスの SHA-256) で `cacheDir/editor-drafts/<id>.draft` を読み、初期値と異なれば**復元ダイアログ**を表示。② 変更検知でデバウンス保存、`ON_STOP` でフラッシュ。③ `onSave` 成功時に下書きを削除。
+- [x] **ランチャーアイコンを 52dp に縮小** (`ic_launcher_foreground.xml`): 0.2.25 で 56dp にしたが端末ランチャーで大きすぎたため、52dp へ微縮小。
+
+### 引き継ぎメモ (第7回追記)
+- **push 状況**: §N までの push 済み分に加え、本 §O の 5 コミット (`c6346ba` `86f20a3` `34552f3` `aef5d2a` `15d9fca` `c53afae` + 本 docs) を `origin/phase/P7-polish` へ push 予定。
+- **DataStore キー追加**: `sync_queue_timeout_enabled` / `sync_queue_timeout_minutes` (`UserSettings` / `SettingsRepository`)。Room スキーマ変更は無し。
+- **新規ファイル**: `app/.../ui/viewer/EditorDraftStore.kt` (下書きストア、内部 `object`)。下書きの保管先は `cacheDir/editor-drafts/` で、OS のキャッシュ掃除対象。明示の有効期限は設けていない (起動毎に「初期値と一致したら無効として削除」する自己整合)。
+- **実機検証 (Motorola moto g66j 5G, ja-JP, Android 14)**: 「キュータイムアウト以外」はユーザー確認済み (詳細表示/時刻/エディタ下書き/同期手動解除/アイコン縮小)。**キュータイムアウトの自動解除は実機未確認** — 次セッションで再現条件 (Wi-Fi 必須 ON + Doze 等) を作って確認する必要あり。
+- **未確認事項**:
+  ① `aef5d2a` の INTERVAL → AlarmManager 化が Doze 下で実発火するか (一部 OEM で殺される可能性)。
+  ② エディタ下書きの容量肥大 (cache 自動掃除頼みで明示削除しないため、編集中ファイルが多いと一時的に膨らむ)。
+  ③ オンデバイスビルド (PRoot ARM64) で正式署名のリリースビルドが完走するか — debug ビルドは確認済みだがリリースビルドはこれから (`sh ./gradlew :app:assembleRelease`、`keystore.properties` + `release.keystore` 同梱で正式署名)。
+- **作業ツリー残**: `foldex-patch/` (2026-06-01 の §M で適用済みの古いスナップショット) を本セッションで削除済み。`gradlew` / `scripts/*.sh` の実行ビット消失差分はオンデバイス FS の制約で起きており、機能影響なしのため未コミット。
+- **P7 達成条件の残り**: 「同期途中再開」のみ (§K から変わらず)。
+
+## P. 実機フィードバック対応 第8回 (2026-06-08) — エディタ描画クラッシュ / SMB 接続復旧 / 同期ログ整理
+
+> 1〜3 はコミット済み (`b4a0970` 0.2.28 / `f3b1055` 0.2.29 / `26c0f22` 0.2.30)。ビルド緑 (`sh ./gradlew :sync :storage:storage-smb :app` の compileDebugKotlin) 確認済み・実機未確認。**4 は未着手**。
+
+### 依頼内容 (nori, 2026-06-08)
+1. 内蔵エディタが `Current state = RESET, new state = FLUSHED` で開けないことが多発。
+2. リモート (SMB) 接続が即落ちし、以後そのサーバーだけアプリ再起動まで再接続不可 (無関係サーバーは可)。他プロトコルでの発生は不明。
+3. 転送ログが無いままファイル数だけ増える。毎回まったく同じスキップログが出続け、何のファイルか分からない。**ログに残すのは「どこからどこ向け・転送ファイル・エラー」だけでよい** (rsync のログ + 方向が分かれば十分)。スキップは不要。
+4. (未着手) フォルダを開いたときの左上のフォルダ名をタップしたら、パス手動入力でそこへ飛べるようにする。
+
+### P-1. 内蔵エディタの RenderNode 描画クラッシュ回避 (`b4a0970` 0.2.28)
+- [x] **対象**: `app/.../ui/viewer/DragSelectCodeEditor.kt` の `init {}`。
+- [x] **原因**: Sora は行描画を `android.graphics.RenderNode` に `beginRecording/endRecording` で焼き込み再利用するが、編集中の頻繁な無効化・再録画と描画の競合でフレームワークの RenderNode 状態機械が `Current state = RESET, new state = FLUSHED` (IllegalStateException) を投げ、エディタが開けず落ちる。文字列は smbj/Sora の jar に存在せず framework/native 由来であることを確認済み。
+- [x] **修正**: `isHardwareAcceleratedDrawAllowed = false` + `props.cacheRenderNodeForLongLines = false`。毎フレーム直接 `drawText` する経路になり当該状態遷移を踏まなくなる (テキスト編集用途では描画コスト増は実用上問題なし)。
+
+### P-2. SMB の死んだセッションをプールから追い出して再接続可能に (`f3b1055` 0.2.29)
+- [x] **対象**: `storage/storage-smb/.../internal/SmbSessionPool.kt` + `SmbStorageProvider.kt`。
+- [x] **原因**: 接続エラー時に死んだセッションがプールから除去されず、`share.isConnected` だけの再利用判定では TCP が切れてもツリー側フラグが true のまま残り、死セッションを使い続けて当該サーバーだけ永続的に失敗していた。
+- [x] **修正**:
+  - `SmbSessionPool.acquire()` の再利用判定を `holder.connection.isConnected && holder.share.isConnected && holder.matches(connection)` に厳格化 (トランスポート生存も確認)。不一致なら張り直し。
+  - `SmbStorageProvider` の `runCatching` を `suspend inline` 化し、`SMBApiException` がセッション喪失系 NtStatus (`STATUS_USER_SESSION_DELETED` / `NETWORK_SESSION_EXPIRED` / `NETWORK_NAME_DELETED` / `CONNECTION_DISCONNECTED` / `CONNECTION_RESET`) のとき、および `UnknownHostException`・その他 `Exception` のときに `pool.release(connectionId)` で当該接続だけ無効化 → 次アクセスで自動再接続。`list()` の flow 内も同様に try/catch でラップ。`CancellationException` は再throw。
+  - 使用 API (`Connection.isConnected`, 各 `NtStatus` 定数) は javap で存在確認済み。
+
+### P-3. 同期ログをスキップ排除 + 方向ヘッダーに整理 (`26c0f22` 0.2.30)
+- [x] **対象**: `sync/.../engine/SyncEngine.kt` + `sync/.../model/SyncResult.kt`。
+- [x] **背景**: ユーザー提供ログから、転送 (`アップロード/ダウンロード`) は Executor の `onAction` で正しく出ていたが、毎回同じスキップ理由が大量に並びノイズになっていた (= 数字だけ増えて見える主因)。
+- [x] **修正**:
+  - 同期開始ログを `── 同期開始: <方向行> ──` に変更 (`directionLine()` で `ローカル → リモート (アップロード)` 等を 1 行化)。
+  - `logSkipReasons()` / `skipReasonLabel()` メソッドと `MAX_SKIP_LOG` 定数、`import SkipReason` を削除。スキップは一切ログしない。
+  - `SyncResult.toSummaryLine()` からスキップ件数表示を削除。
+  - per-file の転送/エラーログ (Executor `onAction`) は **維持**。
+
+### P-4. フォルダ名タップでパス手動入力ジャンプ (未着手)
+- [ ] フォルダを開いた状態で左上のフォルダ名をタップ → パス入力ダイアログ → 入力先へジャンプ。実装場所は未調査 (FileBrowser のトップバー周辺、フォルダ名表示部のはず)。
+
+### 引き継ぎメモ (第8回)
+- **コミット**: `fix(editor)` `b4a0970` (0.2.28) / `fix(smb)` `f3b1055` (0.2.29) / `fix(sync)` `26c0f22` (0.2.30) の 3 本 + 本 docs。1 フィードバックで 3 バージョン進むが、過去の `0.2.11/12/13` と同じく 1 コミット 1 バージョンの慣例を維持 (ユーザー確認済み)。
+- **ビルド**: `sh ./gradlew :sync:compileDebugKotlin :storage:storage-smb:compileDebugKotlin :app:compileDebugKotlin` で BUILD SUCCESSFUL (新規エラーなし)。`gradlew` に実行ビットが無いので必ず `sh` 経由。
+- **要実機確認**: ① エディタが安定して開くか、② 落ちた SMB サーバーへ自動再接続できるか、③ 同期ログがスキップ無し+方向ヘッダーになっているか。いずれも未確認。
+- **P-2 の注意**: 他プロトコル (SFTP/FTP/WebDAV) でも同種の死セッション残留が起きないかは未確認。今回は SMB のみ対応。
+- **残作業**: P-4 (フォルダ名タップ → パス手動入力ジャンプ) が未着手。
+- **作業ツリー残**: `gradlew` / `scripts/*.sh` の実行ビット消失差分 (オンデバイス FS 由来・機能影響なし) は未コミットのまま。
+
+---
+
+## Q. 実機フィードバック対応 第9回 (2026-06-14) — エディタ確実起動 / 同期の二重実行根絶 / 削除復元プレビュー / 再帰検索 / 使用量分析
+
+> 全 5 コミットをコミット済み・push 済み (`phase/P7-polish`)。リリースビルド (`./gradlew :app:assembleRelease`) 緑 + `:sync:test` 緑を各回確認。実機未確認。
+
+### 依頼内容 (nori, 2026-06-14)
+1. 内蔵エディタが `Current state = RESET, new state = FLUSHED` で**まだ稀に**開けない (§P-1 後も再発)。確実に開けるように。
+2. 同期の削除バックアップの `L1`/`L2` 表記が意味不明。復元前に**内容を確認**して、復元するか**尋ねる**ように。
+3. 定期同期で「転送ログが無いまま転送されている / 成功・転送0なのに実際は転送済み」。ラグで検知漏れでは？ → 調査。
+4. 同期ログ末尾に**スキップ数・処理した総数**を表示。
+5. (追加) 空ファイルを内蔵エディタで開けない → 開けるように。
+6. (追加) 検索を**サブフォルダ含む再帰**でもできるように (フォルダ内のみも残す)。
+7. (追加) **使用量分析** (Linux `gdu` イメージ) を追加。
+
+### Q-1. 内蔵エディタを確実に開く (`66cada5` 0.2.31)
+- [x] **対象**: `app/.../ui/viewer/DragSelectCodeEditor.kt` の `init {}`。
+- [x] **原因**: §P-1 は Sora 内部の RenderNode キャッシュのみ無効化していたが、落ちていたのは**ビュー本体 (CodeEditor View) のハードウェアレンダリング**状態機械。アタッチ/レイアウト時の録画とフラッシュ競合でビュー自身の RenderNode が不正遷移して再発していた。
+- [x] **修正**: `setLayerType(View.LAYER_TYPE_SOFTWARE, null)` でビュー全体をソフトウェアレイヤーに固定。RenderNode をまったく介さなくなり、状態遷移を構造的に踏めなくなる。§P-1 の Sora 内部キャッシュ無効化は併用のまま残す。
+
+### Q-2. 削除バックアップの復元を「プレビュー + 確認」式に (`66cada5` 0.2.31)
+- [x] **対象**: `app/.../ui/sync/SyncBackupScreen.kt` + `SyncBackupViewModel.kt`。
+- [x] **背景**: 復元ボタンは衝突が無いと**無言で即復元**していて、何が復元されるか確認できなかった。チップ `L 1`/`R 2` も意味不明。
+- [x] **修正**:
+  - `requestBatchRestore` を「必ず確認ダイアログを開く」式に変更。`PendingBatchRestore` に `localFiles`/`remoteFiles` を持たせ、復元されるファイル一覧 (ローカル/リモート別) をプレビュー表示。
+  - 新ダイアログ `RestoreConfirmDialog`: 衝突なし → 「復元 / キャンセル」、衝突あり → 「上書きで復元 / 既存はスキップ / 中止」。
+  - 世代行のチップを `L N`/`R N` → 「ローカル N件 / リモート N件」に明示化。説明文も L/R 表記を撤去。
+
+### Q-3. 同期の二重実行を根絶 (転送0なのに転送済みの真因) (`66cada5` 0.2.31 + `16e98fb` 0.2.33)
+- [x] **対象**: `sync/.../scheduler/SyncScheduler.kt` + `sync/.../engine/SyncEngine.kt`。
+- [x] **調査結論**: 「転送ログ無しで転送 / 成功・転送0なのに転送済み」は**同一データに対する同期の並行/途中キャンセル実行**が原因。2 つの独立した穴があった:
+  1. 手動 (`runNow` → `sync-now-…`) と定期 (`fireNow` → `sync-scheduled-…`) が**別々の一意名**で、しかも `fireNow` が `REPLACE` だった → 実行中に再トリガーが来ると走行中ワーカーを**途中キャンセルして差し替え**。殺された回は転送済みでもサマリを書く前に止まり、差し替え後は「もう同期済み」を見て転送0。
+  2. **別ジョブを同じ時刻に予約**していると、ジョブ毎に一意名が違うため**別ワーカーとして同時起動**し、共有ストレージ接続 (SMB セッションプール) や重なったフォルダを取り合ってレース。
+- [x] **修正**:
+  - 全実行経路を 1 つの一意名 `sync-run-…` に統合し `ExistingWorkPolicy.KEEP` に変更 (`0.2.31`)。実行中の同一ジョブへの再トリガーは**ドロップ**して途中キャンセルを廃止。`cancelRun`/`cancel` は新旧名とも後始末。
+  - `SyncEngine` (@Singleton) に**全体ミューテックス** `runMutex` を追加 (`0.2.33`)。`run()` を `runMutex.withLock { runExclusive(...) }` で包み、**どのジョブも一度に 1 本ずつ**・完全に終わってから次が走るよう直列化。別ジョブ同時刻のレースを解消。
+- [x] **「スリープ解除で再実行では？」への回答** (コードのみ): `syncEngine.run` を呼ぶのは `SyncWorker` だけで、起動はアラームか手動のみ。**画面ON/復帰で同期を回すコードは無い**。「定刻に動かずスリープ解除で動く」は、ワーカーの**ネットワーク制約** (`SyncConstraints`: CONNECTED/UNMETERED) がスリープ中満たされず ENQUEUED のまま待機し、復帰で制約充足→**1 回だけ遅延実行**されるため。二重ではなく遅延。真の 2 回目はリトライ時のみ。
+
+### Q-4. 同期ログにスキップ数・処理総数を表示 (`66cada5` 0.2.31)
+- [x] **対象**: `sync/.../model/SyncResult.kt`。
+- [x] **修正**: §P-3 でサマリから除いたスキップ件数を**末尾にだけ**復活。`toSummaryLine()` 末尾に `… / スキップ N / 合計 M 件` を付与 (`processedCount = 転送 + 削除 + スキップ + 失敗`)。per-file のスキップ列挙は引き続き出さない (ノイズ回避は維持)。
+
+### Q-5. 空ファイルを内蔵エディタで開く (`6b8cd0b` 0.2.32)
+- [x] **対象**: `app/.../ui/filebrowser/FileBrowserViewModel.kt` の `openFile`。
+- [x] **原因**: `looksLikeText` が**0 バイトを問答無用で false**にするため、拡張子なし/不明の空ファイルが `UNKNOWN` のまま外部アプリ送りになっていた。
+- [x] **修正**: `initialCategory == UNKNOWN && localFile.isFile` のとき `localFile.length() == 0L || looksLikeText(...)` を TEXT 扱いに。空ファイルは「まだ書いていないテキスト」として内蔵エディタで編集→保存可能に。
+
+### Q-6. サブフォルダを含む再帰検索 (`c9c4f57` 0.2.34) — HANDOFF §12 検索 (再帰) を実装
+- [x] **対象**: `FileBrowserState.kt` + `FileBrowserViewModel.kt` + `FileBrowserScreen.kt`。
+- [x] **実装**: 検索バーに「サブフォルダ」FilterChip を追加。OFF=現在フォルダのみ (従来の名前フィルタ)、ON=現在フォルダ配下を `storage.list` で再帰走査し名前一致を収集。
+  - `searchRecursive`/`recursiveResults`/`isSearchScanning` を state に追加。`nameMatchesQuery` を companion に公開して共用。
+  - 走査は `recursiveSearchJob` にまとめ、クエリ/範囲/フォルダ変更で貼り直し。結果は逐次反映、最大 5000 件で打ち切り。リモート/SAF でもキャンセル可。
+  - `navigateTo` で検索を閉じる (前フォルダの再帰結果を残さない)。
+
+### Q-7. 使用量分析画面 (gdu 風・ドリルダウン) (`b23afe6` 0.2.35) — 新機能
+- [x] **対象 (新規)**: `app/.../ui/usage/DiskUsageActivity.kt` + `DiskUsageViewModel.kt`。`AndroidManifest.xml` に Activity 登録。`FileBrowserScreen.kt` メニューに「使用量を分析」追加。
+- [x] **実装**: 現在フォルダを起点に専用 Activity を起動。直下の各項目を「配下込みの合計サイズ」(`measure` で再帰実測) で大きい順に並べ、占有率バー + % 付きで表示。フォルダタップで中へ潜る (`enter`)、戻るで一つ上 (`goUp`)、最上位で画面終了。
+  - ローカル/リモート/SAF いずれも対象。再帰実測は件数進捗バーを出し「中断」ボタン + 端末の戻るで停止可。走査は潜る/戻るのたびに貼り直し。
+
+### 引き継ぎメモ (第9回)
+- **コミット**: `66cada5` (0.2.31) / `6b8cd0b` (0.2.32) / `16e98fb` (0.2.33) / `c9c4f57` (0.2.34) / `b23afe6` (0.2.35)。1 コミット 1 バージョンの慣例維持。`phase/P7-polish` に push 済み。
+- **ビルド**: 各回 `./gradlew :app:assembleRelease` 緑 (一部 `:sync:test` も緑)。警告は既存の非推奨 API のみ。
+- **要実機確認**: ① エディタが毎回開くか、② 削除復元のプレビュー/確認ダイアログ、③ 同期ログに「スキップ/合計」が出て二重実行が消えたか (特に 2 ジョブ同時刻)、④ 空ファイルが内蔵エディタで開くか、⑤ 再帰検索、⑥ 使用量分析 (リモートの中断含む)。
+- **既知の制限**: 再帰検索の結果一覧は各ヒットを**ファイル名のみ**で表示 (サブフォルダのパス併記なし)。同名が多いと区別しづらい。必要なら行にパス併記の改修余地あり。
+- **未確認**: Q-3 直列化後も残る場合の次の容疑者はストレージ側の mtime ドリフト (書き込み直後 stat と次回スキャンのズレ)。別件として切り分け可能。
+
+---
+
+## R. 実機フィードバック対応 第10回 (2026-06-14) — エディタ `RESET → FLUSHED` の原因再調査 (コード変更なし・引き継ぎ)
+
+> ⚠️ **訂正 (§S で真因確定)**: 本セクションの「R-2 Magnifier/PixelCopy が本命」という推測は **外れ**だった。真因は文字コードデコード (`java.nio.charset.CharsetDecoder`) で、詳細・確定対策は後続の **§S** を参照。本セクションは調査の経緯として残す。
+
+> ユーザー報告: §P-1 / §Q-1 の 3 段階の対策後も内蔵エディタが `Current state = RESET, new state = FLUSHED` で**まだ開けない**。「推測でなく原因を確実に特定せよ」との依頼。本セクションは**調査のみ**で、コード変更・バージョン上げは未実施。
+
+### R-0. これまでの対策の棚卸し (なぜ効かないか)
+P-1 / Q-1 で打った手は全て **「ビュー描画経路の RenderNode を止める」** という同一仮説に基づく:
+- `isHardwareAcceleratedDrawAllowed = false`
+- `props.cacheRenderNodeForLongLines = false`
+- `setLayerType(View.LAYER_TYPE_SOFTWARE, null)` (Q-1, 最新)
+
+**この仮説は誤りと判断。** 根拠 (本調査で逆コンパイル確認):
+- `editor-0.23.5.aar` の `EditorRenderer` で `RenderNode.beginRecording/endRecording` を呼ぶ経路 (`updateLineDisplayList` / `RenderNodeHolder.drawLineHardwareAccelerated`) は **`canvas.isHardwareAccelerated() && CodeEditor.isHardwareAcceleratedDrawAllowed()` の二重ガード下**にある。
+- ビュー全体を `LAYER_TYPE_SOFTWARE` にすると `onDraw` に渡る Canvas は `isHardwareAccelerated()==false`。さらにフラグも false。**両ガードが閉じるので Sora は RenderNode を一切触らない。**
+- それでも落ちる ⇒ **クラッシュ源はビューの描画レイヤーとは独立**。software layer では止められない別経路。
+
+### R-1. 文字列の出所 (確定した事実)
+- `Current state = RESET, new state = FLUSHED` は **プロジェクトの全依存に存在しない** (`~/.gradle` 配下の全 jar/aar/so を strings 走査して 0 件。`editor-0.23.5.aar` の `classes.jar` にも無し)。
+- 端末 (Android 12) の `framework.jar` / `/apex` 各 jar / `boot-*.vdex` / `/system/lib64`・`/system/lib`・`/apex/**/lib*` の `*.so` を、連結前の断片 (`, new state = `, `Current state = `) でも走査したが strings では未ヒット → **framework/native (HWUI 等) が enum 等から動的組み立てしている**とみられ、静的 grep では出ない。クラス特定には**実機 logcat のスタックトレースが必須**。
+
+### R-2. 新しい本命容疑: Sora の Magnifier (選択拡大鏡) → `PixelCopy`
+- `EditorTouchEventHandler` は構築時に **`io.github.rosemoe.sora.widget.component.Magnifier` を常時生成**し、選択ドラッグ中 `updateMagnifier()` で表示する。
+- この Magnifier は内部で **`android.view.PixelCopy.request(Window, Rect, Bitmap, listener, Handler)`** を使う。PixelCopy は**ウィンドウのサーフェスを独立にコピー/レンダリングする経路**で、**ビューの `setLayerType(SOFTWARE)` の影響を受けない** → 今までの対策が効かない説明が付く。
+- 本アプリの `DragSelectCodeEditor` は **ACTION_MOVE 毎に `extendSelectionTo` でドラッグ選択を多発**させるため `updateMagnifier`→`PixelCopy` が高頻度で走り、PixelCopy/コピー経路の状態機械が ISE を投げる、という筋が有力。
+- **留意点**: ユーザー表現は「開けない」。Magnifier は選択ドラッグ時に動くので、実際は「開いた直後の最初のタッチ/長押し選択で落ちる」のを「開けない」と表現している可能性が高いが、**未確認**。確定にはスタックトレースが要る。
+
+### R-3. 次にやること (引き継ぎ)
+1. **最優先: 実機 logcat の完全なスタックトレースを取得**。`Caused by:` まで含め、ISE を投げている framework クラス/行を見る。P-1 以降の対策が全部「トレース無しの推測」だったのが迷走の根因。
+   - 取得例: アプリでエディタを開いて再現 → `adb logcat -d *:E | grep -A60 FLUSHED` か、アプリ内クラッシュログ機能があればそれ。
+2. **検証用の有力な一手 (低コスト)**: `DragSelectCodeEditor.init {}` で **Magnifier を無効化** する。
+   - `getComponent(io.github.rosemoe.sora.widget.component.Magnifier::class.java).isEnabled = false` (CodeEditor は `getComponent(Magnifier::class.java)` で `touchHandler.magnifier` を返す実装を確認済み。`setEnabled/isEnabled` あり)。
+   - これで PixelCopy 経路が消える。これが効けば R-2 が確定し、同時に**実害の少ない恒久対策**になる (拡大鏡が消えるだけで選択操作自体は維持)。
+3. R-2 が確定したら、**software layer ハック (Q-1) は描画コスト増の割に無関係**なので撤去を検討 (ただしトレースで無関係を確認してから)。
+
+### 引き継ぎメモ (第10回)
+- **コード変更なし・コミットなし・バージョン据え置き** (0.2.35 のまま)。本 docs 追記のみ。
+- **作業ツリー残**: 既存の `gradlew` / `scripts/*.sh` 実行ビット差分 (オンデバイス FS 由来・機能影響なし) は従来どおり未コミット。
+- **判断保留**: 「Magnifier 無効化を即適用するか」「先にスタックトレースを取るか」はユーザー判断待ち。推奨は **まずスタックトレースで R-2 を裏取り → 無効化を恒久対策として入れる**。
+
+---
+
+## S. エディタ `RESET → FLUSHED` の真因確定と修正 (2026-06-14) — 文字コードデコードの状態機械誤用
+
+> ユーザーの指摘 (「文字コード認識で失敗しているのでは」) が**的中**。§P-1 / §Q-1 / §R-2 で疑っていたグラフィック (RenderNode / Magnifier / PixelCopy) は**全て無関係**だった。
+
+### S-1. 真因 (確定)
+- `Current state = RESET, new state = FLUSHED` は **`java.nio.charset.CharsetDecoder` (および `CharsetEncoder`) の状態機械が投げる `IllegalStateException`** の定型文。状態名は `RESET / CODING / CODING_END / FLUSHED`。
+- 端末の `/apex/com.android.art/javalib/core-oj.jar` (java.base) に `Current state = ` / `, new state = ` / `FLUSHED` / `CODING_END` / `ST_FLUSHED` の文字列断片が全て存在することを確認 (プロジェクト依存・framework graphics・native .so のどれにも無かったのはこのため)。
+- **バグ箇所**: `app/.../ui/viewer/TextDecoding.kt` の `isValidUtf8()`。
+  ```kotlin
+  while (input.hasRemaining()) { ... decoder.decode(input, out, true) ... }
+  decoder.flush(out)   // ← 空入力だとここで RESET 状態のまま呼ばれて例外
+  ```
+  **空ファイル (0 バイト)** だと `input.hasRemaining()` が最初から false で `while` が一度も回らず、`decode()` が呼ばれない → デコーダは `ST_RESET` のまま。直後の `flush()` が `RESET→FLUSHED` の不正遷移になり例外を投げる (`CharsetDecoder.flush()` は END 状態でないと例外)。
+- **なぜ今になって多発したか**: §Q-5 (`6b8cd0b` 0.2.32) で「空ファイルを内蔵エディタで開ける」ようにしたため、空ファイルが `TextDecoding.detect()` → `isValidUtf8()` を通るようになり、この経路を踏むようになった。`detect()` は `TextViewer.kt` の開く処理で呼ばれるため「エディタが開けない」と見えていた。
+
+### S-2. 修正 (`0.2.37` / versionCode 39)
+- [x] **対象**: `TextDecoding.isValidUtf8()`。`while (hasRemaining)` を **`do { ... } while (hasRemaining)`** に変更し、`decode()` を**必ず最低 1 回**呼ぶ。空入力でも `decode(endOfInput=true)` で `RESET→END` に遷移し、後続の `flush()` が正しく行える。
+- **文字コード判定への影響なし**: 非空ファイルは元から `while` の本体が最低 1 回回るため挙動は完全に同一。差が出るのは空ファイルのみ (妥当な UTF-8 = `true` を返し UTF-8 扱い)。文字化け対策ロジック (BOM→UTF-8全体検証→juniversalchardet→ASCII/不明はUTF-8寄せ) は不変。
+
+### S-3. 巻き込みで入った変更 (要追認)
+- `DragSelectCodeEditor.init{}` に `getComponent(Magnifier::class.java).isEnabled = false` (§R-2 の検証として入れた Magnifier 無効化) が**同梱されたままコミット**されている。真因ではなかったので拡大鏡 (選択時の拡大ルーペ) を不要に殺している。**選択ルーペが欲しければ別コミットで撤去可**。
+- §P-1 / §Q-1 由来の `isHardwareAcceleratedDrawAllowed=false` / `cacheRenderNodeForLongLines=false` / `setLayerType(SOFTWARE)` も真因と無関係。software layer は描画コストを増やすため、**別途撤去を検討する余地あり** (本コミットでは未撤去・リスク回避)。
+
+### 引き継ぎメモ (第10回・真因確定)
+- **コミット**: `fix(editor)` (0.2.37 / versionCode 39)。`TextDecoding.kt` の do/while 化が本丸。Magnifier 無効化 (0.2.36 相当) を同梱。1 コミットに 2 論理変更が入った形だが、どちらも「エディタが RESET/FLUSHED で開けない」同一不具合への対応。
+- **ビルド**: `sh ./gradlew :app:assembleRelease --max-workers=4` で BUILD SUCCESSFUL (オンデバイス・CPU 半分)。
+- **実機確認 OK**: ① 空ファイルが内蔵エディタで開く (クラッシュしない)、② 各種文字コードのファイルが従来どおり化けずに開く。
+- **作業ツリー残**: `gradlew` / `scripts/*.sh` 実行ビット差分 (オンデバイス FS 由来・機能影響なし) は従来どおり未コミット。
+
+## 影響範囲・要確認まとめ
+
+| # | 内容 | HANDOFF/PHASES との整合 | 要確認 |
+|---|---|---|---|
+| B-1 | 双方向同期を P7 へ | §8-B / PHASES P8 と矛盾（前倒し） | P7 で実装してよいか / P8 据え置きか |
+| B-4 | 同期削除バックアップ・容量しきい値設定 | §8-G を拡張 | しきい値設定はジョブ単位 / グローバル / 両方？ バックグラウンド時の `ASK` 挙動 |
+| C | AppBar 整理 | §12-B の元設計に近い | 表示モード切替をどこに残すか |
+| D | 音声の内蔵プレーヤー | §10-G「外部のみ」と矛盾 | 簡易内蔵でよいか（ExoPlayer 依存追加の可否） |
+| D | HTML 内蔵ビューア | §10 に項目なし（追加） | WebView 使用の可否（JS 既定オフ前提） |
+| D | 拡張子別 既定アプリ設定 | §10-J を拡張 | 粒度は拡張子単位 / カテゴリ単位 / 両方？ |
+| E | ゴミ箱 | §11-H「P7（任意）」を必須化・具体化 | リモートでゴミ箱不可時の挙動 / 自動削除日数のデフォルト |
+| Room スキーマ | SyncJob 拡張・OpenWith・Trash メタ | マイグレーション必要 | — |
+
+> このメモの各項目が確定したら、`FOLDEX-HANDOFF.md` の該当章と `docs/PHASES.md` の P7（必要なら P8）チェックリストに反映し、ここはリンクだけ残す。

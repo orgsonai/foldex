@@ -26,18 +26,25 @@ internal class SmbSessionPool @Inject constructor(
     private val client: SMBClient = SMBClient(SmbConfig.builder().build())
     private val cache = mutableMapOf<String, Holder>()
 
-    /** Disk share を取得する。未接続なら新規接続。 */
+    /** Disk share を取得する。未接続 / Connection 設定が変わっていたら張り直す。 */
     suspend fun acquire(connectionId: String): DiskShare {
         mutex.withLock {
-            cache[connectionId]?.let { holder ->
-                if (holder.share.isConnected) return holder.share
-                close(holder)
-                cache.remove(connectionId)
-            }
             val connection = repository.findById(connectionId)
                 ?: error("Connection not found: $connectionId")
             require(connection is Connection.Smb) {
                 "SmbSessionPool only handles Connection.Smb (got ${connection::class.simpleName})"
+            }
+            cache[connectionId]?.let { holder ->
+                // トランスポート (TCP) と共有ツリーの両方が生きていて、かつキャッシュ時の
+                // host/port/share/username/domain が現在の Connection と一致するなら再利用。
+                // share.isConnected だけだと TCP が切れていてもツリー側のフラグが true のまま残り、
+                // 死んだセッションを再利用し続けてしまうため connection.isConnected も併せて見る。
+                // 一致しなければ張り直す (= 共有名や認証情報を編集したら即時反映)。
+                if (holder.connection.isConnected && holder.share.isConnected && holder.matches(connection)) {
+                    return holder.share
+                }
+                close(holder)
+                cache.remove(connectionId)
             }
             val credential = repository.loadCredential(connectionId) ?: Credential.Anonymous
             val holder = open(connection, credential)
@@ -90,7 +97,12 @@ internal class SmbSessionPool @Inject constructor(
             runCatching { smbjConn.close() }
             throw t
         }
-        return Holder(connection = smbjConn, session = session, share = share)
+        return Holder(
+            spec = connection,
+            connection = smbjConn,
+            session = session,
+            share = share,
+        )
     }
 
     private fun close(holder: Holder) {
@@ -100,8 +112,17 @@ internal class SmbSessionPool @Inject constructor(
     }
 
     private data class Holder(
+        /** プール時点の接続設定。再利用判定 (host/port/share/username/domain 一致) に使う。 */
+        val spec: Connection.Smb,
         val connection: SmbjConnection,
         val session: Session,
         val share: DiskShare,
-    )
+    ) {
+        fun matches(current: Connection.Smb): Boolean =
+            spec.host == current.host &&
+                spec.port == current.port &&
+                spec.share == current.share &&
+                spec.username == current.username &&
+                spec.domain == current.domain
+    }
 }

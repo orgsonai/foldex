@@ -1,9 +1,11 @@
 package com.zerotoship.foldex.core.data.db
 
 import com.zerotoship.foldex.core.model.ConflictPolicy
+import com.zerotoship.foldex.core.model.ScheduleType
 import com.zerotoship.foldex.core.model.SyncDirection
 import com.zerotoship.foldex.core.model.SyncFilter
 import com.zerotoship.foldex.core.model.SyncJob
+import com.zerotoship.foldex.core.model.SyncSchedule
 import com.zerotoship.foldex.core.model.SyncState
 import org.json.JSONArray
 
@@ -20,7 +22,14 @@ internal fun SyncJobEntity.toModel(): SyncJob = SyncJob(
         excludePatterns = decodeJsonStringArray(excludePatterns),
         maxFileSize = maxFileSize,
     ),
-    intervalMinutes = intervalMinutes,
+    schedule = SyncSchedule(
+        type = ScheduleType.fromWireName(scheduleType),
+        intervalMinutes = intervalMinutes,
+        timeOfDayMinutes = scheduleTimeOfDay,
+        daysOfWeek = scheduleDaysOfWeek,
+        dayOfMonth = scheduleDayOfMonth,
+        dateTimeMillis = scheduleDateTime,
+    ),
     requiresWifi = requiresWifi,
     requiresCharging = requiresCharging,
     requiresBatteryNotLow = requiresBatteryNotLow,
@@ -33,7 +42,7 @@ internal fun SyncJobEntity.toModel(): SyncJob = SyncJob(
     lastRunResult = lastRunResult,
 )
 
-internal fun SyncJob.toEntity(): SyncJobEntity = SyncJobEntity(
+internal fun SyncJob.toEntity(sortOrder: Int = 0): SyncJobEntity = SyncJobEntity(
     id = id,
     name = name,
     enabled = enabled,
@@ -44,7 +53,12 @@ internal fun SyncJob.toEntity(): SyncJobEntity = SyncJobEntity(
     includePatterns = encodeJsonStringArray(filter.includePatterns),
     excludePatterns = encodeJsonStringArray(filter.excludePatterns),
     maxFileSize = filter.maxFileSize,
-    intervalMinutes = intervalMinutes,
+    intervalMinutes = schedule.intervalMinutes,
+    scheduleType = schedule.type.wireName,
+    scheduleTimeOfDay = schedule.timeOfDayMinutes,
+    scheduleDaysOfWeek = schedule.daysOfWeek,
+    scheduleDayOfMonth = schedule.dayOfMonth,
+    scheduleDateTime = schedule.dateTimeMillis,
     requiresWifi = requiresWifi,
     requiresCharging = requiresCharging,
     requiresBatteryNotLow = requiresBatteryNotLow,
@@ -55,6 +69,7 @@ internal fun SyncJob.toEntity(): SyncJobEntity = SyncJobEntity(
     updatedAt = updatedAt,
     lastRunAt = lastRunAt,
     lastRunResult = lastRunResult,
+    sortOrder = sortOrder,
 )
 
 internal fun SyncStateEntity.toModel(): SyncState = SyncState(

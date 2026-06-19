@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android 12 (API 31) 以降の自動スプラッシュ画面の調整。
+      既定だとテーマ背景 (Material.Light = 白) が全面に出て、その中央に暗いアイコンが
+      小さく乗るため「背景が広すぎる」状態になる。背景・アイコン土台ともアイコンの地色
+      (#1E1F24) に合わせることで、白い広背景を消してフォルダ絵が暗い画面の中央に乗る形にする。
+    -->
+    <style name="Theme.Foldex" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowSplashScreenBackground">#1E1F24</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#1E1F24</item>
+    </style>
+</resources>

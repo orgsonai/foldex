@@ -13,4 +13,14 @@
     <string name="view_grid">グリッド表示</string>
     <string name="navigate_up">上へ</string>
     <string name="refresh">更新</string>
+
+    <!-- App Shortcuts -->
+    <string name="shortcut_files_short">ファイル</string>
+    <string name="shortcut_files_long">ファイルブラウザを開く</string>
+    <string name="shortcut_connections_short">接続</string>
+    <string name="shortcut_connections_long">リモート接続を開く</string>
+    <string name="shortcut_servers_short">サーバー</string>
+    <string name="shortcut_servers_long">ローカルサーバーを開く</string>
+    <string name="shortcut_trash_short">ゴミ箱</string>
+    <string name="shortcut_trash_long">ゴミ箱を開く</string>
 </resources>

@@ -2,6 +2,7 @@ package com.zerotoship.foldex.sync.engine
 
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.ListOptions
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.core.model.StorageProvider
@@ -56,7 +57,9 @@ internal class TreeWalker(
     }
 
     private suspend fun collect(dirUri: FileUri, prefix: String, out: MutableMap<String, SyncEntry>) {
-        val nodes = provider.list(dirUri).toList()
+        // 同期は隠しファイル/隠しフォルダも対象に含める (UI の表示トグルとは独立)。
+        // exclude パターンで明示的に外したものだけを除外し、それ以外は全て同期する。
+        val nodes = provider.list(dirUri, ListOptions(showHidden = true)).toList()
         for (node in nodes) {
             currentCoroutineContext().ensureActive()
             val relPath = if (prefix.isEmpty()) node.name else "$prefix/${node.name}"

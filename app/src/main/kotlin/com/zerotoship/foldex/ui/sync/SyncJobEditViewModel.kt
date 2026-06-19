@@ -8,9 +8,11 @@ import com.zerotoship.foldex.core.data.repo.SyncJobRepository
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.ConflictPolicy
 import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.ScheduleType
 import com.zerotoship.foldex.core.model.SyncDirection
 import com.zerotoship.foldex.core.model.SyncFilter
 import com.zerotoship.foldex.core.model.SyncJob
+import com.zerotoship.foldex.core.model.SyncSchedule
 import com.zerotoship.foldex.sync.scheduler.SyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -95,7 +97,12 @@ data class SyncJobEditState(
     val connectionId: String?,
     val remotePath: String,
     val conflictPolicy: ConflictPolicy,
+    val scheduleType: ScheduleType,
     val intervalMinutes: Int,
+    val timeOfDayMinutes: Int,
+    val daysOfWeek: Int,
+    val dayOfMonth: Int,
+    val dateTimeMillis: Long,
     val requiresWifi: Boolean,
     val requiresCharging: Boolean,
     val requiresBatteryNotLow: Boolean,
@@ -108,12 +115,25 @@ data class SyncJobEditState(
         name.isBlank() -> "名前を入力してください"
         localPath.isBlank() -> "ローカルのパスを入力してください"
         connectionId.isNullOrBlank() -> "リモートの接続を選択してください"
-        intervalMinutes < 0 -> "間隔は 0 以上にしてください"
-        intervalMinutes in 1..14 -> "定期実行の間隔は 0 (手動のみ) か 15 分以上にしてください"
+        scheduleType == ScheduleType.INTERVAL && intervalMinutes < 0 -> "間隔は 0 以上にしてください"
+        scheduleType == ScheduleType.INTERVAL && intervalMinutes in 1..14 ->
+            "定期実行の間隔は 0 (手動のみ) か 15 分以上にしてください"
+        scheduleType == ScheduleType.WEEKLY && daysOfWeek == 0 -> "曜日を 1 つ以上選んでください"
+        scheduleType == ScheduleType.DATETIME && dateTimeMillis <= System.currentTimeMillis() ->
+            "未来の日時を指定してください"
         maxFileSizeMb.isNotBlank() && (maxFileSizeMb.trim().toLongOrNull()?.let { it <= 0 } != false) ->
             "最大ファイルサイズには正の数を入力してください"
         else -> null
     }
+
+    private fun toSchedule(): SyncSchedule = SyncSchedule(
+        type = scheduleType,
+        intervalMinutes = intervalMinutes,
+        timeOfDayMinutes = timeOfDayMinutes,
+        daysOfWeek = daysOfWeek,
+        dayOfMonth = dayOfMonth,
+        dateTimeMillis = dateTimeMillis,
+    )
 
     fun toJob(connection: Connection, existingCreatedAt: Long): SyncJob = SyncJob(
         id = id,
@@ -128,7 +148,7 @@ data class SyncJobEditState(
             excludePatterns = parseGlobLines(excludePatternsText),
             maxFileSize = maxFileSizeMb.trim().toLongOrNull()?.takeIf { it > 0 }?.let { it * 1024L * 1024L },
         ),
-        intervalMinutes = intervalMinutes,
+        schedule = toSchedule(),
         requiresWifi = requiresWifi,
         requiresCharging = requiresCharging,
         requiresBatteryNotLow = requiresBatteryNotLow,
@@ -148,7 +168,12 @@ data class SyncJobEditState(
             connectionId = null,
             remotePath = "",
             conflictPolicy = ConflictPolicy.NEWER_WINS,
+            scheduleType = ScheduleType.INTERVAL,
             intervalMinutes = 0,
+            timeOfDayMinutes = 9 * 60,
+            daysOfWeek = 0,
+            dayOfMonth = 1,
+            dateTimeMillis = 0L,
             requiresWifi = true,
             requiresCharging = false,
             requiresBatteryNotLow = true,
@@ -171,7 +196,12 @@ data class SyncJobEditState(
                 connectionId = remote?.connectionId,
                 remotePath = remote?.path ?: "",
                 conflictPolicy = job.conflictPolicy,
-                intervalMinutes = job.intervalMinutes,
+                scheduleType = job.schedule.type,
+                intervalMinutes = job.schedule.intervalMinutes,
+                timeOfDayMinutes = job.schedule.timeOfDayMinutes,
+                daysOfWeek = job.schedule.daysOfWeek,
+                dayOfMonth = job.schedule.dayOfMonth,
+                dateTimeMillis = job.schedule.dateTimeMillis,
                 requiresWifi = job.requiresWifi,
                 requiresCharging = job.requiresCharging,
                 requiresBatteryNotLow = job.requiresBatteryNotLow,

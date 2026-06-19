@@ -5,8 +5,10 @@ import androidx.core.content.ContextCompat
 import com.zerotoship.foldex.server.ftp.FtpServerManager
 import com.zerotoship.foldex.server.sftp.SftpServerManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +38,9 @@ class ServerController @Inject constructor(
         sftpManager.runningIds,
         ftpManager.runningIds,
     ) { a, b -> a + b }.stateIn(scope, SharingStarted.Eagerly, emptySet())
+
+    /** 起動失敗メッセージ (SFTP / FTP)。UI で snackbar 表示する用。 */
+    val startErrors: Flow<String> = merge(sftpManager.startErrors, ftpManager.startErrors)
 
     fun isRunning(configId: String): Boolean =
         sftpManager.isRunning(configId) || ftpManager.isRunning(configId)

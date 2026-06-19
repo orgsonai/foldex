@@ -1,0 +1,176 @@
+package com.zerotoship.foldex.ui.filebrowser
+
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.outlined.Album
+import androidx.compose.material.icons.outlined.Android
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Article
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import com.zerotoship.foldex.core.model.FileNode
+import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.NodeType
+import com.zerotoship.foldex.core.model.filetype.Category
+import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
+import java.io.File
+
+/** ファイルノードのカテゴリ別アイコン。ディレクトリはフォルダ。 */
+fun iconFor(node: FileNode): ImageVector =
+    if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else iconFor(FileTypeRegistry.categorize(node.name))
+
+private fun iconForCategory(node: FileNode, category: Category): ImageVector =
+    if (node.type == NodeType.DIRECTORY) Icons.Outlined.Folder else iconFor(category)
+
+fun iconFor(category: Category): ImageVector = when (category) {
+    Category.IMAGE -> Icons.Outlined.Image
+    Category.VIDEO -> Icons.Outlined.Movie
+    Category.AUDIO -> Icons.Outlined.Album
+    Category.TEXT -> Icons.Outlined.Code
+    Category.MARKDOWN -> Icons.Outlined.Article
+    Category.HTML -> Icons.Outlined.Language
+    Category.PDF -> Icons.Outlined.PictureAsPdf
+    Category.ARCHIVE -> Icons.Outlined.Archive
+    Category.OFFICE -> Icons.Outlined.Description
+    Category.APK -> Icons.Outlined.Android
+    Category.ISO -> Icons.Outlined.Archive
+    Category.BINARY -> Icons.Outlined.Terminal
+    Category.UNKNOWN -> Icons.AutoMirrored.Outlined.InsertDriveFile
+}
+
+/** カテゴリ別のアイコン色 (`CLAUDE.md`/HANDOFF §11-D の方針: 種別ごとに控えめに色分け)。 */
+@Composable
+fun tintFor(node: FileNode, selected: Boolean): Color =
+    tintForCategory(node, FileTypeRegistry.categorize(node.name), selected)
+
+@Composable
+private fun tintForCategory(node: FileNode, category: Category, selected: Boolean): Color {
+    val colors = MaterialTheme.colorScheme
+    if (selected) return colors.primary
+    if (node.type == NodeType.DIRECTORY) return colors.primary.copy(alpha = 0.85f)
+    return when (category) {
+        Category.IMAGE -> Color(0xFF43A047)        // green
+        Category.VIDEO -> Color(0xFFE53935)        // red
+        Category.AUDIO -> Color(0xFF8E24AA)        // purple
+        Category.TEXT -> Color(0xFF1E88E5)         // blue
+        Category.MARKDOWN -> Color(0xFF1E88E5)
+        Category.HTML -> Color(0xFFFB8C00)         // orange
+        Category.PDF -> Color(0xFFD32F2F)
+        Category.ARCHIVE, Category.ISO -> Color(0xFFF9A825) // amber
+        Category.OFFICE -> Color(0xFF3949AB)       // indigo
+        Category.APK -> Color(0xFF3DDC84)          // android green
+        else -> colors.onSurfaceVariant
+    }
+}
+
+/** ファイル名末尾の拡張子バッジ (HANDOFF §11-D)。拡張子がなければ何も出さない。 */
+@Composable
+fun ExtensionBadge(node: FileNode, modifier: Modifier = Modifier) {
+    if (node.type != NodeType.FILE) return
+    val ext = node.name.substringAfterLast('.', "").takeIf { it.isNotEmpty() && it.length <= 5 } ?: return
+    // background(color, shape) は描画だけで済む。clip(shape) はレイヤーを作るので使わない。
+    Text(
+        text = ext.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
+}
+
+/**
+ * サムネ取得対象なら Coil に渡せるモデルを返す。対象外・リモートは null。
+ *
+ * 一覧では **画像のみ** サムネ化する。動画/音声アートはメタデータ抽出が重く、
+ * スクロールがもたつく原因になるため一覧ではアイコン表示に留める (ビューアでは出す)。
+ */
+private fun thumbnailModelFor(node: FileNode, category: Category): Any? {
+    if (node.type != NodeType.FILE || category != Category.IMAGE) return null
+    // リモートサムネは帯域消費が大きいため当面アイコンのみ (HANDOFF §10-C: 後で部分DL検討)
+    return when (val u = node.uri) {
+        is FileUri.Local -> File(u.absolutePath)
+        is FileUri.Saf -> Uri.parse(u.documentUri)
+        is FileUri.Remote -> null
+    }
+}
+
+/**
+ * 一覧の先頭に出すアイコン。
+ * - 選択中: チェックボックス
+ * - 画像のローカルファイル: サムネ (読み込み中・失敗時はカテゴリアイコンにフォールバック)
+ * - それ以外: カテゴリアイコン (種別ごとに控えめに色分け)
+ */
+@Composable
+fun FileLeadingIcon(
+    node: FileNode,
+    selected: Boolean,
+    size: Dp = 24.dp,
+    modifier: Modifier = Modifier,
+) {
+    if (selected) {
+        // 選択モードでは「選択中」を読み上げる (背景色だけだと TalkBack に伝わらない)。
+        Icon(Icons.Default.CheckBox, contentDescription = "選択中", tint = MaterialTheme.colorScheme.primary,
+            modifier = modifier.size(size))
+        return
+    }
+    // フォルダはアイコンが唯一の手がかりなので種別を読み上げる。ファイルは name と拡張子バッジで伝わるため装飾扱い (null)。
+    val typeDescription = if (node.type == NodeType.DIRECTORY) "フォルダ" else null
+    // カテゴリ判定は 1 行につき 1 回だけ (アイコン・色・サムネ判定で使い回す)。
+    val category = remember(node.name) { FileTypeRegistry.categorize(node.name) }
+    val model = remember(node.uri, node.lastModified, category) { thumbnailModelFor(node, category) }
+    if (model == null) {
+        Icon(
+            iconForCategory(node, category),
+            contentDescription = typeDescription,
+            tint = tintForCategory(node, category, false),
+            modifier = modifier.size(size),
+        )
+        return
+    }
+    val context = LocalContext.current
+    // ImageRequest は再コンポーズのたびに作り直さない (作り直すと Coil が読み込みを再開してしまう)。
+    // 一覧のサムネは crossfade なし (フリング中のフレーム単位アニメーションを避ける)。
+    val request = remember(model) {
+        ImageRequest.Builder(context).data(model).size(128).crossfade(false).build()
+    }
+    val fallback = rememberVectorPainter(iconForCategory(node, category))
+    AsyncImage(
+        model = request,
+        contentDescription = null,
+        placeholder = fallback,
+        error = fallback,
+        fallback = fallback,
+        contentScale = ContentScale.Crop,
+        modifier = modifier.size(size).clip(RoundedCornerShape(4.dp)),
+    )
+}

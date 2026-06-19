@@ -36,8 +36,14 @@ class DiffEngine(
     )
 
     fun computeActions(input: Input): List<SyncAction> {
-        val toRemote = input.direction == SyncDirection.TO_REMOTE
         val paths = (input.local.keys + input.remote.keys).toSortedSet()
+        if (input.direction == SyncDirection.BIDIRECTIONAL) {
+            return paths.map { path ->
+                bidirectionalActionFor(path, input.local[path], input.remote[path], input.previous[path],
+                    input.conflictPolicy, input.deleteEnabled)
+            }
+        }
+        val toRemote = input.direction == SyncDirection.TO_REMOTE
         return paths.map { path ->
             actionFor(
                 path = path,
@@ -51,6 +57,78 @@ class DiffEngine(
             )
         }
     }
+
+    // --- 双方向 ---
+
+    private enum class SideState { SAME, NEW, MODIFIED, DELETED, NEVER }
+
+    private fun localSideState(l: SyncEntry?, p: SyncState?): SideState = when {
+        l != null && p.matchesLocal(l) -> SideState.SAME
+        l != null && p.hadLocal() -> SideState.MODIFIED
+        l != null -> SideState.NEW
+        p.hadLocal() -> SideState.DELETED
+        else -> SideState.NEVER
+    }
+
+    private fun remoteSideState(r: SyncEntry?, p: SyncState?): SideState = when {
+        r != null && p.matchesRemote(r) -> SideState.SAME
+        r != null && p.hadRemote() -> SideState.MODIFIED
+        r != null -> SideState.NEW
+        p.hadRemote() -> SideState.DELETED
+        else -> SideState.NEVER
+    }
+
+    private fun bidirectionalActionFor(
+        path: String,
+        l: SyncEntry?,
+        r: SyncEntry?,
+        p: SyncState?,
+        policy: ConflictPolicy,
+        deleteEnabled: Boolean,
+    ): SyncAction {
+        val ls = localSideState(l, p)
+        val rs = remoteSideState(r, p)
+
+        // 両側とも前回同期から無変化 → 何もしない (既に同期済み)。
+        // ストレージ間で mtime が食い違っても、各側がスナップショットと一致していれば同期済みとみなす。
+        // これが無いと SMB 等がアップロード時に付け直す mtime で sameContent(l, r) が偽になり、
+        // 「ローカルもリモートも変えていないのに毎回 競合(両側更新)→再転送」になってしまう。
+        if (ls == SideState.SAME && rs == SideState.SAME) return SyncAction.Skip(path, SkipReason.UNCHANGED)
+
+        // 両側に存在し内容が完全一致 → 既に同期済み
+        if (l != null && r != null && sameContent(l, r)) return SyncAction.Skip(path, SkipReason.UNCHANGED)
+
+        // 片側が削除され、もう片側は前回から無変化 → 削除を伝播
+        if (rs == SideState.DELETED && ls == SideState.SAME) {
+            return if (deleteEnabled) SyncAction.DeleteLocal(path) else SyncAction.Skip(path, SkipReason.DELETE_DISABLED)
+        }
+        if (ls == SideState.DELETED && rs == SideState.SAME) {
+            return if (deleteEnabled) SyncAction.DeleteRemote(path) else SyncAction.Skip(path, SkipReason.DELETE_DISABLED)
+        }
+        // 両側とも存在しない (削除済み / もともと無い) → 何もしない
+        if (l == null && r == null) return SyncAction.Skip(path, SkipReason.UNCHANGED)
+
+        // 片側にのみ存在 → 存在する側を反対側へ伝播 (削除との競合は上で処理済み)
+        if (l != null && r == null) return SyncAction.Upload(path, l.size, l.mtimeSeconds)
+        if (r != null && l == null) return SyncAction.Download(path, r.size, r.mtimeSeconds)
+
+        // 両側に存在し内容が違う: 片側が無変化なら変化した側を伝播
+        if (ls == SideState.SAME && (rs == SideState.MODIFIED || rs == SideState.NEW)) {
+            return SyncAction.Download(path, r!!.size, r.mtimeSeconds)
+        }
+        if (rs == SideState.SAME && (ls == SideState.MODIFIED || ls == SideState.NEW)) {
+            return SyncAction.Upload(path, l!!.size, l.mtimeSeconds)
+        }
+        // それ以外 (両側変化 / 前回状態が無く内容が違う) → 競合
+        val resolution = ConflictResolver.resolve(path, l!!, r!!, policy, SyncDirection.BIDIRECTIONAL, now())
+        return if (resolution == ConflictResolution.Skip) {
+            SyncAction.Skip(path, SkipReason.CONFLICT_SKIPPED)
+        } else {
+            SyncAction.Conflict(path, l, r, resolution)
+        }
+    }
+
+    // --- 片方向 ---
 
     private fun actionFor(
         path: String,

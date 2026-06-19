@@ -11,21 +11,51 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
 
+    <!-- API 33+ の MediaStore 直接アクセス用 (HOME の「画像」「動画」タイル) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
     <!-- SMB / リモートストレージ用 (P4〜) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
-    <!-- SAF ドキュメントツリーピッカーのクエリ宣言 -->
+    <!-- APK のインストール起動 (P7) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- 長時間ファイル操作 (コピー/移動/解凍) を画面OFF/Doze でも継続するための
+         前景サービス + WakeLock (P7) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 定期同期のアラームを端末再起動後に貼り直すため (アラームは再起動で消える) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 他アプリ起動可否の判定用クエリ宣言 (Android 11+) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.EDIT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
         </intent>
     </queries>
 
     <application
         android:name=".FoldexApplication"
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:theme="@style/Theme.Foldex"
         android:supportsRtl="true">
@@ -33,12 +63,99 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
+            <!-- 共有受信: 他アプリの「共有」メニューから単一/複数ファイルを受け取って保存できるようにする。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
+
+        <!-- 長時間ファイル操作中に端末を起こし続ける前景サービス (画面OFF耐性) -->
+        <service
+            android:name=".fileop.FileOpService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <!-- 同期ワーカー (SyncWorker) は WorkManager の SystemForegroundService 経由で前景化する。
+             Android 14 (API 34) 以降、setForeground で要求する型 (dataSync) がマニフェスト宣言の
+             部分集合でないと、このサービスの startForeground がメインスレッドでクラッシュする
+             (foregroundServiceType 0x1 is not a subset of 0x0)。WorkManager ライブラリ側の
+             宣言は型なしなので、ここで dataSync 型を merge して上書きする。 -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
+        <!-- 時刻指定同期 (毎日/毎週/毎月/日時) のアラーム発火を受けて即時実行する。
+             自前の明示インテントのみ届くので exported=false。 -->
+        <receiver
+            android:name="com.zerotoship.foldex.sync.scheduler.SyncAlarmReceiver"
+            android:exported="false" />
+
+        <!-- 端末再起動後にアラームを貼り直す。BOOT_COMPLETED を受けるため exported=true。 -->
+        <receiver
+            android:name="com.zerotoship.foldex.sync.scheduler.SyncBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 内蔵ビューア (画像/テキスト/Markdown/HTML/音声) -->
+        <activity
+            android:name=".ui.viewer.ViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- ZIP の中身を展開せずに閲覧する内蔵アーカイブブラウザ -->
+        <activity
+            android:name=".ui.archive.ArchiveExplorerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
+        <!-- 使用量分析 (gdu 風・フォルダ別サイズのドリルダウン) -->
+        <activity
+            android:name=".ui.usage.DiskUsageActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
+        <!-- 外部アプリへファイルを渡すための FileProvider -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- リモート (SMB/SFTP/FTP/WebDAV) ファイルを content URI として ExoPlayer 等に
+             ストリーミング供給する ContentProvider。pipe + バックグラウンドコピーで
+             全DLを待たずに動画を再生できる。grantUriPermissions=true で外部アプリへ渡せる
+             (ACTION_VIEW フォールバック用)。 -->
+        <provider
+            android:name=".streaming.RemoteStreamProvider"
+            android:authorities="${applicationId}.streaming"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <!-- WorkManager は FoldexApplication (Configuration.Provider) で初期化するため、
              androidx.startup による既定の自動初期化を無効化する。 -->

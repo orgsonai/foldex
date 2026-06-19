@@ -63,17 +63,28 @@ class SmbStorageProvider @Inject internal constructor(
 
     override fun list(uri: FileUri, options: ListOptions): Flow<FileNode> = flow {
         val remote = uri.asRemote() ?: throw IOException("Not an SMB URI")
-        val share = pool.acquire(remote.connectionId)
-        val smbPath = SmbPath.toSmb(remote.path)
-        val children = share.list(smbPath)
-            .asSequence()
-            .filter { it.fileName != "." && it.fileName != ".." }
-            .filter { entry ->
-                if (options.showHidden) true
-                else !FileAttributes.FILE_ATTRIBUTE_HIDDEN.isSet(entry.fileAttributes)
-            }
-            .sortedWith(smbComparator(options))
-            .toList()
+        val children = try {
+            val share = pool.acquire(remote.connectionId)
+            val smbPath = SmbPath.toSmb(remote.path)
+            share.list(smbPath)
+                .asSequence()
+                .filter { it.fileName != "." && it.fileName != ".." }
+                .filter { entry ->
+                    if (options.showHidden) true
+                    else !FileAttributes.FILE_ATTRIBUTE_HIDDEN.isSet(entry.fileAttributes)
+                }
+                .sortedWith(smbComparator(options))
+                .toList()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: com.hierynomus.mssmb2.SMBApiException) {
+            if (isSessionLost(e.status)) invalidate(uri)
+            throw e
+        } catch (e: Exception) {
+            // 列挙中の切断は接続を捨てて次回 acquire で張り直させる (再起動不要にする)。
+            invalidate(uri)
+            throw e
+        }
         for (child in children) {
             val childPath = SmbPath.join(remote.path, child.fileName)
             val childUri = FileUri.Remote(Protocol.SMB, remote.connectionId, childPath)
@@ -96,6 +107,25 @@ class SmbStorageProvider @Inject internal constructor(
                     EnumSet.noneOf(SMB2CreateOptions::class.java),
                 )
                 Result.Success(SmbInputStream(file) as InputStream)
+            }
+        }
+
+    override suspend fun openInputRange(uri: FileUri, offset: Long): Result<InputStream, StorageError> =
+        withContext(Dispatchers.IO) {
+            runCatching(uri) {
+                val remote = uri.asRemote()
+                    ?: return@runCatching Result.Failure(StorageError.IoError("Not an SMB URI"))
+                val share = pool.acquire(remote.connectionId)
+                val file = share.openFile(
+                    SmbPath.toSmb(remote.path),
+                    EnumSet.of(AccessMask.GENERIC_READ),
+                    EnumSet.noneOf(FileAttributes::class.java),
+                    SMB2ShareAccess.ALL,
+                    SMB2CreateDisposition.FILE_OPEN,
+                    EnumSet.noneOf(SMB2CreateOptions::class.java),
+                )
+                // SMB2 READ は fileOffset 指定可能なので位置指定 InputStream で返す。
+                Result.Success(SmbRangeInputStream(file, startOffset = offset) as InputStream)
             }
         }
 
@@ -312,19 +342,33 @@ class SmbStorageProvider @Inject internal constructor(
         }
     }
 
-    private inline fun <T> runCatching(uri: FileUri, block: () -> Result<T, StorageError>): Result<T, StorageError> {
+    private suspend inline fun <T> runCatching(uri: FileUri, block: () -> Result<T, StorageError>): Result<T, StorageError> {
         return try {
             block()
         } catch (e: CancellationException) {
             throw e
         } catch (e: com.hierynomus.mssmb2.SMBApiException) {
+            // セッション/接続が落ちた系の NT ステータスはプールの死んだホルダーを捨てて張り直す。
+            // (これをしないと一度切れたサーバへは isConnected の取りこぼしで再起動まで繋がらない。)
+            if (isSessionLost(e.status)) invalidate(uri)
             Result.Failure(translateSmb(uri, e))
         } catch (e: java.net.UnknownHostException) {
+            invalidate(uri)
             Result.Failure(StorageError.HostUnreachable(uri.hostOrDescription(), e))
         } catch (e: Exception) {
+            // トランスポート切断・ソケットリセット・EOF 等。接続を疑って破棄し、次回 acquire で再接続する。
+            invalidate(uri)
             Result.Failure(StorageError.IoError(e.message ?: "Unknown error", e))
         }
     }
+
+    /** uri の接続をプールから破棄する (次回 acquire で TCP/セッションを張り直させる)。 */
+    private suspend fun invalidate(uri: FileUri) {
+        (uri as? FileUri.Remote)?.let { pool.release(it.connectionId) }
+    }
+
+    /** セッション/接続が消失したことを示す NT ステータスか (= 張り直しが必要)。 */
+    private fun isSessionLost(status: com.hierynomus.mserref.NtStatus): Boolean = status in CONNECTION_LOST_STATUSES
 
     private fun translateSmb(uri: FileUri, e: com.hierynomus.mssmb2.SMBApiException): StorageError {
         val name = e.statusCode.toString(16)
@@ -344,6 +388,17 @@ class SmbStorageProvider @Inject internal constructor(
             else ->
                 StorageError.ProtocolError(Protocol.SMB, "SMB error ${e.status}: ${e.message}", e)
         }
+    }
+
+    private companion object {
+        /** これらの NT ステータスはセッション/接続が消失した印。プールから捨てて張り直す。 */
+        val CONNECTION_LOST_STATUSES = setOf(
+            com.hierynomus.mserref.NtStatus.STATUS_USER_SESSION_DELETED,
+            com.hierynomus.mserref.NtStatus.STATUS_NETWORK_SESSION_EXPIRED,
+            com.hierynomus.mserref.NtStatus.STATUS_NETWORK_NAME_DELETED,
+            com.hierynomus.mserref.NtStatus.STATUS_CONNECTION_DISCONNECTED,
+            com.hierynomus.mserref.NtStatus.STATUS_CONNECTION_RESET,
+        )
     }
 
     private fun FileUri.asRemote(): FileUri.Remote? = this as? FileUri.Remote

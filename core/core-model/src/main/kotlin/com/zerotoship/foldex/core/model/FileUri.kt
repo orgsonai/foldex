@@ -2,13 +2,35 @@ package com.zerotoship.foldex.core.model
 
 sealed class FileUri {
     data class Local(val absolutePath: String) : FileUri()
-    data class Saf(val documentUri: String) : FileUri()
+
+    /**
+     * SAF (StorageAccessFramework) 経由のドキュメント URI。
+     *
+     * - [documentUri] は SAF picker で取った tree URI、もしくは tree 内の子の document URI。
+     * - [pendingChildName] が非 null のときは「[documentUri] の配下に作る予定の子の名前」を表す。
+     *   mkdir / openOutput(CREATE_NEW) はこの name を見て親に createDocument を呼ぶ。
+     *   既存ノードへの操作 (read / overwrite / delete) ではこのフィールドは null。
+     */
+    data class Saf(val documentUri: String, val pendingChildName: String? = null) : FileUri()
+
     data class Remote(val protocol: Protocol, val connectionId: String, val path: String) : FileUri()
 
     fun toStorageString(): String = when (this) {
         is Local -> "local://$absolutePath"
+        // pendingChildName は揮発情報なので storage 文字列には乗せない (永続化されない子)。
         is Saf -> "saf://$documentUri"
         is Remote -> "${protocol.scheme}://$connectionId/$path"
+    }
+
+    /**
+     * ユーザー向けエラーメッセージ等で使う、URI 全体ではなく末尾のファイル/フォルダ名。
+     * 取り出せない場合は元の文字列を返す (空にはしない)。
+     */
+    fun displayName(): String = when (this) {
+        is Local -> absolutePath.trimEnd('/').substringAfterLast('/').ifEmpty { absolutePath }
+        is Saf -> pendingChildName
+            ?: documentUri.substringAfterLast('/').substringAfterLast("%2F").substringAfterLast(':').ifEmpty { documentUri }
+        is Remote -> path.trimEnd('/').substringAfterLast('/').ifEmpty { "/" }
     }
 
     companion object {

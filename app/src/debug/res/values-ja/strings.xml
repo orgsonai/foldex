@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 日本語ロケールでも debug を区別できるよう app_name を上書きする。
+         これが無いと ja-JP 端末では main の values-ja (Foldex) が優先され、
+         debug でも「Foldex」と表示されてしまう。 -->
+    <string name="app_name">Foldex (debug)</string>
+</resources>

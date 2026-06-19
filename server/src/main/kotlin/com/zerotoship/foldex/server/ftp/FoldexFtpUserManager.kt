@@ -33,6 +33,32 @@ internal class FoldexFtpUserManager(
 ) : UserManager {
 
     override fun authenticate(authentication: Authentication): User {
+        // Apache FtpServer 側で予期する例外は AuthenticationFailedException のみ。
+        // その他の Throwable (Room の SQLiteException, ClassNotFoundException 等) を
+        // MINA 経由で漏らすとプロセスごとクラッシュしうるので、外側で全部つかみ
+        // 認証失敗扱いに統一する。
+        return try {
+            authenticateInner(authentication)
+        } catch (e: AuthenticationFailedException) {
+            throw e
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "FTP authenticate failed unexpectedly", t)
+            runCatching {
+                runBlocking {
+                    logger.record(
+                        configId = configId,
+                        event = ServerLogEvent.AUTH_FAILED,
+                        clientAddress = "ftp",
+                        username = (authentication as? UsernamePasswordAuthentication)?.username,
+                        details = "internal_error:${t.javaClass.simpleName}:${t.message}",
+                    )
+                }
+            }
+            throw AuthenticationFailedException("Internal error: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun authenticateInner(authentication: Authentication): User {
         val config = runBlocking { repository.findById(configId) }
             ?: throw AuthenticationFailedException("Server config not found")
 
@@ -76,26 +102,32 @@ internal class FoldexFtpUserManager(
         return buildFtpUser(config, username, rootPath)
     }
 
-    override fun getUserByName(username: String?): User? {
-        if (username == null) return null
-        val config = runBlocking { repository.findById(configId) } ?: return null
-        return when (config.authMode) {
+    override fun getUserByName(username: String?): User? = runCatching {
+        if (username == null) return@runCatching null
+        val config = runBlocking { repository.findById(configId) } ?: return@runCatching null
+        when (config.authMode) {
             ServerAuthMode.ANONYMOUS -> buildFtpUser(config, username, rootPath)
             ServerAuthMode.PASSWORD, ServerAuthMode.PASSWORD_OR_PUBLIC_KEY -> {
                 if (config.username == username) buildFtpUser(config, username, rootPath) else null
             }
             ServerAuthMode.PUBLIC_KEY -> null
         }
+    }.getOrElse {
+        android.util.Log.e(TAG, "FTP getUserByName failed", it)
+        null
     }
 
-    override fun getAllUserNames(): Array<String> {
-        val config = runBlocking { repository.findById(configId) } ?: return emptyArray()
-        return when (config.authMode) {
+    override fun getAllUserNames(): Array<String> = runCatching {
+        val config = runBlocking { repository.findById(configId) } ?: return@runCatching emptyArray()
+        when (config.authMode) {
             ServerAuthMode.ANONYMOUS -> arrayOf("anonymous")
             ServerAuthMode.PASSWORD, ServerAuthMode.PASSWORD_OR_PUBLIC_KEY ->
                 config.username?.let { arrayOf(it) } ?: emptyArray()
             ServerAuthMode.PUBLIC_KEY -> emptyArray()
         }
+    }.getOrElse {
+        android.util.Log.e(TAG, "FTP getAllUserNames failed", it)
+        emptyArray()
     }
 
     override fun delete(username: String?) {
@@ -111,4 +143,8 @@ internal class FoldexFtpUserManager(
     override fun getAdminName(): String = "__foldex_admin__"
 
     override fun isAdmin(username: String?): Boolean = false
+
+    private companion object {
+        const val TAG = "FoldexFtpUserMgr"
+    }
 }

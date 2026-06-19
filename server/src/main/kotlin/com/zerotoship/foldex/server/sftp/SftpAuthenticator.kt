@@ -30,7 +30,16 @@ internal class SftpPasswordAuthenticator(
     private val logger: ServerLogger,
 ) : PasswordAuthenticator {
 
-    override fun authenticate(username: String, password: String, session: ServerSession): Boolean {
+    override fun authenticate(username: String, password: String, session: ServerSession): Boolean = try {
+        authenticateInner(username, password, session)
+    } catch (t: Throwable) {
+        // MINA SSHD の NIO ワーカで未捕捉例外を漏らすとプロセスごと落ちる。
+        // ここで全部つかんで「認証失敗」扱いに統一する。
+        android.util.Log.e("SftpAuth", "authenticate failed unexpectedly", t)
+        false
+    }
+
+    private fun authenticateInner(username: String, password: String, session: ServerSession): Boolean {
         val clientAddress = session.clientAddressString()
         return runBlocking {
             val config = repository.findById(configId)
@@ -87,7 +96,14 @@ internal class SftpPublickeyAuthenticator(
     private val logger: ServerLogger,
 ) : PublickeyAuthenticator {
 
-    override fun authenticate(username: String, key: PublicKey, session: ServerSession): Boolean {
+    override fun authenticate(username: String, key: PublicKey, session: ServerSession): Boolean = try {
+        authenticateInner(username, key, session)
+    } catch (t: Throwable) {
+        android.util.Log.e("SftpAuth", "publickey authenticate failed unexpectedly", t)
+        false
+    }
+
+    private fun authenticateInner(username: String, key: PublicKey, session: ServerSession): Boolean {
         val clientAddress = session.clientAddressString()
         return runBlocking {
             val config = repository.findById(configId)

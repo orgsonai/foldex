@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 8.0+ のアダプティブアイコン。
+  これを置かないと Moto / Pixel などのランチャーが「テーマアイコン」扱いして
+  白い角丸の中にレガシー PNG を縮小して詰め込んでしまう。
+  本ファイルで背景 (黒) + 前景 (inset 付きデザイン) を明示することで、
+  ランチャー側に余計な装飾をさせずに済む。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

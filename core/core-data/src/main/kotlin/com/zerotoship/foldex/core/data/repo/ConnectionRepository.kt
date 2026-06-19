@@ -78,6 +78,13 @@ class ConnectionRepository @Inject constructor(
         connectionDao.updateLastConnectedAt(connectionId, System.currentTimeMillis())
     }
 
+    /** ドラッグ並び替えの確定保存。[orderedIds] の並び順を sortOrder として書き込む。 */
+    suspend fun reorder(orderedIds: List<String>) {
+        orderedIds.forEachIndexed { index, id ->
+            connectionDao.updateSortOrder(id, index)
+        }
+    }
+
     private suspend fun writeCredential(credential: Credential, now: Long): String? {
         return when (credential) {
             is Credential.Anonymous -> null

@@ -1,8 +1,10 @@
 package com.zerotoship.foldex.sync.engine
 
 import com.zerotoship.foldex.core.common.Result
+import com.zerotoship.foldex.core.data.repo.SyncBackupRepository
 import com.zerotoship.foldex.core.data.repo.SyncStateRepository
 import com.zerotoship.foldex.core.model.FileUri
+import java.io.File
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.core.model.StorageProvider
 import com.zerotoship.foldex.core.model.SyncDirection
@@ -46,8 +48,22 @@ internal class Executor(
     private val stateRepo: SyncStateRepository,
     private val jobId: String,
     private val tracker: ProgressTracker,
+    private val backup: BackupConfig? = null,
     private val now: () -> Long = System::currentTimeMillis,
+    /** 各アクション完了時に呼ばれるロガー。SyncEngine が AppLogger に流すために使う。 */
+    private val onAction: (message: String, level: ActionLevel) -> Unit = { _, _ -> },
 ) {
+
+    enum class ActionLevel { INFO, ERROR }
+
+    /** delete 同期で削除前にファイルを退避する設定。null なら退避しない。 */
+    class BackupConfig(
+        val genDir: File,
+        val thresholdBytes: Long,
+        /** しきい値超過時にバックアップせず削除するか (ASK は呼び出し側で BACKUP に解決済み)。 */
+        val skipOverThreshold: Boolean,
+        val repo: SyncBackupRepository,
+    )
 
     data class Report(
         val uploaded: Int,
@@ -87,18 +103,46 @@ internal class Executor(
                                 is Done.Transfer -> {
                                     bytes.addAndGet(done.bytes)
                                     when (done.kind) {
-                                        TransferKind.UPLOAD -> uploaded.incrementAndGet()
-                                        TransferKind.DOWNLOAD -> downloaded.incrementAndGet()
-                                        TransferKind.CONFLICT -> conflicts.incrementAndGet()
+                                        TransferKind.UPLOAD -> {
+                                            uploaded.incrementAndGet()
+                                            // 転送先 (リモート) に既にあれば「更新」、無ければ「新規」。
+                                            val kind = if (currentRemote.containsKey(action.path)) "更新" else "新規"
+                                            onAction("アップロード($kind): ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
+                                        }
+                                        TransferKind.DOWNLOAD -> {
+                                            downloaded.incrementAndGet()
+                                            val kind = if (currentLocal.containsKey(action.path)) "更新" else "新規"
+                                            onAction("ダウンロード($kind): ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
+                                        }
+                                        TransferKind.CONFLICT -> {
+                                            conflicts.incrementAndGet()
+                                            onAction("両側更新→転送: ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
+                                        }
                                     }
                                 }
-                                Done.Delete -> deleted.incrementAndGet()
+                                Done.Delete -> {
+                                    deleted.incrementAndGet()
+                                    val side = when (action) {
+                                        is SyncAction.DeleteRemote -> "リモート"
+                                        is SyncAction.DeleteLocal -> "ローカル"
+                                        else -> "?"
+                                    }
+                                    onAction("削除($side): ${action.path}", ActionLevel.INFO)
+                                }
                             }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             failed.incrementAndGet()
                             errors.add(SyncResult.ActionError(action.path, e.message ?: e.toString()))
+                            val what = when (action) {
+                                is SyncAction.Upload -> "アップロード"
+                                is SyncAction.Download -> "ダウンロード"
+                                is SyncAction.DeleteRemote, is SyncAction.DeleteLocal -> "削除"
+                                is SyncAction.Conflict -> "両側更新の転送"
+                                is SyncAction.Skip -> "処理"
+                            }
+                            onAction("失敗($what): ${action.path} — ${e.message ?: e.toString()}", ActionLevel.ERROR)
                         }
                         tracker.actionCompleted()
                     }
@@ -149,23 +193,36 @@ internal class Executor(
         )
 
         is SyncAction.DeleteRemote -> {
+            backupBeforeDelete("remote", action.path)
             unwrap(remoteProvider.delete(childUri(remoteRoot, action.path), recursive = false))
             stateRepo.deletePath(jobId, action.path)
             Done.Delete
         }
 
         is SyncAction.DeleteLocal -> {
+            backupBeforeDelete("local", action.path)
             unwrap(localProvider.delete(childUri(localRoot, action.path), recursive = false))
             stateRepo.deletePath(jobId, action.path)
             Done.Delete
         }
 
         is SyncAction.Conflict -> {
-            val toRemote = direction == SyncDirection.TO_REMOTE
+            // 片方向はジョブの方向、双方向は解決結果 (勝者) で「どちらをソースにするか」が決まる。
+            val takeLocal = when (direction) {
+                SyncDirection.TO_REMOTE -> true
+                SyncDirection.TO_LOCAL -> false
+                SyncDirection.BIDIRECTIONAL -> when (val res = action.resolution) {
+                    ConflictResolution.TakeLocal -> true
+                    ConflictResolution.TakeRemote -> false
+                    // KeepBoth は敗者側をリネームする。renameSide=REMOTE なら local が勝者。
+                    is ConflictResolution.KeepBoth -> res.renameSide == ConflictSide.REMOTE
+                    ConflictResolution.Skip -> error("Skip resolution should not reach Executor")
+                }
+            }
             (action.resolution as? ConflictResolution.KeepBoth)?.let { keepBoth ->
                 renameLosingSide(keepBoth, action.path)
             }
-            val bytes = if (toRemote) {
+            val bytes = if (takeLocal) {
                 transferAndRecord(
                     path = action.path,
                     source = localProvider, sourceRoot = localRoot, sourceEntry = action.local,
@@ -182,6 +239,21 @@ internal class Executor(
         }
 
         is SyncAction.Skip -> error("Skip actions are not executed")
+    }
+
+    /** 削除予定ファイルをバックアップ世代へ退避する (設定が有効なときのみ)。ディレクトリは対象外。 */
+    private suspend fun backupBeforeDelete(side: String, relPath: String) {
+        val b = backup ?: return
+        val (provider, root) = if (side == "local") localProvider to localRoot else remoteProvider to remoteRoot
+        val uri = childUri(root, relPath)
+        val size = (provider.stat(uri) as? Result.Success)?.value?.size ?: 0L
+        if (b.skipOverThreshold && size > b.thresholdBytes) return
+        runCatching {
+            when (val inp = provider.openInput(uri)) {
+                is Result.Success -> b.repo.backupContent(b.genDir, side, relPath, inp.value)
+                is Result.Failure -> Unit // ディレクトリ等は退避できないのでスキップ
+            }
+        }
     }
 
     private suspend fun renameLosingSide(keepBoth: ConflictResolution.KeepBoth, path: String) {
@@ -261,4 +333,12 @@ internal class Executor(
     private companion object {
         const val COPY_BUFFER_SIZE = 64 * 1024
     }
+}
+
+/** ログ表示用にバイト数を読みやすい単位へ整形する。 */
+private fun humanBytes(b: Long): String = when {
+    b >= 1024L * 1024 * 1024 -> "%.1fGB".format(b / (1024.0 * 1024 * 1024))
+    b >= 1024L * 1024 -> "%.1fMB".format(b / (1024.0 * 1024))
+    b >= 1024L -> "%.1fKB".format(b / 1024.0)
+    else -> "${b}B"
 }

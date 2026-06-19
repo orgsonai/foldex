@@ -1,110 +1,93 @@
 package com.zerotoship.foldex
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import com.zerotoship.foldex.ui.connections.ConnectionsScreen
-import com.zerotoship.foldex.ui.filebrowser.FileBrowserScreen
-import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
-import com.zerotoship.foldex.ui.servers.ServerEditScreen
-import com.zerotoship.foldex.ui.servers.ServerLogScreen
-import com.zerotoship.foldex.ui.servers.ServersScreen
-import com.zerotoship.foldex.ui.sync.SyncJobEditScreen
-import com.zerotoship.foldex.ui.sync.SyncJobsScreen
-import androidx.navigation.NavType
-import androidx.navigation.navArgument
-import com.zerotoship.foldex.core.model.Connection
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
-import dagger.hilt.android.AndroidEntryPoint
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
+import com.zerotoship.foldex.ui.main.MainScreen
+import com.zerotoship.foldex.ui.settings.SettingsViewModel
 import com.zerotoship.foldex.ui.theme.FoldexTheme
+import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    /** App Shortcuts (manifest 静的) から渡される `foldex.shortcut` extra。MainScreen が消費する。 */
+    private val pendingShortcut = mutableStateOf<String?>(null)
+
+    /** ACTION_SEND / ACTION_SEND_MULTIPLE で他アプリから渡されたファイル群。 */
+    private val pendingShares = mutableStateOf<List<Uri>>(emptyList())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleIntent(intent)
         setContent {
-            FoldexTheme {
-                val navController = rememberNavController()
-                // Activity スコープの ViewModel — browser/connections の両ルートで共有する
-                val browserViewModel: FileBrowserViewModel = hiltViewModel(this@MainActivity)
-                NavHost(navController = navController, startDestination = "browser") {
-                    composable("browser") {
-                        FileBrowserScreen(
-                            onOpenConnections = { navController.navigate("connections") },
-                            onOpenServers = { navController.navigate("servers") },
-                            onOpenSync = { navController.navigate("sync") },
-                            viewModel = browserViewModel,
-                        )
-                    }
-                    composable("connections") {
-                        ConnectionsScreen(
-                            onBack = { navController.popBackStack() },
-                            onOpen = { connection ->
-                                if (connection is Connection.Smb) {
-                                    browserViewModel.openSmbConnection(connection.id, connection.name)
-                                    navController.popBackStack()
-                                }
-                            },
-                        )
-                    }
-                    composable("servers") {
-                        ServersScreen(
-                            onBack = { navController.popBackStack() },
-                            onAdd = { navController.navigate("servers/new") },
-                            onEdit = { config -> navController.navigate("servers/edit/${config.id}") },
-                            onOpenLogs = { config -> navController.navigate("servers/log/${config.id}") },
-                        )
-                    }
-                    composable(
-                        route = "servers/log/{id}",
-                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
-                    ) {
-                        ServerLogScreen(onBack = { navController.popBackStack() })
-                    }
-                    composable("servers/new") {
-                        ServerEditScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() },
-                        )
-                    }
-                    composable(
-                        route = "servers/edit/{id}",
-                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
-                    ) {
-                        ServerEditScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() },
-                        )
-                    }
-                    composable("sync") {
-                        SyncJobsScreen(
-                            onBack = { navController.popBackStack() },
-                            onAdd = { navController.navigate("sync/new") },
-                            onEdit = { job -> navController.navigate("sync/edit/${job.id}") },
-                        )
-                    }
-                    composable("sync/new") {
-                        SyncJobEditScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() },
-                        )
-                    }
-                    composable(
-                        route = "sync/edit/{id}",
-                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
-                    ) {
-                        SyncJobEditScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() },
-                        )
-                    }
-                }
+            val browserViewModel: FileBrowserViewModel = hiltViewModel(this@MainActivity)
+            val settingsViewModel: SettingsViewModel = hiltViewModel(this@MainActivity)
+            val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+            val darkTheme = when (settings.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            var shortcut by pendingShortcut
+            var shares by pendingShares
+            FoldexTheme(darkTheme = darkTheme, dynamicColor = settings.dynamicColor) {
+                MainScreen(
+                    browserViewModel = browserViewModel,
+                    shortcutAction = shortcut,
+                    onShortcutConsumed = { shortcut = null },
+                    sharedUris = shares,
+                    onSharedUrisConsumed = { shares = emptyList() },
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        intent ?: return
+        intent.getStringExtra(EXTRA_SHORTCUT)?.let { pendingShortcut.value = it }
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                val uri: Uri? = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+                }
+                if (uri != null) pendingShares.value = listOf(uri)
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val list: List<Uri> = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+                }
+                if (list.isNotEmpty()) pendingShares.value = list
+            }
+        }
+    }
+
+    companion object {
+        const val EXTRA_SHORTCUT = "foldex.shortcut"
     }
 }

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  フォアグラウンドのデザイン本体 (file5)。108dp フォアグラウンドの中央に inset 配置する。
+  背景 (#1E1F24) を file5 の角丸正方形と同色にしてあるので、前景の正方形は地に溶け込み、
+  「一回り小さい正方形が浮く」現象は出ない。ランチャーが地をデバイス枠形へ型抜きし、
+  中央にフォルダ絵が乗る。サイズはこの width/height だけで調整する (大きいほどフォルダが拡大)。
+    70dp 付近〜 : 端が齧られやすい
+    44dp 以下   : フォルダが小さく余白過多
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:gravity="center"
+        android:width="52dp"
+        android:height="52dp">
+        <bitmap android:src="@mipmap/ic_launcher_foreground" />
+    </item>
+</layer-list>

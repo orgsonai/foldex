@@ -1,0 +1,47 @@
+package com.zerotoship.foldex.ui.filebrowser
+
+import android.net.Uri
+import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.filetype.Category
+
+/** ファイルブラウザがファイルを「開く」際に画面側へ依頼する操作。Activity 起動が必要なものを表す。 */
+sealed interface OpenRequest {
+    /**
+     * 内蔵ビューア (ViewerActivity) で開く。[localPath] はローカルの実体 (リモートはキャッシュ済み)。
+     * [editable] が true なら編集→保存が元ファイルに反映される (= ローカルファイルの場合のみ)。
+     * 画像など「同フォルダ内の兄弟をスワイプで切り替えたい」カテゴリは [siblings] にローカル
+     * パス配列を渡す ([localPath] もこの配列の要素である必要がある)。
+     */
+    data class Builtin(
+        val localPath: String,
+        val name: String,
+        val category: Category,
+        val editable: Boolean,
+        val siblings: List<String> = emptyList(),
+        /** テキストエディタで「編集可能」として開く上限 (KB)。ユーザー設定に従う。 */
+        val editableLimitKb: Int = 512,
+        /**
+         * リモート動画/音声をストリーミング再生する場合の content:// URI 文字列。
+         * 非 null のときは [localPath] (空文字でも可) より優先され、
+         * VideoViewer / AudioPlayer は ExoPlayer に直接渡して全DLを待たずに再生する。
+         */
+        val streamingMediaUri: String? = null,
+        /**
+         * 内蔵エディタで「保存」を押した瞬間に元 URI へ書き戻す対象。
+         * Remote/SAF の編集起動時にのみセットされる。ローカルファイル直編集時は null。
+         */
+        val sourceUri: FileUri? = null,
+    ) : OpenRequest
+
+    /** 外部アプリで ACTION_VIEW する。[chooser] が true ならアプリ選択ダイアログを毎回出す。 */
+    data class External(val uri: Uri, val mime: String, val name: String, val chooser: Boolean) : OpenRequest
+
+    /**
+     * ZIP を展開せずに中身を閲覧する内蔵アーカイブブラウザ (ArchiveExplorerActivity) で開く。
+     * [localPath] はローカルの実体 zip (リモート/SAF はキャッシュ済み)。
+     */
+    data class Archive(val localPath: String, val name: String) : OpenRequest
+
+    /** APK をインストールする (ACTION_VIEW + package-archive MIME)。 */
+    data class InstallApk(val uri: Uri) : OpenRequest
+}
