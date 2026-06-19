@@ -180,7 +180,7 @@ docs: P1 達成サマリ
 - [x] ダーク/ライト/システム追従
 - [x] 拡張子バッジ
 - [x] アクセシビリティ最低ライン (TalkBack / 48dp / コントラスト): 操作系 IconButton は全てラベル済み、一覧の行高 56/64dp で 48dp 確保、コントラストは §H で整備。ファイル行のフォルダ種別/選択状態を読み上げ (`feec716`)。※実機 TalkBack での通し確認は残（運用）
-- [ ] 同期途中再開 ← **P7 残** (リモートの完全動作を見届けた後に着手)
+- [x] 同期途中再開 → **P8 に移管** (リモートの完全動作を見届けた後に着手するため、P7 完了の阻害要因にはしない。P8 §「P7 残課題の消化」に集約)
 - [x] エラーメッセージの日本語化 (`StorageError` / `SyncError`): `StorageError.toUserMessage()` を追加し FileBrowser の表示を日本語化 (`7861e51`)。`SyncResult.toSummaryLine` は元から日本語
 - [x] ゴミ箱機能 (ゴミ箱へ/完全削除/毎回確認 + ゴミ箱画面)
 - [x] PDF 内蔵ビューア (PdfRenderer + LRU ページキャッシュ + 専用スクロールバー)
@@ -280,7 +280,7 @@ docs: P1 達成サマリ
 - [x] **空ファイルで内蔵エディタが落ちる不具合を修正** (`a49d8ea` 0.2.37): 真因は `TextDecoding.isValidUtf8()` の `CharsetDecoder` 状態機械誤用。0 バイト入力では `while (hasRemaining)` が一度も回らず `decode()` が呼ばれない → `RESET` のまま `flush()` を呼んで `IllegalStateException`。`do/while` 化で `decode(endOfInput=true)` を必ず通し `RESET → END` に遷移させて修正。文字コード判定ロジックは不変。§Q-5 (`0.2.32`) で空ファイルを内蔵エディタ対応にしたことで踏むようになっていた経路
 - [x] **§R の調査メモ (コード変更なし)**: §P-1 / §Q-1 の「RenderNode を止める」仮説、§R-2 で疑った Magnifier/PixelCopy も全て無関係だったことを §S で確定。状態機械の文字列は `java.nio.charset.CharsetDecoder` 由来 (`/apex/com.android.art/javalib/core-oj.jar`)
 - [x] **§S-3 巻き込み変更 (要追認)**: 検証用に入れた `DragSelectCodeEditor` の Magnifier 無効化 (`getComponent(Magnifier::class.java).isEnabled = false`) を同梱コミット。§P-1 / §Q-1 由来の software layer / `cacheRenderNodeForLongLines=false` も真因と無関係のため別途撤去検討の余地あり
-> 1 コミット push 済み (`phase/P7-polish`)。リリースビルド緑 (オンデバイス)。実機未確認: ① 空ファイルが内蔵エディタで開くか、② 各種文字コードのファイルが従来どおり開くか。
+> 1 コミット push 済み (`phase/P7-polish`)。リリースビルド緑 (オンデバイス)。実機確認 OK: ① 空ファイルが内蔵エディタで開く、② 各種文字コードのファイルが従来どおり化けずに開く。
 
 ### スコープ外
 - F-Droid / Play 配布 (P8)
@@ -315,4 +315,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-06-14 (P7 仕上げ第9回 §Q + 第10回 §R / §S を反映。第9回: エディタ確実起動 / 同期の二重実行根絶 / 削除復元プレビュー / 再帰検索 / 使用量分析 (0.2.31〜0.2.35)。第10回: 内蔵エディタが空ファイルで `RESET → FLUSHED` で開けない不具合の真因確定と修正 (`CharsetDecoder` 状態機械, 0.2.37)。バージョン 0.2.37 / versionCode 39)
+最終更新: 2026-06-20 (P7 達成条件の「同期途中再開」を P8 へ正式移管し P7 達成条件を全て [x] に。第10回 (0.2.37) の実機確認 OK を反映。バージョン 0.2.37 / versionCode 39)
