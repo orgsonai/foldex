@@ -295,7 +295,7 @@ docs: P1 達成サマリ
 - [x] 動画リモートストリーミング — P7 で前倒し実装済み (ProxyFileDescriptor + range openInput)
 - [x] HOME 画面・ドラッグ並べ替え — P7 で前倒し実装済み
 - [ ] エクスポート/インポート (要設計)
-- [ ] F-Droid 用 metadata
+- [x] F-Droid 用 metadata — `fastlane/metadata/android/{ja-JP,en-US}/` に title / short_description / full_description / changelogs/40.txt を配置。画像 (icon/featureGraphic/phoneScreenshots) は実機キャプチャ後に追加 (P8 残)
 - [ ] Reproducible Build
 - [x] LICENSE 確定 (P7 §J で GPL-3.0 → §L で MIT に変更) / [x] 各ソースへの SPDX ヘッダ付与 (P8 で `.kt`/`.kts`/`.sh` の 215 ファイルに `// SPDX-License-Identifier: MIT` + `// Copyright (c) 2026 Zero to Ship` を付与, 0.2.38)
 - [x] プライバシーポリシー (Play 向けに準備) — `docs/PRIVACY.md` に作成。Foldex は個人情報を一切収集せず、通信先はユーザー設定の NAS のみ。広告 SDK・解析 SDK なし。README からリンク
@@ -315,4 +315,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-06-20 (P8 着手分: 各ソースへの SPDX ヘッダ付与 (`.kt`/`.kts`/`.sh` の 215 ファイル, 0.2.38) + プライバシーポリシー (`docs/PRIVACY.md`) を完了。バージョン 0.2.38 / versionCode 40)
+最終更新: 2026-06-20 (P8 着手分: SPDX ヘッダ付与 (0.2.38) + プライバシーポリシー (`docs/PRIVACY.md`) + F-Droid metadata (`fastlane/metadata/android/{ja-JP,en-US}/`) を完了。バージョン 0.2.38 / versionCode 40)

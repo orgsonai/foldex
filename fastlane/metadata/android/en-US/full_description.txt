@@ -1,0 +1,31 @@
+Foldex is a file manager that lets you browse local storage and remote shares (SMB/SFTP/FTP/WebDAV) in one place. No ads, no analytics SDKs, no telemetry — everything runs on your device.
+
+* File management
+- Local: internal storage, SD card, USB-OTG, Android/data (via SAF), Termux home (SAF tree)
+- Remote: SMB, SFTP, FTP(S), WebDAV
+- HOME screen with reorderable tiles for folders, connections, and features
+- Per-folder remembered search/sort/show-hidden state
+- ZIP compress/extract with AES-256 password support
+- Share-receive from other apps (multi-file)
+
+* Built-in viewers
+- Image (pinch zoom + swipe gallery)
+- PDF (page cache + scrollbar)
+- Text editor (Sora-editor, Canvas-rendered, search/wrap/line-numbers/undo/redo)
+- Markdown / HTML (source ⇄ preview)
+- Audio / Video (streamed for remote)
+
+* Sync / Server
+- One-way / two-way sync against SMB/SFTP/FTP/WebDAV
+- Scheduled sync (specific time / daily / weekly / monthly)
+- Pre-delete auto-backup (generation + size threshold)
+- Built-in SFTP/FTP server (Argon2id auth, host key generation)
+- In-app run log
+
+* Privacy
+- Foldex collects and sends no personal information
+- No ads, no analytics SDKs, no Firebase
+- Network traffic only goes to remote shares you configured
+
+License: MIT
+Source: https://github.com/orgsonai/foldex
