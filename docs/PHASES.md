@@ -296,7 +296,7 @@ docs: P1 達成サマリ
 - [x] HOME 画面・ドラッグ並べ替え — P7 で前倒し実装済み
 - [ ] エクスポート/インポート (要設計)
 - [x] F-Droid 用 metadata — `fastlane/metadata/android/{ja-JP,en-US}/` に title / short_description / full_description / changelogs/40.txt を配置。画像 (icon/featureGraphic/phoneScreenshots) は実機キャプチャ後に追加 (P8 残)
-- [ ] Reproducible Build
+- [x] Reproducible Build — リポ側にできる範囲を整備し `docs/REPRODUCIBLE.md` に手順記録。Gradle/AGP/Kotlin/Compose BOM/依存ライブラリは全て `gradle/libs.versions.toml` で明示固定済み。Builds Server との照合は F-Droid 配布後に検証 (`metadata/com.zerotoship.foldex.yml` は F-Droid Data リポ側作業のためアプリ側スコープ外)
 - [x] LICENSE 確定 (P7 §J で GPL-3.0 → §L で MIT に変更) / [x] 各ソースへの SPDX ヘッダ付与 (P8 で `.kt`/`.kts`/`.sh` の 215 ファイルに `// SPDX-License-Identifier: MIT` + `// Copyright (c) 2026 Zero to Ship` を付与, 0.2.38)
 - [x] プライバシーポリシー (Play 向けに準備) — `docs/PRIVACY.md` に作成。Foldex は個人情報を一切収集せず、通信先はユーザー設定の NAS のみ。広告 SDK・解析 SDK なし。README からリンク
 - [x] GitHub リリースワークフロー — `.github/workflows/release.yml` (タグ push `v*` で `assembleRelease` → APK 生成 → GitHub Release 添付)。署名鍵は `SIGNING_KEYSTORE_BASE64` 等のシークレットから書き出し、未設定なら debug 鍵フォールバック。`prerelease` 判定はタグに `-` 含む場合 (例 `v0.9.0-P7`)。使い方は `.github/workflows/README.md`
@@ -315,4 +315,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-06-20 (P8 着手分: SPDX ヘッダ付与 (0.2.38) + プライバシーポリシー (`docs/PRIVACY.md`) + F-Droid metadata (`fastlane/metadata/android/{ja-JP,en-US}/`) + GitHub リリースワークフロー (`.github/workflows/release.yml`) を完了。バージョン 0.2.38 / versionCode 40)
+最終更新: 2026-06-20 (P8 着手分: SPDX ヘッダ / プライバシーポリシー / F-Droid metadata / GitHub リリースワークフロー / Reproducible Build (`docs/REPRODUCIBLE.md`) を完了。残りはエクスポート/インポート・同期途中再開 (大物 2 件) と `v1.0.0` タグ。バージョン 0.2.38 / versionCode 40)
