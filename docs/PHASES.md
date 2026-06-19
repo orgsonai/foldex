@@ -299,7 +299,7 @@ docs: P1 達成サマリ
 - [ ] Reproducible Build
 - [x] LICENSE 確定 (P7 §J で GPL-3.0 → §L で MIT に変更) / [x] 各ソースへの SPDX ヘッダ付与 (P8 で `.kt`/`.kts`/`.sh` の 215 ファイルに `// SPDX-License-Identifier: MIT` + `// Copyright (c) 2026 Zero to Ship` を付与, 0.2.38)
 - [x] プライバシーポリシー (Play 向けに準備) — `docs/PRIVACY.md` に作成。Foldex は個人情報を一切収集せず、通信先はユーザー設定の NAS のみ。広告 SDK・解析 SDK なし。README からリンク
-- [ ] GitHub リリースワークフロー
+- [x] GitHub リリースワークフロー — `.github/workflows/release.yml` (タグ push `v*` で `assembleRelease` → APK 生成 → GitHub Release 添付)。署名鍵は `SIGNING_KEYSTORE_BASE64` 等のシークレットから書き出し、未設定なら debug 鍵フォールバック。`prerelease` 判定はタグに `-` 含む場合 (例 `v0.9.0-P7`)。使い方は `.github/workflows/README.md`
 - [ ] `v1.0.0` タグ
 - [ ] P7 残課題の消化 (同期途中再開のみ。アクセシビリティ / エラーメッセージ日本語化は P7 で完了)
 
@@ -315,4 +315,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-06-20 (P8 着手分: SPDX ヘッダ付与 (0.2.38) + プライバシーポリシー (`docs/PRIVACY.md`) + F-Droid metadata (`fastlane/metadata/android/{ja-JP,en-US}/`) を完了。バージョン 0.2.38 / versionCode 40)
+最終更新: 2026-06-20 (P8 着手分: SPDX ヘッダ付与 (0.2.38) + プライバシーポリシー (`docs/PRIVACY.md`) + F-Droid metadata (`fastlane/metadata/android/{ja-JP,en-US}/`) + GitHub リリースワークフロー (`.github/workflows/release.yml`) を完了。バージョン 0.2.38 / versionCode 40)
