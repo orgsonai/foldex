@@ -1047,9 +1047,16 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
 
 @Composable
 private fun EmptyContent() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("このフォルダは空です", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // PullToRefreshBox は子がネストスクロールに参加しないとプルダウンを検知できない。
+    // 静的な Box だと空フォルダで引っぱっても更新が発火しないため、スクロール可能な
+    // LazyColumn で包む (中身が画面に収まっていてもネストスクロールには参加する)。
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                Text("このフォルダは空です", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
