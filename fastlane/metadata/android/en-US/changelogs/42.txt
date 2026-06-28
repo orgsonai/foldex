@@ -1,0 +1,2 @@
+1.0.1 (bug fix)
+- Fixed pull-to-refresh not working in empty folders

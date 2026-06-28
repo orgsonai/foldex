@@ -300,8 +300,15 @@ docs: P1 達成サマリ
 - [x] LICENSE 確定 (P7 §J で GPL-3.0 → §L で MIT に変更) / [x] 各ソースへの SPDX ヘッダ付与 (P8 で `.kt`/`.kts`/`.sh` の 215 ファイルに `// SPDX-License-Identifier: MIT` + `// Copyright (c) 2026 Zero to Ship` を付与, 0.2.38)
 - [x] プライバシーポリシー (Play 向けに準備) — `docs/PRIVACY.md` に作成。Foldex は個人情報を一切収集せず、通信先はユーザー設定の NAS のみ。広告 SDK・解析 SDK なし。README からリンク
 - [x] GitHub リリースワークフロー — `.github/workflows/release.yml` (タグ push `v*` で `assembleRelease` → APK 生成 → GitHub Release 添付)。署名鍵は `SIGNING_KEYSTORE_BASE64` 等のシークレットから書き出し、未設定なら debug 鍵フォールバック。`prerelease` 判定はタグに `-` 含む場合 (例 `v0.9.0-P7`)。使い方は `.github/workflows/README.md`
-- [ ] `v1.0.0` タグ
+- [x] `v1.0.0` タグ
 - [x] P7 残課題の消化 → **同期途中再開は将来検討** (`FOLDEX-HANDOFF.md` §「途中再開 (SFTP RESTART / SMB オフセット / HTTP Range) は P7 以降」のとおり据え置き)。アクセシビリティ / エラーメッセージ日本語化は P7 で完了済み
+
+---
+
+## P8 後のメンテナンスリリース
+
+### v1.0.1 (2026-06-28) — バグ修正
+- [x] **空フォルダでプルダウン更新が効かない不具合を修正** (`app/.../FileBrowserScreen.kt`): `EmptyContent` が静的な `Box` で `PullToRefreshBox` のネストスクロールに参加していなかった。スクロール可能な `LazyColumn` で包み、空フォルダでもプルダウン更新を発火できるように。バージョン 1.0.0 → 1.0.1 / versionCode 41 → 42。F-Droid changelog `42.txt` (ja/en) 追加。`v1.0.1` タグでリリースワークフロー実行。
 
 ---
 
@@ -315,4 +322,4 @@ docs: P1 達成サマリ
 
 ---
 
-最終更新: 2026-06-20 (P8 完了。エクスポート/インポートと同期途中再開は HANDOFF の方針と整合させて将来検討に格下げ。P8 達成条件を全て [x] に。バージョン 1.0.0 / versionCode 41)
+最終更新: 2026-06-28 (v1.0.1 メンテナンスリリース: 空フォルダのプルダウン更新の不具合を修正。`v1.0.0` タグ済みチェックを反映。バージョン 1.0.1 / versionCode 42)
