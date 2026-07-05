@@ -192,6 +192,7 @@ fun FileBrowserScreen(
                         editable = req.editable,
                         editableLimitKb = req.editableLimitKb,
                         siblings = req.siblings,
+                        initialImageId = req.initialId,
                         streamingMediaUri = req.streamingMediaUri,
                         sourceUriString = req.sourceUri?.toStorageString(),
                     )

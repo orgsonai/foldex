@@ -29,6 +29,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -73,9 +74,17 @@ fun ImagePagerViewer(
         state = pagerState,
         modifier = modifier.fillMaxSize(),
     ) { page ->
-        ZoomableImage(File(paths[page]), Modifier.fillMaxSize())
+        ZoomableImage(paths[page], Modifier.fillMaxSize())
     }
 }
+
+/**
+ * 画像識別子を Coil が読み込めるモデルに変換する。
+ * - `content://...` (SAF): [android.net.Uri] として渡す (キャッシュへ落とさず直接読める)。
+ * - それ以外: ローカルの絶対パスとみなして [File] を渡す。
+ */
+private fun imageModel(id: String): Any =
+    if (id.startsWith("content://")) id.toUri() else File(id)
 
 /** 1 枚の画像。
  *
@@ -88,15 +97,15 @@ fun ImagePagerViewer(
  *  - ダブルタップ: scale 1↔2.5 をトグル。
  */
 @Composable
-private fun ZoomableImage(file: File, modifier: Modifier = Modifier) {
-    var scale by remember(file) { mutableFloatStateOf(1f) }
-    var offsetX by remember(file) { mutableFloatStateOf(0f) }
-    var offsetY by remember(file) { mutableFloatStateOf(0f) }
+private fun ZoomableImage(id: String, modifier: Modifier = Modifier) {
+    var scale by remember(id) { mutableFloatStateOf(1f) }
+    var offsetX by remember(id) { mutableFloatStateOf(0f) }
+    var offsetY by remember(id) { mutableFloatStateOf(0f) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(file) {
+            .pointerInput(id) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     do {
@@ -149,7 +158,7 @@ private fun ZoomableImage(file: File, modifier: Modifier = Modifier) {
                     } while (event.changes.any { it.pressed })
                 }
             }
-            .pointerInput(file) {
+            .pointerInput(id) {
                 detectTapGestures(
                     onDoubleTap = {
                         if (scale > 1f) {
@@ -163,7 +172,7 @@ private fun ZoomableImage(file: File, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current).data(file).build(),
+            model = ImageRequest.Builder(LocalContext.current).data(imageModel(id)).build(),
             contentDescription = null,
             contentScale = ContentScale.Fit,
             modifier = Modifier

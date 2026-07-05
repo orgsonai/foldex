@@ -21,6 +21,11 @@ sealed interface OpenRequest {
         val category: Category,
         val editable: Boolean,
         val siblings: List<String> = emptyList(),
+        /**
+         * [siblings] のうち「最初に開く1枚」を指す識別子。ローカルは絶対パス、SAF は content:// URI。
+         * SAF 画像は [localPath] がキャッシュ実体で [siblings] に含まれないため、これで初期位置を特定する。
+         */
+        val initialId: String? = null,
         /** テキストエディタで「編集可能」として開く上限 (KB)。ユーザー設定に従う。 */
         val editableLimitKb: Int = 512,
         /**

@@ -76,6 +76,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.zerotoship.foldex.ui.components.FastScrollbar
 import io.github.rosemoe.sora.event.ContentChangeEvent
+import io.github.rosemoe.sora.event.PublishSearchResultEvent
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
 import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
@@ -331,7 +332,18 @@ private fun SoraEditor(
     // 行番号トグル
     LaunchedEffect(showLineNumbers) { editor.setLineNumberEnabled(showLineNumbers) }
 
-    // 検索: クエリ変更時に編集中のエディタへ検索を反映。
+    // 検索は Sora 内部で別スレッドで実行され、マッチ計算が終わると PublishSearchResultEvent が
+    // 飛ぶ。search() 直後に matchedPositionCount を読むと計算前で 0 のままになる (= 「ヒットして
+    // いるように見えるのに 0/0」) ため、件数・現在位置の反映はこのイベントで行う。
+    DisposableEffect(editor) {
+        val sub = editor.subscribeAlways(PublishSearchResultEvent::class.java) { _ ->
+            matchCount = editor.searcher.matchedPositionCount
+            matchIndex = editor.searcher.currentMatchedPositionIndex.coerceAtLeast(0)
+        }
+        onDispose { sub.unsubscribe() }
+    }
+
+    // 検索: クエリ変更時に編集中のエディタへ検索を反映。件数は上の PublishSearchResultEvent で反映。
     LaunchedEffect(searchOpen, searchQuery) {
         if (searchOpen && searchQuery.isNotEmpty()) {
             runCatching {
@@ -343,8 +355,6 @@ private fun SoraEditor(
                         /* caseInsensitive = */ true,
                     ),
                 )
-                matchCount = editor.searcher.matchedPositionCount
-                matchIndex = 0
             }
         } else {
             runCatching { editor.searcher.stopSearch() }

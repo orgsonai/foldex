@@ -415,10 +415,12 @@ class FileBrowserViewModel @Inject constructor(
                         // 押し忘れて Foldex に戻った場合の保険として [checkPendingUploads] も走る。
                         editable = true,
                         // 画像はスワイプで前後の画像へ遷移できるよう、同フォルダの兄弟画像を集める
-                        // (HANDOFF §10-C: 「隣の画像へスワイプ」)。ローカルのみ対応。
-                        siblings = if (category == Category.IMAGE && node.uri is FileUri.Local) {
-                            collectImageSiblings(localFile)
+                        // (HANDOFF §10-C: 「隣の画像へスワイプ」)。ローカル + SAF 対応 (リモートは対象外)。
+                        siblings = if (category == Category.IMAGE) {
+                            collectImageSiblings(node)
                         } else emptyList(),
+                        // siblings のうち「今開いた1枚」を指す識別子 (ローカル=絶対パス / SAF=content URI)。
+                        initialId = if (category == Category.IMAGE) imageModelString(node.uri) else null,
                         editableLimitKb = editorEditableLimitKb,
                         // ローカル直編集時 (= FileUri.Local) は localFile == 実体なので
                         // 即時アップロードは不要。Remote / SAF のときだけ sourceUri を渡す。
@@ -639,21 +641,27 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     /**
-     * 同フォルダ内の画像ファイル絶対パス一覧を、現在の表示順 (state.files) に従って返す。
-     * 表示中フォルダ以外を開いた場合は state.files に該当兄弟が居ないので、空リストを返す
-     * (= スワイプ無効でも単独表示は可能)。
+     * 同フォルダ内の画像の識別子一覧を、現在の表示順 (state.files) に従って返す。
+     * ローカルは絶対パス、SAF は content:// URI (Coil が直接読める) を返す。
+     * リモートはスワイプ対象外。開いたノードが現在表示中のフォルダに無い場合は空リストを返す
+     * (= 表示順を保証できないので単独表示にフォールバック)。
      */
-    private fun collectImageSiblings(target: File): List<String> {
+    private fun collectImageSiblings(node: FileNode): List<String> {
         val files = _state.value.files
-        val parentPath = target.parentFile?.absolutePath ?: return emptyList()
-        val curParentPath = (_state.value.currentUri as? FileUri.Local)?.absolutePath
-        // 兄弟は現在表示中のフォルダにいる場合のみ (表示順を尊重したいため)。
-        if (curParentPath != parentPath) return emptyList()
+        // 開いた画像が現在表示中のフォルダに居るときだけ集める (表示順を尊重したいため)。
+        if (files.none { it.uri == node.uri }) return emptyList()
         return files.asSequence()
             .filter { it.type == NodeType.FILE }
             .filter { FileTypeRegistry.categorize(it.name) == Category.IMAGE }
-            .mapNotNull { (it.uri as? FileUri.Local)?.absolutePath }
+            .mapNotNull { imageModelString(it.uri) }
             .toList()
+    }
+
+    /** 画像を内蔵ビューアで表示するための識別子。ローカル=絶対パス / SAF=content URI / リモート=非対応。 */
+    private fun imageModelString(uri: FileUri): String? = when (uri) {
+        is FileUri.Local -> uri.absolutePath
+        is FileUri.Saf -> uri.documentUri
+        is FileUri.Remote -> null
     }
 
     // --- Selection ---

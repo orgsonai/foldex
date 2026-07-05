@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
@@ -82,6 +83,7 @@ class ViewerActivity : ComponentActivity() {
         val editable = intent.getBooleanExtra(EXTRA_EDITABLE, false)
         val editableLimitKb = intent.getIntExtra(EXTRA_EDITABLE_LIMIT_KB, 512)
         val siblings: List<String> = intent.getStringArrayExtra(EXTRA_SIBLINGS)?.toList().orEmpty()
+        val initialImageId: String = intent.getStringExtra(EXTRA_INITIAL_ID) ?: file.absolutePath
         val sourceUri: FileUri? = intent.getStringExtra(EXTRA_SOURCE_URI)
             ?.let { FileUri.fromStorageStringOrNull(it) }
 
@@ -104,9 +106,14 @@ class ViewerActivity : ComponentActivity() {
                     editable = editable,
                     editableLimitKb = editableLimitKb,
                     siblings = siblings,
+                    initialImageId = initialImageId,
+                    // SAF/Remote は file がキャッシュ実体 (親フォルダに無関係な画像が同居する) なので、
+                    // 親フォルダ走査 fallback はローカルの実ファイルのときだけ許す。
+                    allowParentScan = sourceUri == null,
                     streamingMediaUri = streamingMediaUri,
                     onBack = { finish() },
                     onOpenExternally = { f -> openExternally(f, f.name) },
+                    onOpenExternallyId = { id -> openIdExternally(id) },
                     onSaveRemote = sourceUri?.let { buildRemoteSaver(it) },
                 )
             }
@@ -132,6 +139,26 @@ class ViewerActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 表示中の画像識別子を外部アプリで開く。content:// URI (SAF 兄弟) はそのまま ACTION_VIEW、
+     * ローカル絶対パスは FileProvider 経由 ([openExternally]) に振り分ける。
+     */
+    private fun openIdExternally(id: String) {
+        if (id.startsWith("content://")) {
+            val uri = id.toUri()
+            val dispName = imageDisplayName(id)
+            val mime = FileTypeRegistry.mimeTypeFor(dispName) ?: "image/*"
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            runCatching { startActivity(Intent.createChooser(intent, dispName)) }
+        } else {
+            val f = File(id)
+            openExternally(f, f.name)
+        }
+    }
+
     private fun openExternally(file: File, name: String) {
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         val mime = FileTypeRegistry.mimeTypeFor(name) ?: "*/*"
@@ -151,6 +178,7 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_EDITABLE = "foldex.viewer.editable"
         private const val EXTRA_EDITABLE_LIMIT_KB = "foldex.viewer.editable_limit_kb"
         private const val EXTRA_SIBLINGS = "foldex.viewer.siblings"
+        private const val EXTRA_INITIAL_ID = "foldex.viewer.initial_id"
         private const val EXTRA_STREAMING_URI = "foldex.viewer.streaming_uri"
         private const val EXTRA_SOURCE_URI = "foldex.viewer.source_uri"
 
@@ -162,6 +190,11 @@ class ViewerActivity : ComponentActivity() {
             editable: Boolean = false,
             editableLimitKb: Int = 512,
             siblings: List<String> = emptyList(),
+            /**
+             * [siblings] のうち「最初に開く1枚」を指す識別子。ローカルは絶対パス、SAF は content:// URI。
+             * 未指定なら [localPath] を初期表示とみなす (ローカル画像・従来の呼び出し互換)。
+             */
+            initialImageId: String? = null,
             streamingMediaUri: String? = null,
             sourceUriString: String? = null,
         ): Intent =
@@ -173,6 +206,7 @@ class ViewerActivity : ComponentActivity() {
                 .putExtra(EXTRA_EDITABLE_LIMIT_KB, editableLimitKb)
                 .apply {
                     if (siblings.isNotEmpty()) putExtra(EXTRA_SIBLINGS, siblings.toTypedArray())
+                    if (!initialImageId.isNullOrBlank()) putExtra(EXTRA_INITIAL_ID, initialImageId)
                     if (!streamingMediaUri.isNullOrBlank()) {
                         putExtra(EXTRA_STREAMING_URI, streamingMediaUri)
                     }
@@ -182,6 +216,19 @@ class ViewerActivity : ComponentActivity() {
                 }
     }
 }
+
+/** 画像識別子 (絶対パス or content:// URI) から表示用のファイル名を得る。 */
+private fun imageDisplayName(id: String): String =
+    if (id.startsWith("content://")) {
+        // content://.../tree/xxx/document/yyy%2Fname.jpg → 末尾セグメントを URL デコードした名前。
+        id.toUri().lastPathSegment
+            ?.substringAfterLast('/')
+            ?.substringAfterLast(':')
+            ?.ifEmpty { id }
+            ?: id
+    } else {
+        File(id).name
+    }
 
 /** ローカル画像をスワイプ閲覧するための同フォルダ画像列挙 (ViewerActivity の fallback)。 */
 private fun collectImagesFromParent(file: File): List<String> {
@@ -204,10 +251,16 @@ private fun ViewerScreen(
     editable: Boolean,
     editableLimitKb: Int,
     siblings: List<String>,
+    /** [siblings] のうち最初に表示する1枚の識別子 (ローカル絶対パス or content:// URI)。 */
+    initialImageId: String = file.absolutePath,
+    /** ローカルの実ファイルのみ true。SAF/Remote キャッシュでは親フォルダ走査を抑止する。 */
+    allowParentScan: Boolean = true,
     /** リモートストリーミング再生に使う content URI 文字列。VIDEO/AUDIO カテゴリ時のみ参照。 */
     streamingMediaUri: String?,
     onBack: () -> Unit,
     onOpenExternally: (File) -> Unit,
+    /** 現在表示中の対象 (絶対パス or content:// URI) を外部アプリで開く。トップバーの「別のアプリで開く」用。 */
+    onOpenExternallyId: (String) -> Unit,
     /** Remote / SAF 由来のキャッシュ編集時、エディタ「保存」押下で即時アップロードするためのフック。
      *  ローカル直編集時は null (= file.writeBytes だけで完結)。 */
     onSaveRemote: (suspend (File) -> Boolean)? = null,
@@ -218,19 +271,27 @@ private fun ViewerScreen(
     var previewMode by remember { mutableStateOf(false) }
 
     // 画像はスワイプで前後の画像へ。Intent で運ばれた siblings を最優先、
-    // それが無い/不完全なら同フォルダから listFiles で集める (ローカル限定の fallback)。
-    val imagePaths: List<String> = remember(siblings, file) {
+    // それが無い/不完全なら同フォルダから listFiles で集める (ローカル実ファイル限定の fallback)。
+    // SAF/Remote は file がキャッシュ実体なので親フォルダ走査は使わず、開いた1枚のみを表示する。
+    val imagePaths: List<String> = remember(siblings, initialImageId, allowParentScan) {
         if (category != Category.IMAGE) return@remember emptyList()
-        val provided = siblings.takeIf { it.size > 1 && it.contains(file.absolutePath) }
-        provided ?: collectImagesFromParent(file)
+        val provided = siblings.takeIf { it.size > 1 && it.contains(initialImageId) }
+        provided ?: if (allowParentScan) collectImagesFromParent(file) else listOf(initialImageId)
     }
     var imageIndex by remember(imagePaths) {
-        mutableStateOf(imagePaths.indexOf(file.absolutePath).coerceAtLeast(0))
+        mutableStateOf(imagePaths.indexOf(initialImageId).coerceAtLeast(0))
     }
-    val displayedFile = remember(imageIndex, imagePaths) {
-        imagePaths.getOrNull(imageIndex)?.let { File(it) } ?: file
+    // 現在表示中の対象を識別子 (ローカル絶対パス or content:// URI) で持つ。
+    // 画像以外は file をそのまま指す。
+    val displayedId = if (category == Category.IMAGE) {
+        imagePaths.getOrNull(imageIndex) ?: initialImageId
+    } else {
+        file.absolutePath
     }
-    val displayedName = remember(displayedFile) { displayedFile.name }
+    // 開いた1枚は Intent 由来の正式な表示名 (name) を使い、他の兄弟は識別子から導出する。
+    val displayedName = remember(displayedId, name, initialImageId) {
+        if (displayedId == initialImageId) name else imageDisplayName(displayedId)
+    }
 
     Scaffold(
         topBar = {
@@ -262,7 +323,7 @@ private fun ViewerScreen(
                             }
                         }
                     }
-                    IconButton(onClick = { onOpenExternally(displayedFile) }) {
+                    IconButton(onClick = { onOpenExternallyId(displayedId) }) {
                         Icon(Icons.Default.OpenInNew, contentDescription = "別のアプリで開く")
                     }
                 },
