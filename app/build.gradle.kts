@@ -12,7 +12,9 @@ plugins {
 }
 
 // 正式リリース署名用の資格情報 (リポジトリ直下 keystore.properties・gitignore 済み)。
-// 無いマシンでは debug 鍵にフォールバックするので、共有開発に支障は出ない。
+// CI (GitHub Actions) は Secrets から keystore.properties を生成して正式鍵で署名する。
+// 鍵が無いローカルでは起動体感テスト用に debug 鍵へフォールバックするが、CI では debug 署名を
+// 作らせない (buildTypes.release の signingConfig 参照)。配布物の debug 署名は禁止。
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
@@ -58,11 +60,16 @@ android {
             // 必要なため P9 (リリース準備) で有効化する。当面は OFF。
             isMinifyEnabled = false
             isDebuggable = false
-            // keystore.properties があれば正式鍵で署名、無ければ debug 鍵にフォールバック。
-            signingConfig = if (keystorePropsFile.exists())
-                signingConfigs.getByName("release")
-            else
-                signingConfigs.getByName("debug")
+            // 署名方針: 配布物 (CI のリリース) を debug 鍵で署名するのは禁止。
+            //  - keystore.properties があれば必ず正式鍵で署名する。
+            //  - 無い場合、ローカルの起動体感テスト用途に限り debug 鍵へフォールバックする
+            //    (この APK は配布しない)。CI (env CI=true) では debug 署名を作らせないため、
+            //    鍵の無い "release" 署名設定を割り当てて assembleRelease を署名段階で失敗させる。
+            signingConfig = when {
+                keystorePropsFile.exists() -> signingConfigs.getByName("release")
+                System.getenv("CI") == "true" -> signingConfigs.getByName("release")
+                else -> signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

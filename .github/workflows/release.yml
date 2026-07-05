@@ -35,16 +35,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Decode signing keystore (if secrets present)
+      - name: Decode signing keystore (require signing secrets)
         env:
           KS_B64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.SIGNING_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
+          # 配布物を debug 鍵で署名するのは禁止。署名シークレットが無ければリリースを中止する。
           if [ -z "${KS_B64:-}" ]; then
-            echo "::warning::Signing secrets not set; release build will fall back to debug key."
-            exit 0
+            echo "::error::リリース署名シークレット (SIGNING_KEYSTORE_BASE64 等) が未設定です。debug 鍵での配布ビルドは禁止のためリリースを中止します。GitHub の Settings > Secrets に署名鍵を登録してください。"
+            exit 1
           fi
           echo "$KS_B64" | base64 -d > release.keystore
           cat > keystore.properties <<EOF
