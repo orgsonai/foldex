@@ -1352,6 +1352,7 @@ class FileBrowserViewModel @Inject constructor(
 
     /** 再帰検索のツリー走査ジョブ。クエリ/範囲/フォルダが変わるたびに貼り直す。 */
     private var recursiveSearchJob: Job? = null
+    private var contentSearchJob: Job? = null
 
     fun toggleSearch() {
         val active = !_state.value.isSearchActive
@@ -1364,13 +1365,21 @@ class FileBrowserViewModel @Inject constructor(
 
     fun setSearchQuery(query: String) {
         _state.value = _state.value.copy(searchQuery = query)
-        if (_state.value.searchRecursive) restartRecursiveSearch()
+        when {
+            _state.value.searchInContent -> restartContentSearch()
+            _state.value.searchRecursive -> restartRecursiveSearch()
+        }
     }
 
-    /** 検索範囲を「現在のフォルダのみ ⇄ サブフォルダも含む(再帰)」で切り替える。 */
+    /** 検索範囲を「現在のフォルダのみ ⇄ サブフォルダも含む(再帰)」で切り替える。中身検索にも効く。 */
     fun setSearchRecursive(recursive: Boolean) {
         if (_state.value.searchRecursive == recursive) return
         _state.value = _state.value.copy(searchRecursive = recursive)
+        // 中身検索モードなら範囲変更で中身スキャンを貼り直す。
+        if (_state.value.searchInContent) {
+            restartContentSearch()
+            return
+        }
         if (recursive) {
             restartRecursiveSearch()
         } else {
@@ -1379,13 +1388,35 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
+    /** 「ファイル名検索 ⇄ 中身検索 (grep)」を切り替える。 */
+    fun setSearchInContent(enabled: Boolean) {
+        if (_state.value.searchInContent == enabled) return
+        // 片方のスキャンは必ず止め、両方の結果をクリアしてからモードを切り替える。
+        recursiveSearchJob?.cancel()
+        contentSearchJob?.cancel()
+        _state.value = _state.value.copy(
+            searchInContent = enabled,
+            recursiveResults = emptyList(),
+            contentResults = emptyList(),
+            isSearchScanning = false,
+        )
+        if (enabled) {
+            restartContentSearch()
+        } else if (_state.value.searchRecursive) {
+            restartRecursiveSearch()
+        }
+    }
+
     fun closeSearch() {
         recursiveSearchJob?.cancel()
+        contentSearchJob?.cancel()
         _state.value = _state.value.copy(
             isSearchActive = false,
             searchQuery = "",
             searchRecursive = false,
+            searchInContent = false,
             recursiveResults = emptyList(),
+            contentResults = emptyList(),
             isSearchScanning = false,
         )
     }
@@ -1442,6 +1473,98 @@ class FileBrowserViewModel @Inject constructor(
             currentCoroutineContext().ensureActive()
             if (node.type == NodeType.DIRECTORY) walkForSearch(node.uri, query, showHidden, out, onBatch)
         }
+    }
+
+    /**
+     * 中身検索 (grep)。現在フォルダ (再帰トグル ON ならサブフォルダも) の対象ファイルを 1 つずつ
+     * 読み、[searchQuery] を含むものを抜粋つきで集める。クエリ/範囲が変わるたびに貼り直す。
+     */
+    private fun restartContentSearch() {
+        recursiveSearchJob?.cancel()
+        contentSearchJob?.cancel()
+        val root = _state.value.currentUri
+        val query = _state.value.searchQuery
+        if (root == null || query.isEmpty()) {
+            _state.value = _state.value.copy(contentResults = emptyList(), isSearchScanning = false)
+            return
+        }
+        _state.value = _state.value.copy(contentResults = emptyList(), isSearchScanning = true)
+        contentSearchJob = viewModelScope.launch {
+            val hits = ArrayList<ContentSearchHit>(32)
+            val showHidden = _state.value.showHidden
+            val recursive = _state.value.searchRecursive
+            withContext(Dispatchers.IO) {
+                walkForContentSearch(root, query, recursive, showHidden, hits) {
+                    val snapshot = ArrayList(hits)
+                    viewModelScope.launch { _state.value = _state.value.copy(contentResults = snapshot) }
+                }
+            }
+            _state.value = _state.value.copy(contentResults = ArrayList(hits), isSearchScanning = false)
+        }
+    }
+
+    /**
+     * [dir] 内 (再帰 ON ならサブフォルダも) の対象ファイルを読み、中身が [query] を含むものを [out] へ。
+     * 中身検索は端末内 (ローカル / SAF) のみ。最大 [MAX_CONTENT_SEARCH_HITS] 件で打ち切り・キャンセル可。
+     */
+    private suspend fun walkForContentSearch(
+        dir: FileUri,
+        query: String,
+        recursive: Boolean,
+        showHidden: Boolean,
+        out: MutableList<ContentSearchHit>,
+        onBatch: () -> Unit,
+    ) {
+        if (out.size >= MAX_CONTENT_SEARCH_HITS) return
+        val children = ArrayList<FileNode>()
+        runCatching {
+            storage.list(dir, com.zerotoship.foldex.core.model.ListOptions(showHidden = showHidden)).collect { children.add(it) }
+        }
+        var added = false
+        for (node in children) {
+            currentCoroutineContext().ensureActive()
+            if (out.size >= MAX_CONTENT_SEARCH_HITS) break
+            if (node.type != NodeType.FILE) continue
+            // 中身検索は端末内 (ローカル / SAF) のみ。リモートは通信が重いので対象外。
+            if (node.uri !is FileUri.Local && node.uri !is FileUri.Saf) continue
+            if (!ContentSearch.isSearchable(node.name)) continue
+            if (node.size > ContentSearch.MAX_FILE_BYTES) continue
+            val bytes = runCatching {
+                when (val r = storage.openInput(node.uri)) {
+                    is Result.Success -> readCapped(r.value, ContentSearch.MAX_FILE_BYTES)
+                    is Result.Failure -> null
+                }
+            }.getOrNull() ?: continue
+            currentCoroutineContext().ensureActive()
+            val text = ContentSearch.extractText(node.name, bytes) ?: continue
+            val snippet = ContentSearch.snippetFor(text, query) ?: continue
+            if (out.size < MAX_CONTENT_SEARCH_HITS) { out.add(ContentSearchHit(node, snippet)); added = true }
+        }
+        if (added) onBatch()
+        if (recursive) {
+            for (node in children) {
+                currentCoroutineContext().ensureActive()
+                if (out.size >= MAX_CONTENT_SEARCH_HITS) break
+                if (node.type == NodeType.DIRECTORY) {
+                    walkForContentSearch(node.uri, query, recursive, showHidden, out, onBatch)
+                }
+            }
+        }
+    }
+
+    /** [input] を最大 [cap] バイトまで読む。上限を超えたら null (= 大きすぎるので対象外)。 */
+    private fun readCapped(input: java.io.InputStream, cap: Long): ByteArray? = input.use {
+        val buf = java.io.ByteArrayOutputStream()
+        val tmp = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val n = it.read(tmp)
+            if (n < 0) break
+            total += n
+            if (total > cap) return null
+            buf.write(tmp, 0, n)
+        }
+        buf.toByteArray()
     }
 
     // --- Favorites ---
@@ -2164,6 +2287,9 @@ class FileBrowserViewModel @Inject constructor(
         private const val KEY_SHOW_HIDDEN = "show_hidden"
         /** 再帰検索で集める最大ヒット数 (メモリ/描画保護のための上限)。 */
         private const val MAX_RECURSIVE_SEARCH_HITS = 5000
+
+        /** 中身検索で集める最大ヒット数。1件ごとにファイルを読むため名前検索より低めに抑える。 */
+        private const val MAX_CONTENT_SEARCH_HITS = 1000
 
         // 列挙中の部分結果を UI へ反映する最小間隔 (ミリ秒)。これより短い間隔の更新はスキップする。
         private const val FLUSH_INTERVAL_MS = 80L

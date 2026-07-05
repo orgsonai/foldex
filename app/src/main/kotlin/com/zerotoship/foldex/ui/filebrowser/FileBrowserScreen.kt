@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -318,7 +319,9 @@ fun FileBrowserScreen(
                         TextField(
                             value = state.searchQuery,
                             onValueChange = { viewModel.setSearchQuery(it) },
-                            placeholder = { Text("ファイル名を検索…") },
+                            placeholder = {
+                                Text(if (state.searchInContent) "ファイルの中身を検索…" else "ファイル名を検索…")
+                            },
                             singleLine = true,
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -334,7 +337,19 @@ fun FileBrowserScreen(
                             modifier = Modifier.padding(start = 8.dp))
                     },
                     actions = {
-                        // 検索範囲トグル: OFF = 現在のフォルダのみ / ON = サブフォルダも含めて再帰検索。
+                        // 中身検索トグル: OFF = ファイル名検索 / ON = ファイルの中身を grep (端末内のみ)。
+                        FilterChip(
+                            selected = state.searchInContent,
+                            onClick = { viewModel.setSearchInContent(!state.searchInContent) },
+                            label = { Text("中身") },
+                            leadingIcon = if (state.searchInContent) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                            } else {
+                                null
+                            },
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        // 検索範囲トグル: OFF = 現在のフォルダのみ / ON = サブフォルダも含めて再帰。名前/中身 両方に効く。
                         FilterChip(
                             selected = state.searchRecursive,
                             onClick = { viewModel.setSearchRecursive(!state.searchRecursive) },
@@ -691,6 +706,41 @@ fun FileBrowserScreen(
                             CircularProgressIndicator()
                         }
                     state.error != null -> ErrorContent(message = state.error!!, onRetry = { viewModel.refresh() })
+                    // 中身検索 (grep) モード: ファイルの中身を読んでヒットを抜粋つきで表示。
+                    state.isSearchActive && state.searchInContent -> when {
+                        state.searchQuery.isEmpty() ->
+                            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    "キーワードを入力すると、ファイルの中身から検索します\n" +
+                                        "(テキスト / json / csv / Word / Excel / PowerPoint …)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                )
+                            }
+                        state.contentResults.isEmpty() && state.isSearchScanning ->
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator()
+                                    Spacer(Modifier.height(12.dp))
+                                    Text("ファイルの中身を検索中…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        state.contentResults.isEmpty() ->
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("「${state.searchQuery}」を含むファイルは見つかりません",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        else -> ContentSearchResults(
+                            hits = state.contentResults,
+                            showBadge = state.showExtensionBadge,
+                            onFileClick = viewModel::onItemClick,
+                            onFileLongClick = viewModel::onItemLongClick,
+                        )
+                    }
                     // 再帰検索モード: サブフォルダ含む結果を表示。走査中はその旨を出す。
                     state.isSearchActive && state.searchRecursive -> when {
                         state.recursiveResults.isEmpty() && state.isSearchScanning ->
@@ -967,6 +1017,47 @@ private fun FileListContent(
                 }
                 FastScrollbar(gridState, files.size, Modifier.align(Alignment.CenterEnd), labelProvider)
             }
+        }
+    }
+}
+
+/**
+ * 中身検索 (grep) の結果リスト。1 行ごとにファイル行 + マッチ抜粋 (最大2行) を表示する。
+ * タップでそのファイルを開き、長押しで選択モードに入る (通常の一覧と同じ操作)。
+ */
+@Composable
+private fun ContentSearchResults(
+    hits: List<ContentSearchHit>,
+    showBadge: Boolean,
+    onFileClick: (FileNode) -> Unit,
+    onFileLongClick: (FileNode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
+        items(
+            items = hits,
+            key = { it.node.uri.toStorageString() },
+            contentType = { "content-hit" },
+        ) { hit ->
+            Column {
+                FileListItem(
+                    node = hit.node,
+                    selected = false,
+                    showBadge = showBadge,
+                    onClick = { onFileClick(hit.node) },
+                    onLongClick = { onFileLongClick(hit.node) },
+                )
+                Text(
+                    text = hit.snippet,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 56.dp, end = 16.dp, bottom = 8.dp),
+                )
+            }
+            HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
         }
     }
 }

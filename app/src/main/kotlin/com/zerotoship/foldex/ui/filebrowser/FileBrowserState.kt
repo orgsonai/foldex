@@ -73,9 +73,13 @@ data class FileBrowserState(
     val isSearchActive: Boolean = false,
     /** 検索範囲: false = 現在のフォルダのみ / true = サブフォルダも含めて再帰検索。 */
     val searchRecursive: Boolean = false,
+    /** 中身検索 (grep) モード: true のときファイル名ではなくファイルの中身を検索する。 */
+    val searchInContent: Boolean = false,
     /** 再帰検索の結果 (サブフォルダ内のヒットも含む)。再帰モードのときだけ使う。 */
     val recursiveResults: List<FileNode> = emptyList(),
-    /** 再帰検索のツリー走査が進行中か (スピナー表示用)。 */
+    /** 中身検索の結果 (ヒットしたファイルとマッチ抜粋)。中身検索モードのときだけ使う。 */
+    val contentResults: List<ContentSearchHit> = emptyList(),
+    /** 再帰検索 / 中身検索のツリー走査が進行中か (スピナー表示用)。 */
     val isSearchScanning: Boolean = false,
     val pendingDeleteNodes: List<FileNode> = emptyList(),
     val renameTarget: FileNode? = null,
