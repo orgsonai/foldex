@@ -1,0 +1,2 @@
+1.0.4 (improvement)
+- Renamed search toggles for clarity: "content" is now "full text", "subfolders" is now "all levels"

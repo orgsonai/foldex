@@ -320,7 +320,7 @@ fun FileBrowserScreen(
                             value = state.searchQuery,
                             onValueChange = { viewModel.setSearchQuery(it) },
                             placeholder = {
-                                Text(if (state.searchInContent) "ファイルの中身を検索…" else "ファイル名を検索…")
+                                Text(if (state.searchInContent) "本文を検索…" else "ファイル名を検索…")
                             },
                             singleLine = true,
                             colors = TextFieldDefaults.colors(
@@ -341,7 +341,7 @@ fun FileBrowserScreen(
                         FilterChip(
                             selected = state.searchInContent,
                             onClick = { viewModel.setSearchInContent(!state.searchInContent) },
-                            label = { Text("中身") },
+                            label = { Text("本文") },
                             leadingIcon = if (state.searchInContent) {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             } else {
@@ -353,7 +353,7 @@ fun FileBrowserScreen(
                         FilterChip(
                             selected = state.searchRecursive,
                             onClick = { viewModel.setSearchRecursive(!state.searchRecursive) },
-                            label = { Text("サブフォルダ") },
+                            label = { Text("全ての階層") },
                             leadingIcon = if (state.searchRecursive) {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             } else {
@@ -711,7 +711,7 @@ fun FileBrowserScreen(
                         state.searchQuery.isEmpty() ->
                             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                                 Text(
-                                    "キーワードを入力すると、ファイルの中身から検索します\n" +
+                                    "キーワードを入力すると、本文から検索します\n" +
                                         "(テキスト / json / csv / Word / Excel / PowerPoint …)",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -723,7 +723,7 @@ fun FileBrowserScreen(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     CircularProgressIndicator()
                                     Spacer(Modifier.height(12.dp))
-                                    Text("ファイルの中身を検索中…",
+                                    Text("本文を検索中…",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -748,14 +748,14 @@ fun FileBrowserScreen(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     CircularProgressIndicator()
                                     Spacer(Modifier.height(12.dp))
-                                    Text("サブフォルダを検索中…",
+                                    Text("全ての階層を検索中…",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         state.recursiveResults.isEmpty() && state.searchQuery.isNotEmpty() ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("「${state.searchQuery}」に一致するファイルはサブフォルダにもありません",
+                                Text("「${state.searchQuery}」に一致するファイルは全ての階層にありません",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
