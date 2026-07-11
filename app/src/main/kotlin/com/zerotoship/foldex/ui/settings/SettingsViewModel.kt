@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
+import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
@@ -66,6 +67,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { repo.setThemeMode(mode) }
     fun setDynamicColor(enabled: Boolean) = viewModelScope.launch { repo.setDynamicColor(enabled) }
+    fun setColorTheme(theme: AppColorTheme) = viewModelScope.launch { repo.setColorTheme(theme) }
     fun setShowExtensionBadge(enabled: Boolean) = viewModelScope.launch { repo.setShowExtensionBadge(enabled) }
     fun setConfirmBeforeDelete(enabled: Boolean) = viewModelScope.launch { repo.setConfirmBeforeDelete(enabled) }
     fun setUndoTimeoutSeconds(seconds: Int) = viewModelScope.launch { repo.setUndoTimeoutSeconds(seconds) }

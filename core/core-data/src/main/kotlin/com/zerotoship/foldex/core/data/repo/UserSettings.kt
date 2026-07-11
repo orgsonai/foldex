@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.core.data.repo
 
+import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
@@ -20,6 +21,11 @@ data class UserSettings(
      * 既定は OFF — Foldex 独自の Forest Green テーマを既定の見た目にするため。ON で壁紙連動に切替。
      */
     val dynamicColor: Boolean = false,
+    /**
+     * Material You が OFF (または Android 12 未満) のときに使うアクセント配色。
+     * 既定は Foldex 独自の Forest Green。[dynamicColor] が ON のときは無視される。
+     */
+    val colorTheme: AppColorTheme = AppColorTheme.GREEN,
     /** ファイル一覧でファイル名の後ろに拡張子バッジを表示するか。 */
     val showExtensionBadge: Boolean = true,
     /** 削除前に確認ダイアログを出すか。 */

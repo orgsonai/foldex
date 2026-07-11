@@ -47,7 +47,11 @@ class MainActivity : ComponentActivity() {
             }
             var shortcut by pendingShortcut
             var shares by pendingShares
-            FoldexTheme(darkTheme = darkTheme, dynamicColor = settings.dynamicColor) {
+            FoldexTheme(
+                darkTheme = darkTheme,
+                dynamicColor = settings.dynamicColor,
+                colorTheme = settings.colorTheme,
+            ) {
                 MainScreen(
                     browserViewModel = browserViewModel,
                     shortcutAction = shortcut,

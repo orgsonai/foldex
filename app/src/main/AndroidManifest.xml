@@ -117,12 +117,26 @@
             </intent-filter>
         </receiver>
 
-        <!-- 内蔵ビューア (画像/テキスト/Markdown/HTML/音声) -->
+        <!-- 内蔵ビューア (画像/テキスト/Markdown/HTML/音声/動画/PDF)。
+             他アプリの「アプリで開く」(ACTION_VIEW) からも起動できるよう exported=true にし、
+             内蔵ビューアが表示できる MIME を intent-filter で宣言する。 -->
         <activity
             android:name=".ui.viewer.ViewerActivity"
-            android:exported="false"
+            android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+        </activity>
 
         <!-- ZIP の中身を展開せずに閲覧する内蔵アーカイブブラウザ -->
         <activity

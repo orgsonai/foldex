@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
@@ -38,6 +39,8 @@ class SettingsRepository @Inject constructor(
             themeMode = p[KEY_THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
             dynamicColor = p[KEY_DYNAMIC_COLOR] ?: false,
+            colorTheme = p[KEY_COLOR_THEME]?.let { runCatching { AppColorTheme.valueOf(it) }.getOrNull() }
+                ?: AppColorTheme.GREEN,
             showExtensionBadge = p[KEY_EXTENSION_BADGE] ?: true,
             confirmBeforeDelete = p[KEY_CONFIRM_DELETE] ?: true,
             undoTimeoutSeconds = p[KEY_UNDO_TIMEOUT] ?: 5,
@@ -62,6 +65,8 @@ class SettingsRepository @Inject constructor(
     suspend fun setThemeMode(mode: ThemeMode) = edit { it[KEY_THEME_MODE] = mode.name }
 
     suspend fun setDynamicColor(enabled: Boolean) = edit { it[KEY_DYNAMIC_COLOR] = enabled }
+
+    suspend fun setColorTheme(theme: AppColorTheme) = edit { it[KEY_COLOR_THEME] = theme.name }
 
     suspend fun setShowExtensionBadge(enabled: Boolean) = edit { it[KEY_EXTENSION_BADGE] = enabled }
 
@@ -106,6 +111,7 @@ class SettingsRepository @Inject constructor(
     private companion object {
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val KEY_COLOR_THEME = stringPreferencesKey("color_theme")
         val KEY_EXTENSION_BADGE = booleanPreferencesKey("extension_badge")
         val KEY_CONFIRM_DELETE = booleanPreferencesKey("confirm_before_delete")
         val KEY_UNDO_TIMEOUT = intPreferencesKey("undo_timeout_seconds")

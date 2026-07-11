@@ -3,8 +3,10 @@
 
 package com.zerotoship.foldex.ui.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.FlowRowScope
@@ -13,7 +15,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,13 +42,16 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.ui.theme.appColorThemeSwatch
 import com.zerotoship.foldex.ui.viewer.UNLIMITED_EDITABLE_LIMIT_KB
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,6 +106,35 @@ fun SettingsScreen(
                 checked = settings.dynamicColor,
                 onCheckedChange = viewModel::setDynamicColor,
             )
+            // Material You OFF のときだけアクセント配色を選べる (ON のときは壁紙が優先)。
+            SettingRow(
+                title = "アクセントカラー",
+                subtitle = if (settings.dynamicColor) {
+                    "Material You を OFF にすると選べます"
+                } else {
+                    "primary とタイルの色 (地の面はグレーのまま)"
+                },
+                wide = true,
+            ) {
+                ChipsControl {
+                    AppColorTheme.entries.forEach { theme ->
+                        FilterChip(
+                            selected = settings.colorTheme == theme,
+                            enabled = !settings.dynamicColor,
+                            onClick = { viewModel.setColorTheme(theme) },
+                            leadingIcon = {
+                                Box(
+                                    Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(appColorThemeSwatch(theme)),
+                                )
+                            },
+                            label = { Text(theme.displayName) },
+                        )
+                    }
+                }
+            }
             SwitchRow(
                 title = "拡張子バッジ",
                 subtitle = "ファイル名の後ろに拡張子を表示",
@@ -351,6 +387,16 @@ private val ThemeMode.displayName: String
         ThemeMode.SYSTEM -> "システム"
         ThemeMode.LIGHT -> "ライト"
         ThemeMode.DARK -> "ダーク"
+    }
+
+private val AppColorTheme.displayName: String
+    get() = when (this) {
+        AppColorTheme.GREEN -> "グリーン"
+        AppColorTheme.BLUE -> "ブルー"
+        AppColorTheme.PURPLE -> "パープル"
+        AppColorTheme.TEAL -> "ティール"
+        AppColorTheme.ORANGE -> "オレンジ"
+        AppColorTheme.ROSE -> "ローズ"
     }
 
 private val DeleteBehavior.displayName: String

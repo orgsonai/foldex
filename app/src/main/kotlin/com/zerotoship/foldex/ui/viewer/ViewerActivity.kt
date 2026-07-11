@@ -5,26 +5,33 @@ package com.zerotoship.foldex.ui.viewer
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,9 +41,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
@@ -49,6 +58,7 @@ import com.zerotoship.foldex.storage.StorageProviderRouter
 import com.zerotoship.foldex.ui.theme.FoldexTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
@@ -72,6 +82,12 @@ class ViewerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 他アプリの「アプリで開く」(ACTION_VIEW) から起動されたケース。
+        // 渡された content:// / file:// URI をキャッシュへコピーしてから内蔵ビューアで開く。
+        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
+            handleExternalView(intent.data!!)
+            return
+        }
         val path = intent.getStringExtra(EXTRA_PATH).orEmpty()
         val streamingMediaUri = intent.getStringExtra(EXTRA_STREAMING_URI)
         // streaming 経路は localPath=空でも OK (Mediauri から再生)。それ以外は path 必須。
@@ -98,7 +114,11 @@ class ViewerActivity : ComponentActivity() {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
-            FoldexTheme(darkTheme = darkTheme, dynamicColor = settings.dynamicColor) {
+            FoldexTheme(
+                darkTheme = darkTheme,
+                dynamicColor = settings.dynamicColor,
+                colorTheme = settings.colorTheme,
+            ) {
                 ViewerScreen(
                     file = file,
                     name = name,
@@ -138,6 +158,92 @@ class ViewerActivity : ComponentActivity() {
             }.getOrElse { false }
         }
     }
+
+    /**
+     * 他アプリの「アプリで開く」で渡された URI を扱う。ビューアはローカルの [File] を前提とするため、
+     * まず URI の中身をキャッシュへ非同期コピーし、完了したら既存の [ViewerScreen] で表示する。
+     * 外部由来なので閲覧専用 (editable=false / 書き戻しなし)。
+     */
+    private fun handleExternalView(uri: Uri) {
+        val name = queryDisplayName(uri)
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
+            ?: "file"
+        val category = FileTypeRegistry.categorize(name)
+
+        // null=コピー中 / File=表示可能 / true=失敗。setContent の外で持ち、コピー完了時に更新する。
+        val fileState = mutableStateOf<File?>(null)
+        val errorState = mutableStateOf(false)
+
+        enableEdgeToEdge()
+        setContent {
+            val settings by settingsRepo.settings.collectAsStateWithLifecycle(initialValue = UserSettings())
+            val darkTheme = when (settings.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            FoldexTheme(
+                darkTheme = darkTheme,
+                dynamicColor = settings.dynamicColor,
+                colorTheme = settings.colorTheme,
+            ) {
+                val file by fileState
+                val failed by errorState
+                when {
+                    failed -> ExternalOpenMessage("このファイルを開けませんでした。", onBack = { finish() })
+                    file == null -> ExternalOpenLoading(name)
+                    else -> ViewerScreen(
+                        file = file!!,
+                        name = name,
+                        category = category,
+                        editable = false,
+                        editableLimitKb = 512,
+                        siblings = emptyList(),
+                        initialImageId = file!!.absolutePath,
+                        allowParentScan = false,
+                        streamingMediaUri = null,
+                        onBack = { finish() },
+                        onOpenExternally = { f -> openExternally(f, f.name) },
+                        onOpenExternallyId = { id -> openIdExternally(id) },
+                        onSaveRemote = null,
+                    )
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            val copied = withContext(Dispatchers.IO) { copyUriToCache(uri, name) }
+            if (copied != null) fileState.value = copied else errorState.value = true
+        }
+    }
+
+    /** content:// の DISPLAY_NAME を引く。file:// は lastPathSegment を使う。取れなければ null。 */
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        if (uri.scheme == "file") return@runCatching uri.lastPathSegment?.substringAfterLast('/')
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) c.getString(idx) else null
+            } else {
+                null
+            }
+        }
+    }.getOrNull()
+
+    /** URI の中身を `cacheDir/external-view/<name>` へコピーして返す。失敗時 null。 */
+    private fun copyUriToCache(uri: Uri, name: String): File? = runCatching {
+        val dir = File(cacheDir, "external-view").apply {
+            mkdirs()
+            // 直前に開いたファイルは掃除し、1件だけ残す (巨大ファイルの溜め込みを防ぐ)。
+            listFiles()?.forEach { it.delete() }
+        }
+        val safeName = name.replace(Regex("[/\\\\]+"), "_").ifBlank { "file" }
+        val out = File(dir, safeName)
+        (contentResolver.openInputStream(uri) ?: error("openInputStream returned null")).use { input ->
+            out.outputStream().use { input.copyTo(it) }
+        }
+        out
+    }.getOrNull()
 
     /**
      * 表示中の画像識別子を外部アプリで開く。content:// URI (SAF 兄弟) はそのまま ACTION_VIEW、
@@ -214,6 +320,41 @@ class ViewerActivity : ComponentActivity() {
                         putExtra(EXTRA_SOURCE_URI, sourceUriString)
                     }
                 }
+    }
+}
+
+/** 外部 URI をキャッシュへコピー中に見せるローディング画面。 */
+@Composable
+private fun ExternalOpenLoading(name: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "$name を読み込み中…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** 外部オープンに失敗したときのメッセージ画面。 */
+@Composable
+private fun ExternalOpenMessage(text: String, onBack: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onBack) { Text("閉じる") }
+        }
     }
 }
 

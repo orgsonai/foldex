@@ -1,0 +1,3 @@
+1.0.5 (feature)
+- Foldex now appears in other apps' "Open with" list for images, video, audio, text and PDF files
+- Added selectable accent colors (Green, Blue, Purple, Teal, Orange, Rose) in Settings, used when Material You is off
