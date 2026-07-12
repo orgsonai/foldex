@@ -1,0 +1,2 @@
+1.0.6 (improvement)
+- The "Last run" line of sync jobs now shows the last run date/time (e.g. Last run: 07/12 14:30 · Success / transferred 3)

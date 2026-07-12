@@ -218,8 +218,7 @@ private fun SyncJobRow(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                val sub = job.lastRunResult ?: "未実行"
-                Text("前回: $sub", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("前回: ${lastRunLabel(job)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(checked = job.enabled, onCheckedChange = onToggleEnabled)
         }

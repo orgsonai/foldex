@@ -65,6 +65,17 @@ internal fun nextRunLabel(job: SyncJob): String? {
     }
 }
 
+/**
+ * 前回実行の表示文字列。
+ * - 未実行 (lastRunAt == null): "未実行"。
+ * - 実行済み: 実行時刻 (MM/dd HH:mm) + 結果サマリ。時刻は [nextRunLabel] と同じ書式に揃える。
+ */
+internal fun lastRunLabel(job: SyncJob): String {
+    val at = job.lastRunAt ?: return "未実行"
+    val time = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(at))
+    return job.lastRunResult?.let { "$time ・ $it" } ?: time
+}
+
 internal fun scheduleLabel(s: SyncSchedule): String = when (s.type) {
     ScheduleType.INTERVAL -> intervalLabel(s.intervalMinutes)
     ScheduleType.DAILY -> "毎日 ${timeLabel(s.timeOfDayMinutes)}"
