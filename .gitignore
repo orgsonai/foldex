@@ -77,9 +77,8 @@ SETUP.md
 FOLDEX-HANDOFF.md
 docs/PHASES.md
 docs/P7-REVISIONS.md
-scripts/phase-start.sh
-scripts/phase-finish.sh
-scripts/collect-knowledge.sh
+# scripts/ は 99_private/claude/foldex/scripts へのシンボリックリンク (実体は向こう)
+/scripts
 
 # ---- Misc ----
 node_modules/
