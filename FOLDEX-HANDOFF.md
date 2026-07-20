@@ -84,7 +84,7 @@
 
 ## 4. アーキテクチャ
 
-### 4-A. モジュール構成 (12モジュール)
+### 4-A. モジュール構成 (11モジュール)
 
 ```
 foldex/
@@ -104,7 +104,7 @@ foldex/
 │   ├── storage-smb/                  # smbj 実装
 │   ├── storage-sftp/                 # sshj 実装
 │   ├── storage-ftp/                  # Apache Commons Net 実装
-│   └── storage-webdav/               # Sardine-Android 実装
+│   └── storage-webdav/               # OkHttp 直叩き実装
 │
 ├── server/                           # 自機SFTPサーバー + FTPサーバー (1モジュール統合)
 │
@@ -520,7 +520,13 @@ data class SyncJobEntity(
     val excludePatterns: String,                 // JSON
     val maxFileSize: Long?,
 
-    val intervalMinutes: Int,                    // 0 = 手動のみ
+    val intervalMinutes: Int,                    // ScheduleType=INTERVAL の間隔(分)。0 = 手動のみ
+    val scheduleType: String = "interval",       // ScheduleType の wireName
+    val scheduleTimeOfDay: Int = 0,              // DAILY/WEEKLY/MONTHLY: 時刻 (0..1439 分)
+    val scheduleDaysOfWeek: Int = 0,             // WEEKLY: 曜日ビットマスク (bit0=月 ... bit6=日)
+    val scheduleDayOfMonth: Int = 1,             // MONTHLY: 日 (1..31, 0=月末)
+    val scheduleDateTime: Long = 0L,             // DATETIME: 実行 epoch ms
+
     val requiresWifi: Boolean,
     val requiresCharging: Boolean,
     val requiresBatteryNotLow: Boolean,
@@ -530,17 +536,35 @@ data class SyncJobEntity(
     val retryCount: Int = 3,
 
     val createdAt: Long,
-    val updatedAt: Long,
+    val updatedAt: Long,                         // 設定を更新した日時 (実行では変えない)
     val lastRunAt: Long?,
-    val lastRunResult: String?
+    val lastRunResult: String?,
+
+    val sortOrder: Int = 0                       // ドラッグ並び替え順。小さいほど上
 )
 ```
 
-### 8-K. WorkManager の制約
+**一覧の並び順**: `ORDER BY sortOrder ASC, createdAt ASC`。並び順が変わるのはユーザーが
+ドラッグしたときだけにする。第 2 キーに `updatedAt` を使うと、実行のたびに順位が入れ替わって
+しまうため使わない (`updateLastRun` は `lastRunAt` / `lastRunResult` だけを更新する)。
+新規ジョブは `sortOrder = MAX + 1` を振って末尾に置く。
 
-- **最小実行間隔: 15分** (Android標準制約)
-- 制約条件: `NetworkType.UNMETERED` (Wi-Fi限定) / `requiresCharging` / `requiresBatteryNotLow` / `requiresDeviceIdle`
-- 単発実行: `OneTimeWorkRequest` (手動同期用)
+### 8-K. スケジューリングと WorkManager の制約
+
+- **起動は AlarmManager**: 全ての定期種別 (`INTERVAL` / `DAILY` / `WEEKLY` / `MONTHLY` / `DATETIME`) は
+  次回時刻を算出して `setAndAllowWhileIdle` でアラームを貼る。発火を `SyncAlarmReceiver` が受け、
+  そこで `OneTimeWorkRequest` を即時エンキューする。
+  (`PeriodicWorkRequest` は Doze 中に起動されず「スリープ解除まで動かない」ため使わない)
+- 実行は常に `OneTimeWorkRequest`。手動・定期とも同じ一意名 (`sync-run-<jobId>`) + `ExistingWorkPolicy.KEEP`
+  に集約し、同一ジョブの二重実行を防ぐ。
+- 制約条件: `NetworkType.UNMETERED` (Wi-Fi限定) / `requiresCharging` / `requiresBatteryNotLow`
+  (`requiresDeviceIdle` は使わない)
+- **expedited と制約の併用禁止**: JobScheduler の仕様上、expedited なジョブに付けられる制約は
+  ネットワークとストレージ残量だけ。`requiresCharging` / `requiresBatteryNotLow` を併用すると
+  `JobInfo` 生成時に `IllegalArgumentException` が投げられ、**エンキュー自体が失敗してジョブが
+  永久に実行されない**。`canExpedite()` でこれらの制約が無いときだけ `setExpedited` を付ける。
+- 長時間実行: `SyncWorker` は開始後に自前で `setForeground` して前景化し、既定の約10分上限で
+  打ち切られないようにする。
 
 ### 8-L. モジュール内構造
 
@@ -551,19 +575,26 @@ sync/src/main/kotlin/com/zerotoship/foldex/sync/
 │   ├── DiffEngine.kt              # 差分検出
 │   ├── ConflictResolver.kt        # 競合解決
 │   ├── Executor.kt                # 転送実行
-│   ├── Filter.kt                  # glob パターンマッチ
+│   ├── Filter.kt                  # 除外/包含の判定
+│   ├── GlobMatcher.kt             # glob パターンマッチ
+│   ├── TreeWalker.kt              # ツリー列挙
+│   ├── SyncPaths.kt               # ルート相対パスの解決
 │   └── ProgressTracker.kt         # 進捗集計
 ├── scheduler/
-│   ├── SyncScheduler.kt           # WorkManager ラッパー
+│   ├── SyncScheduler.kt           # WorkManager / AlarmManager ラッパー
 │   ├── SyncWorker.kt              # CoroutineWorker 実装
-│   └── ConstraintBuilder.kt       # 制約条件の組み立て
+│   ├── SyncAlarmReceiver.kt       # アラーム発火 → 即時エンキュー
+│   ├── SyncBootReceiver.kt        # 端末再起動後のアラーム貼り直し
+│   └── SyncConstraints.kt         # 制約条件の組み立て + expedited 可否判定
 └── model/
-    ├── SyncJob.kt
     ├── SyncAction.kt
+    ├── SyncEntry.kt
     ├── SyncProgress.kt
-    ├── ConflictPolicy.kt
+    ├── ConflictResolution.kt
     └── SyncResult.kt
 ```
+
+(`SyncJob` / `ConflictPolicy` は UI と永続化の双方から参照するため `core-model` に置く)
 
 state は `core-data` 内に保存 (上記 8-E)、Repository 経由でアクセス。
 
@@ -1556,7 +1587,7 @@ P7 で前倒し実装したものを含む詳細な進捗は `docs/PHASES.md` §
 | 自機サーバー | Apache MINA SSHD + Apache FtpServer |
 | ストレージ戦略 | ハイブリッド (MANAGE_EXTERNAL_STORAGE + SAF) |
 | `Android/data` | サポート (SAFラッパー最初から) |
-| モジュール粒度 | 12モジュール |
+| モジュール粒度 | 11モジュール |
 | ローカルストレージ | 1モジュールに統合 (内部でFile/SAF振り分け) |
 | DI | Hilt |
 | ナビゲーション | Navigation Compose (文字列ルーティング) |

@@ -48,7 +48,7 @@
 ### 達成条件
 - [x] ルートの `settings.gradle.kts` / `build.gradle.kts` が用意されている
 - [x] `gradle/libs.versions.toml` (Version Catalog) が用意されている
-- [x] 12モジュールのディレクトリと最小 `build.gradle.kts` が存在する
+- [x] 11モジュールのディレクトリと最小 `build.gradle.kts` が存在する
   - [x] `app`
   - [x] `core/core-common`
   - [x] `core/core-model`
@@ -74,7 +74,7 @@
 ```
 chore(repo): リポジトリ初期化、.gitignore/.editorconfig 整備
 build(gradle): Version Catalog (libs.versions.toml) 初期化
-build(modules): 12モジュールのスケルトン作成
+build(modules): 11モジュールのスケルトン作成
 feat(app): Hilt + 空の MainActivity
 docs: P1 達成サマリ
 ```
@@ -315,7 +315,7 @@ docs: P1 達成サマリ
 ## 付録 — フェーズ完了の儀式
 
 1. 達成条件のチェックリストを全部 ✅ にする
-2. `./gradlew clean assembleDebug detekt` が通ることを確認
+2. `./gradlew clean assembleDebug test` が通ることを確認
 3. このファイル末尾に「P○ 完了サマリ」セクションを追記 (任意)
 4. `bash scripts/phase-finish.sh P<番号>` を実行
 5. push はユーザーが手動で行う

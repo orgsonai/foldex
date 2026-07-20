@@ -370,7 +370,7 @@ Android 14 同期クラッシュの根治 → 完了通知の追加、の順で�
 - [x] **CLAUDE ルール追加** (`d3cf078`): 実コード変更コミットの前に `app/build.gradle.kts` の versionName/Code を上げる運用を foldex `CLAUDE.md` §0 に追加 (docs のみの変更は対象外)。
 - [x] **アイコン刷新 / 並び替え / ログ強化 / SMB パス統合** (`5ecfaad`, 0.2.2):
   - アプリアイコンを新画像で全密度 (mdpi〜xxxhdpi) の `ic_launcher` / `_round` / `_foreground` に再生成。adaptive icon 構成は維持。
-  - **接続タブ / 同期タブのエントリーをドラッグで並び替え**可能に (既存の `sh.calvin.reorderable` を流用)。接続は既存 `sortOrder` 列を使用。同期は `SyncJobEntity.sortOrder` を新設し **Room v5→v6** (destructive migration)。`observeAll` を `sortOrder ASC, updatedAt DESC` に変更。編集保存で順序が消えないよう `SyncJobRepository.upsert` で既存 sortOrder を引き継ぐ。
+  - **接続タブ / 同期タブのエントリーをドラッグで並び替え**可能に (既存の `sh.calvin.reorderable` を流用)。接続は既存 `sortOrder` 列を使用。同期は `SyncJobEntity.sortOrder` を新設し **Room v5→v6** (destructive migration)。`observeAll` を `sortOrder ASC, createdAt ASC` に変更 (当初は第 2 キーが `updatedAt DESC` だったが、`updateLastRun` が実行のたびに `updatedAt` を更新するため並び順が勝手に入れ替わり、後に修正)。編集保存で順序が消えないよう `SyncJobRepository.upsert` で既存 sortOrder を引き継ぎ、新規は `MAX + 1` を振る。
   - 実行ログ画面に**コピーボタン** + **永久ログ** (ユーザーが手動作成した `.log` へ書き込みのたび累計追記)。保存先 URI は `UserSettings.permanentLogUri` (DataStore) に保持し `AppLogger` が @Volatile でキャッシュして追記。
   - SMB の「共有名」+「初期パス」を**「パス」1欄に統合**し未記入も許可 (先頭セグメントを share、残りを initialPath に分解。分解ロジックは元々 `saveSmb` にあったものを UI 側で集約)。
 - [x] **時刻指定の定期同期をアプリ未起動でも実行** (`50e7544`, 0.2.3): 遅延付き WorkManager (`setInitialDelay`) は Doze 中に次のメンテ枠まで延期され「定刻に動かない / アプリを開くまでキュー中」になっていた。→ DAILY/WEEKLY/MONTHLY/DATETIME を **AlarmManager `setAndAllowWhileIdle`** (特別権限なし) で起こす方式に変更。

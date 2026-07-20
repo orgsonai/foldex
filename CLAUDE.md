@@ -31,10 +31,10 @@
 | アプリ名 | Foldex |
 | パッケージ | `com.zerotoship.foldex` |
 | 言語 / UI | Kotlin + Jetpack Compose |
-| アーキ | マルチモジュール (12モジュール) |
+| アーキ | マルチモジュール (11モジュール) |
 | DI | Hilt |
 | DB | Room + DataStore + AndroidKeyStore (AES-GCM) |
-| 最低SDK | minSdk 26 想定 (要確認) / targetSdk 最新 |
+| 最低SDK | minSdk 26 / targetSdk 35 (compileSdk 35) |
 | ライセンス | MIT (確定) |
 | シリーズ | Zero to Ship |
 
@@ -81,7 +81,7 @@ foldex/
 └── sync/
 ```
 
-P1 の段階で全12モジュールの骨格を空でもよいので作る (他フェーズの作業を阻害しないため)。
+P1 の段階で全11モジュールの骨格を空でもよいので作る (他フェーズの作業を阻害しないため)。
 
 ---
 
@@ -89,8 +89,8 @@ P1 の段階で全12モジュールの骨格を空でもよいので作る (他�
 
 ### 3-A. Kotlin
 - 公式 [Kotlin Coding Conventions](https://kotlinlang.org/docs/coding-conventions.html) に準拠
-- `ktlint` で自動整形 (Spotless 経由で `./gradlew spotlessApply`)
-- `detekt` で静的解析 (`./gradlew detekt`)
+- Spotless / detekt は**未導入** (Gradle タスクが存在しない)。整形は `.editorconfig` と
+  既存コードのスタイルに手で合わせる
 - 命名規則:
   - クラス: `PascalCase`
   - 関数・変数: `camelCase`
@@ -205,8 +205,6 @@ Refs: FOLDEX-HANDOFF.md §5-C
 | 単一モジュール | `./gradlew :core:core-model:assemble` |
 | ユニットテスト | `./gradlew test` |
 | Instrumented test | `./gradlew connectedAndroidTest` |
-| 静的解析 | `./gradlew detekt` |
-| フォーマット | `./gradlew spotlessApply` |
 | クリーン | `./gradlew clean` |
 
 ### 7-B. AGP / Kotlin

@@ -2,7 +2,7 @@
 
 > folder + ex (= index) — フォルダにインデックスを張って、ローカル/リモートを横断的にアクセスできる Android ファイラー。
 
-[Zero to Ship](https://github.com/orgsonai/zero-to-ship) シリーズ第3弾。
+[Zero to Ship](https://github.com/orgsonai/zero-to-ship) シリーズ第4弾。
 広告なし・ローカルファースト・リモート全部入り。自分が日常使いするためのアプリ。
 
 リポジトリ: <https://github.com/orgsonai/foldex>
@@ -44,24 +44,14 @@ git clone https://github.com/orgsonai/foldex.git
 - 🔕 **完了通知** — コピー・移動 / 解凍 / 同期 の完了をシステム通知 (設定で個別 ON/OFF)
 - 📋 **実行ログ** — クラッシュ・サーバ起動失敗・同期サマリを集約 (設定→実行ログから確認・共有)
 
-## 開発状況
-
-現在 **P7 (UI 洗練) 終盤**。
-
-- ✅ P1〜P6: 完了 (スケルトン / ローカル read-only / CRUD / SMB / SFTP-FTP-WebDAV / 自機サーバー + 同期エンジン)
-- 🚧 P7: 大半完了。アクセシビリティ (TalkBack/48dp/コントラスト) とエラーメッセージ日本語化は対応済み。残: 同期途中再開
-- ⏳ P8: F-Droid 用 metadata / Reproducible Build / LICENSE 確定 / プライバシーポリシー / 初回正式リリース (`v1.0.0`)
-
-開発フェーズ詳細は [`docs/PHASES.md`](docs/PHASES.md)、P7 で前倒し対応した内容は [`docs/P7-REVISIONS.md`](docs/P7-REVISIONS.md) を参照。
-
 ## 技術スタック
 
 | | |
 |---|---|
 | 言語 | Kotlin |
 | UI | Jetpack Compose + Material 3 |
-| アーキ | マルチモジュール (12モジュール) + Hilt |
-| DB | Room (v5) + DataStore + AndroidKeyStore |
+| アーキ | マルチモジュール (11モジュール) + Hilt |
+| DB | Room (v6) + DataStore + AndroidKeyStore |
 | エディタ | sora-editor (Canvas 描画 + 仮想化) |
 | 動画 | Media3 ExoPlayer (+ 自前 ContentProvider で seek 可能なリモートストリーミング) |
 | サムネ / 画像 | Coil 3 |
@@ -75,8 +65,6 @@ git clone https://github.com/orgsonai/foldex.git
 | 暗号 | BouncyCastle (フル版・Application で `Security.addProvider`) |
 | 文字コード判定 | juniversalchardet |
 | ドラッグ並べ替え | sh.calvin.reorderable |
-
-詳細仕様は [`FOLDEX-HANDOFF.md`](FOLDEX-HANDOFF.md)。
 
 ## ビルド
 
@@ -107,7 +95,3 @@ keyPassword=...
 ## プライバシー
 
 Foldex は個人情報を一切収集・送信しない。動作はすべて端末内で完結し、ネットワーク通信はユーザーが設定した SMB/SFTP/FTP/WebDAV 接続先との直接通信のみ。広告 SDK や解析 SDK は組み込んでいない。詳細は [`docs/PRIVACY.md`](docs/PRIVACY.md)。
-
-## このリポジトリで Claude Code を使う場合
-
-[`CLAUDE.md`](CLAUDE.md) を最初に読むこと。フェーズ運用とコミット規約が書いてある。
