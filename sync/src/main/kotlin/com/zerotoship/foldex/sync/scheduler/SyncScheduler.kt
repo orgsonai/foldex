@@ -67,6 +67,8 @@ class SyncScheduler @Inject constructor(
     /**
      * アラーム発火時の即時実行 (遅延なし)。制約はジョブ設定に従う。
      * expedited 指定により Doze 中でもクォータ内で即起動する (クォータ切れ時は通常実行に降格)。
+     * ただし「充電中のみ」「バッテリー低下時は実行しない」を付けたジョブは expedited にできないため
+     * 通常実行になる ([canExpedite])。
      * SyncWorker は実行開始後に自前で前景化するため、起動さえできれば最後まで走り切れる。
      */
     fun fireNow(job: SyncJob) {
@@ -113,12 +115,16 @@ class SyncScheduler @Inject constructor(
      * まま別の回が引き継ぐ、というズレも起きていた。実行を一意名で直列化してこれらを解消する。
      */
     private fun enqueueRun(job: SyncJob) {
-        val request = OneTimeWorkRequestBuilder<SyncWorker>()
+        val builder = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(syncConstraints(job))
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .setInputData(workDataOf(SyncWorker.KEY_JOB_ID to job.id))
             .addTag(tagFor(job.id))
-            .build()
+        // expedited はネットワーク/ストレージ以外の制約と併用できない (詳細は canExpedite のコメント)。
+        // 併用するとエンキューが例外で失敗し、同期が二度と走らなくなるため条件付きで付ける。
+        if (canExpedite(job)) {
+            builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+        }
+        val request = builder.build()
         // KEEP: 既に未完了の実行があればそれを尊重し、新規はエンキューしない (= 二重実行の防止)。
         // 走行中のジョブと重なった定期/手動の発火はこのティックをスキップする (次回で拾う)。
         workManager.enqueueUniqueWork(runName(job.id), ExistingWorkPolicy.KEEP, request)
