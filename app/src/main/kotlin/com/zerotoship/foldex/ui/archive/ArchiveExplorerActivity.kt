@@ -66,7 +66,7 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * ZIP を「展開せずに」中身を閲覧する画面 (FOLDEX-HANDOFF.md §10 中身プレビュー)。
+ * ZIP を「展開せずに」中身を閲覧する画面。
  *
  * - 起動時点で zip 本体はローカルの実体になっている前提 (Remote/SAF は呼び出し側でキャッシュ済み)。
  * - 通常のフォルダのように潜れる (パンくず + フォルダタップ)。

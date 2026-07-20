@@ -70,7 +70,7 @@ fun iconFor(category: Category): ImageVector = when (category) {
     Category.UNKNOWN -> Icons.AutoMirrored.Outlined.InsertDriveFile
 }
 
-/** カテゴリ別のアイコン色 (`CLAUDE.md`/HANDOFF §11-D の方針: 種別ごとに控えめに色分け)。 */
+/** カテゴリ別のアイコン色 (方針: 種別ごとに控えめに色分けする)。 */
 @Composable
 fun tintFor(node: FileNode, selected: Boolean): Color =
     tintForCategory(node, FileTypeRegistry.categorize(node.name), selected)

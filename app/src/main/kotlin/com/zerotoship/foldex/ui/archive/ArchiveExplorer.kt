@@ -8,7 +8,7 @@ import net.lingala.zip4j.exception.ZipException
 import java.io.File
 
 /**
- * ZIP を「展開せずに」中身を閲覧するためのヘルパ (FOLDEX-HANDOFF.md §10 中身プレビュー)。
+ * ZIP を「展開せずに」中身を閲覧するためのヘルパ。
  *
  * - [listEntries] : 全エントリをヘッダ読みのみで取得 (展開しない / パスワード不要)。
  * - [childrenOf]  : あるディレクトリ直下の子 (フォルダ/ファイル) を算出。通常フォルダのように潜れる。
