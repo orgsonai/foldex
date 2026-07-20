@@ -139,15 +139,7 @@ fun MainScreen(
     // NavController の通常の popBackStack に任せる。
     val isTabRoot = currentRoute != null && TopTab.entries.any { it.route == currentRoute }
     BackHandler(enabled = isTabRoot && currentRoute != TopTab.HOME.route) {
-        // 接続タブからサーバーを開いた場合だけは、ファイルタブの最上位から HOME に飛ばず
-        // 一度サーバー一覧 (接続タブ) に戻す。そこで更に戻ると通常どおり HOME へ。
-        val back = filesReturnTab
-        if (currentRoute == TopTab.FILES.route && back != null) {
-            filesReturnTab = null
-            TopTab.entries.firstOrNull { it.route == back }?.let { selectTab(it) } ?: selectTab(TopTab.HOME)
-        } else {
-            selectTab(TopTab.HOME)
-        }
+        selectTab(TopTab.HOME)
     }
 
     // SAF ピッカー (HOME の SAF タイル or 権限タイルから呼ぶ用)。選択後はファイルブラウザで開く。
@@ -236,6 +228,22 @@ fun MainScreen(
                 )
             }
             composable(TopTab.FILES.route) {
+                // 接続タブからサーバーを開いた場合は、ファイル階層の最上位で戻ったときに
+                // HOME ではなくサーバー一覧へ返す。そこで更に戻ると通常どおり HOME へ抜ける。
+                //
+                // 置き場所が重要: BackHandler は「後に登録されたものが優先」される。
+                // NavHost は自前の戻る処理 (popBackStack → HOME) を持っており、それは NavHost
+                // 本体で登録されるため、MainScreen 直下に置くと NavHost に先に食われて発火しない。
+                // この destination の中なら NavHost より後に登録されるので確実に捕まえられる。
+                // FileBrowserScreen の BackHandler は更に後に登録されるため、フォルダ階層を
+                // 上がる処理・選択解除・検索を閉じる処理は従来どおりそちらが優先される。
+                val back = filesReturnTab
+                BackHandler(enabled = back != null) {
+                    filesReturnTab = null
+                    TopTab.entries.firstOrNull { it.route == back }
+                        ?.let { selectTab(it) }
+                        ?: selectTab(TopTab.HOME)
+                }
                 FileBrowserScreen(viewModel = browserViewModel)
             }
             composable(TopTab.CONNECTIONS.route) {

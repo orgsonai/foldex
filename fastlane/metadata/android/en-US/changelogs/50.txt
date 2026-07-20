@@ -1,0 +1,2 @@
+1.0.9 (fix)
+- Fixed back from a server opened via the Connections tab still jumping to Home (the 1.0.8 fix did not take effect)
