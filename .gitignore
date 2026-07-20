@@ -72,11 +72,14 @@ replay_pid*
 CLAUDE.md
 SETUP.md
 
-# ---- 開発プロセス用ドキュメント (ローカル専用・公開リポには載せない) ----
+# ---- 開発プロセス用ドキュメント / スクリプト (ローカル専用・公開リポには載せない) ----
 # 仕様書とフェーズ管理は手元で編集し続けるが、公開リポジトリには含めない。
 FOLDEX-HANDOFF.md
 docs/PHASES.md
 docs/P7-REVISIONS.md
+scripts/phase-start.sh
+scripts/phase-finish.sh
+scripts/collect-knowledge.sh
 
 # ---- Misc ----
 node_modules/
