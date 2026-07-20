@@ -1,0 +1,3 @@
+1.0.8 (fixes)
+- Fixed sync jobs reordering themselves after every run (the order now only changes when you drag them)
+- Back from a server opened via the Connections tab now returns to the server list instead of Home (press back again for Home)

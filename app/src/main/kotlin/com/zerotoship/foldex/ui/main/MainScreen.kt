@@ -26,6 +26,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -93,6 +96,16 @@ fun MainScreen(
         }
     }
 
+    /**
+     * ファイルタブに入る「直前のタブ」のルート (null = 戻り先は HOME)。
+     *
+     * 接続タブからサーバーを開くと中身はファイルタブで表示されるため、最上位で戻るを押すと
+     * HOME まで飛んでしまい「サーバー一覧に戻れない」状態だった。接続タブ経由で開いたときだけ
+     * ここに戻り先を憶えておき、1 回目の戻るでサーバー一覧へ、2 回目で HOME へ抜ける。
+     * 明示的にタブを選び直したときや HOME から開いたときは破棄する (戻り先は HOME に戻す)。
+     */
+    var filesReturnTab by rememberSaveable { mutableStateOf<String?>(null) }
+
     // App Shortcuts (manifest 静的) から `foldex.shortcut` を受けて該当タブ/画面に遷移する。
     // 受け取りは MainActivity が `pendingShortcut` で保持し、一度処理したら null に戻す。
     androidx.compose.runtime.LaunchedEffect(shortcutAction) {
@@ -126,7 +139,15 @@ fun MainScreen(
     // NavController の通常の popBackStack に任せる。
     val isTabRoot = currentRoute != null && TopTab.entries.any { it.route == currentRoute }
     BackHandler(enabled = isTabRoot && currentRoute != TopTab.HOME.route) {
-        selectTab(TopTab.HOME)
+        // 接続タブからサーバーを開いた場合だけは、ファイルタブの最上位から HOME に飛ばず
+        // 一度サーバー一覧 (接続タブ) に戻す。そこで更に戻ると通常どおり HOME へ。
+        val back = filesReturnTab
+        if (currentRoute == TopTab.FILES.route && back != null) {
+            filesReturnTab = null
+            TopTab.entries.firstOrNull { it.route == back }?.let { selectTab(it) } ?: selectTab(TopTab.HOME)
+        } else {
+            selectTab(TopTab.HOME)
+        }
     }
 
     // SAF ピッカー (HOME の SAF タイル or 権限タイルから呼ぶ用)。選択後はファイルブラウザで開く。
@@ -145,7 +166,8 @@ fun MainScreen(
                         currentRoute?.startsWith(tab.route + "/") == true
                     NavigationBarItem(
                         selected = selected,
-                        onClick = { selectTab(tab) },
+                        // 自分でタブを選び直したら「接続タブへ戻す」記憶は破棄する (戻り先は HOME)。
+                        onClick = { filesReturnTab = null; selectTab(tab) },
                         icon = {
                             Icon(
                                 if (selected) tab.selectedIcon else tab.unselectedIcon,
@@ -203,6 +225,7 @@ fun MainScreen(
                             )
                         }
                         // HOME のショートカットから開いた場合は戻り先も HOME。
+                        filesReturnTab = null
                         selectTab(TopTab.FILES)
                     },
                     onOpenUri = { uri, name ->
@@ -234,6 +257,8 @@ fun MainScreen(
                                 displayName = connection.name,
                             )
                         }
+                        // 接続タブ経由なので、ファイルタブの最上位で戻ったらここ (サーバー一覧) へ返す。
+                        filesReturnTab = TopTab.CONNECTIONS.route
                         selectTab(TopTab.FILES)
                     },
                 )
