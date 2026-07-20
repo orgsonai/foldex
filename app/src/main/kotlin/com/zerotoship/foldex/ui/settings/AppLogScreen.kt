@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -43,7 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -193,24 +193,42 @@ fun AppLogScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                else -> LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                ) {
-                    items(shown) { line ->
-                        val color = when {
-                            line.contains("[ERROR]") -> MaterialTheme.colorScheme.error
-                            line.contains("[WARN]") -> MaterialTheme.colorScheme.tertiary
-                            else -> MaterialTheme.colorScheme.onSurface
+                else -> {
+                    // 背景の明るさからライト/ダークを判定する (テーマ設定で system を上書きできるため、
+                    // isSystemInDarkTheme() ではなく実際に適用中の配色から決める)。
+                    val palette = logPalette(
+                        dark = MaterialTheme.colorScheme.background.luminance() < 0.5f,
+                        primary = MaterialTheme.colorScheme.primary,
+                        error = MaterialTheme.colorScheme.error,
+                    )
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                    ) {
+                        itemsIndexed(shown) { index, line ->
+                            val parsed = remember(line) { parseLogLine(line) }
+                            // 行頭からは日付を落としているので、日付が変わる所にだけ区切りを差し込む。
+                            val prevDate = remember(shown, index) {
+                                if (index == 0) "" else parseLogLine(shown[index - 1]).date
+                            }
+                            if (parsed.parsed && parsed.date != prevDate) {
+                                Text(
+                                    text = parsed.date,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp),
+                                )
+                                HorizontalDivider()
+                            }
+                            Text(
+                                text = remember(parsed, palette) { parsed.annotated(palette) },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                overflow = TextOverflow.Visible,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                            )
                         }
-                        Text(
-                            text = line,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurface else color,
-                            overflow = TextOverflow.Visible,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                        )
                     }
                 }
             }
