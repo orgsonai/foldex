@@ -67,10 +67,16 @@ replay_pid*
 # ---- KSP / Kapt 生成物 ----
 **/generated/
 
-# ---- Claude Code 個別設定 ----
-.claude/settings.local.json
-.claude/cache/
-.claude/logs/
+# ---- Claude Code (ローカル専用・リポジトリには載せない) ----
+.claude/
+CLAUDE.md
+SETUP.md
+
+# ---- 開発プロセス用ドキュメント (ローカル専用・公開リポには載せない) ----
+# 仕様書とフェーズ管理は手元で編集し続けるが、公開リポジトリには含めない。
+FOLDEX-HANDOFF.md
+docs/PHASES.md
+docs/P7-REVISIONS.md
 
 # ---- Misc ----
 node_modules/
