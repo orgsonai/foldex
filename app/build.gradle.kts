@@ -28,8 +28,8 @@ android {
         applicationId = "com.zerotoship.foldex"
         minSdk = 26
         targetSdk = 35
-        versionCode = 52
-        versionName = "1.0.11"
+        versionCode = 53
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -156,6 +156,9 @@ dependencies {
 
     // HOME タイルのドラッグ並び替え (LazyVerticalGrid 対応)。
     implementation(libs.reorderable)
+
+    // 内蔵画像エディタ: 読み込み時の向き正規化と、保存時の EXIF 引き継ぎ。
+    implementation(libs.exifinterface)
 
     // Application.onCreate で SFTP (Apache MINA SSHD) より先に BC を登録するため app から直接参照する。
     implementation(libs.bouncycastle.bcprov)

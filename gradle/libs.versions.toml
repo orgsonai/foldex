@@ -6,6 +6,7 @@ hilt                = "2.56.2"
 compose-bom         = "2026.04.01"
 core-ktx            = "1.16.0"
 documentfile        = "1.0.1"
+exifinterface       = "1.3.7"
 lifecycle           = "2.9.0"
 activity-compose    = "1.10.1"
 navigation-compose  = "2.9.0"
@@ -44,6 +45,8 @@ navigation-compose          = { group = "androidx.navigation",     name = "navig
 
 # AndroidX misc
 documentfile                = { group = "androidx.documentfile",   name = "documentfile",            version.ref = "documentfile" }
+# 画像編集 (v1) — 保存時に EXIF を書き戻す / 読み込み時に向きを正規化する
+exifinterface               = { group = "androidx.exifinterface",  name = "exifinterface",           version.ref = "exifinterface" }
 
 # Compose
 compose-bom                 = { group = "androidx.compose",        name = "compose-bom",             version.ref = "compose-bom" }

@@ -1,0 +1,6 @@
+1.1.0 (new)
+- Added a built-in image editor (from "edit" in the image viewer)
+- Crop with aspect presets, 90-degree rotation, horizontal/vertical flip
+- Resolution change and file size reduction (set "under 500KB" and quality is chosen for you)
+- Undo/redo. The original file is never modified; saving to a new name is the default
+- EXIF capture info is carried over; location data can be dropped when saving

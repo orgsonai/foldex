@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -80,6 +82,16 @@ class ViewerActivity : ComponentActivity() {
 
     @Inject lateinit var settingsRepo: SettingsRepository
 
+    /**
+     * 内蔵画像エディタから戻ったときの受け口。保存されたらビューアを閉じて一覧へ戻す。
+     * (表示中の画像が差し替わっており、サムネ/画像キャッシュが古いまま残るため)
+     */
+    private val imageEditLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == RESULT_OK) finish()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 他アプリの「アプリで開く」(ACTION_VIEW) から起動されたケース。
@@ -135,6 +147,7 @@ class ViewerActivity : ComponentActivity() {
                     onOpenExternally = { f -> openExternally(f, f.name) },
                     onOpenExternallyId = { id -> openIdExternally(id) },
                     onSaveRemote = sourceUri?.let { buildRemoteSaver(it) },
+                    onEditImage = { path, name2 -> openImageEditor(path, name2, sourceUri?.toStorageString()) },
                 )
             }
         }
@@ -262,6 +275,20 @@ class ViewerActivity : ComponentActivity() {
         } else {
             val f = File(id)
             openExternally(f, f.name)
+        }
+    }
+
+    /** 内蔵画像エディタを開く。保存されたら [imageEditLauncher] 側でこの画面を閉じる。 */
+    private fun openImageEditor(localPath: String, name: String, sourceUriString: String?) {
+        runCatching {
+            imageEditLauncher.launch(
+                com.zerotoship.foldex.ui.imageedit.ImageEditActivity.intent(
+                    context = this,
+                    localPath = localPath,
+                    name = name,
+                    sourceUriString = sourceUriString,
+                ),
+            )
         }
     }
 
@@ -405,6 +432,8 @@ private fun ViewerScreen(
     /** Remote / SAF 由来のキャッシュ編集時、エディタ「保存」押下で即時アップロードするためのフック。
      *  ローカル直編集時は null (= file.writeBytes だけで完結)。 */
     onSaveRemote: (suspend (File) -> Boolean)? = null,
+    /** 内蔵画像エディタを開く (ローカル実体のパス, 表示名)。画像以外では呼ばれない。 */
+    onEditImage: ((String, String) -> Unit)? = null,
 ) {
     // Markdown / HTML はソース編集をデフォルトにし、プレビューはトグルで切替える
     // (HANDOFF §10-E / §10-F: 「ソース表示とプレビュー表示の切替」)。
@@ -432,6 +461,17 @@ private fun ViewerScreen(
     // 開いた1枚は Intent 由来の正式な表示名 (name) を使い、他の兄弟は識別子から導出する。
     val displayedName = remember(displayedId, name, initialImageId) {
         if (displayedId == initialImageId) name else imageDisplayName(displayedId)
+    }
+
+    // 内蔵画像エディタに渡せるローカル実体のパス。null なら編集ボタンを出さない。
+    // SAF の兄弟画像 (content://) はキャッシュ実体が無いので対象外にする。
+    val editableImageTarget: String? = remember(category, displayedId, initialImageId) {
+        when {
+            category != Category.IMAGE -> null
+            !displayedId.startsWith("content://") -> displayedId
+            displayedId == initialImageId -> file.absolutePath
+            else -> null
+        }
     }
 
     Scaffold(
@@ -462,6 +502,11 @@ private fun ViewerScreen(
                             } else {
                                 Icon(Icons.Default.Visibility, contentDescription = "プレビュー")
                             }
+                        }
+                    }
+                    if (editableImageTarget != null && onEditImage != null) {
+                        IconButton(onClick = { onEditImage(editableImageTarget, displayedName) }) {
+                            Icon(Icons.Default.Tune, contentDescription = "画像を編集")
                         }
                     }
                     IconButton(onClick = { onOpenExternallyId(displayedId) }) {

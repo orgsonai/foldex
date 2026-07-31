@@ -138,6 +138,13 @@
             </intent-filter>
         </activity>
 
+        <!-- 内蔵画像エディタ (切り抜き / 回転 / 解像度・容量の変更) -->
+        <activity
+            android:name=".ui.imageedit.ImageEditActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- ZIP の中身を展開せずに閲覧する内蔵アーカイブブラウザ -->
         <activity
             android:name=".ui.archive.ArchiveExplorerActivity"
