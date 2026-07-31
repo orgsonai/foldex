@@ -78,12 +78,69 @@ sealed interface Layer {
 
         fun withoutCrop(): Image = copy(crop = null)
     }
+
+    /**
+     * ブラシ・消しゴムの軌跡。**点列のまま**持ち、描画するときにその解像度で引き直す。
+     * 画素に焼かないので、拡大保存してもブラシの線がボケない。
+     *
+     * 消しゴム ([StrokeMode.ERASE]) はこのレイヤーの中だけを消す (下の画像には穴を開けない)。
+     */
+    data class Drawing(
+        override val id: String,
+        override val name: String,
+        override val visible: Boolean = true,
+        override val alpha: Float = 1f,
+        override val transform: LayerTransform = LayerTransform(),
+        val strokes: List<Stroke> = emptyList(),
+    ) : Layer {
+        fun plus(stroke: Stroke): Drawing = copy(strokes = strokes + stroke)
+    }
+
+    /**
+     * テキスト。**確定しても文字列のまま持ち続ける**ので、保存するまで何度でも打ち直せる。
+     * 画素へ焼き込まれるのは保存時の描画 1 回だけ。
+     *
+     * [transform] の offsetX/offsetY はテキストブロックの左上 (論理キャンバス座標)。
+     */
+    data class Text(
+        override val id: String,
+        override val name: String,
+        override val visible: Boolean = true,
+        override val alpha: Float = 1f,
+        override val transform: LayerTransform = LayerTransform(),
+        val text: String,
+        val style: TextStyleSpec,
+    ) : Layer {
+        fun movedBy(dx: Float, dy: Float): Text = copy(
+            transform = transform.copy(
+                offsetX = transform.offsetX + dx,
+                offsetY = transform.offsetY + dy,
+            ),
+        )
+    }
 }
 
-/** レイヤーを論理キャンバスへ配置する変換。v1 では常に既定値 (原点・等倍・無回転)。 */
+/** レイヤーを論理キャンバスへ配置する変換。画像レイヤーは v1 では常に既定値。 */
 data class LayerTransform(
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,
     val scale: Float = 1f,
     val rotationDeg: Float = 0f,
 )
+
+/** テキストの見た目。サイズは論理キャンバス座標の px。 */
+data class TextStyleSpec(
+    val sizePx: Float,
+    /** ARGB。 */
+    val color: Int,
+    val font: TextFont = TextFont.SANS,
+    val bold: Boolean = false,
+    val outline: TextOutline = TextOutline.NONE,
+    /** 背景ボックスの色 (ARGB)。null なら背景なし。 */
+    val backgroundColor: Int? = null,
+)
+
+enum class TextFont(val label: String) { SANS("ゴシック"), SERIF("明朝"), MONOSPACE("等幅") }
+
+/** 縁取り。写真の上に載せた文字を読めるようにするための最小限の選択肢。 */
+enum class TextOutline(val label: String) { NONE("なし"), WHITE("白フチ"), BLACK("黒フチ") }

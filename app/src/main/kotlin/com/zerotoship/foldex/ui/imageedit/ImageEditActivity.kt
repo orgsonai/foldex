@@ -102,6 +102,13 @@ class ImageEditActivity : ComponentActivity() {
                     onSetFormat = viewModel::setFormat,
                     onSetQuality = viewModel::setQuality,
                     onRequestEstimate = viewModel::requestEstimate,
+                    onAddStroke = viewModel::addStroke,
+                    onAddText = viewModel::addText,
+                    onSelectText = viewModel::selectText,
+                    onChangeText = viewModel::updateText,
+                    onMoveText = viewModel::moveEditingText,
+                    onMoveTextEnd = viewModel::commitTextMove,
+                    onDeleteText = viewModel::deleteEditingText,
                     onSave = viewModel::save,
                 )
             }

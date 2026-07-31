@@ -21,11 +21,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Flip
 import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
 import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -54,7 +56,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zerotoship.foldex.ui.imageedit.engine.DocumentRenderer
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
+import com.zerotoship.foldex.ui.imageedit.model.EditSize
+import com.zerotoship.foldex.ui.imageedit.model.StrokeMode
 
 /**
  * 画像エディタの画面。
@@ -82,12 +87,20 @@ fun ImageEditScreen(
     onSetFormat: (com.zerotoship.foldex.ui.imageedit.model.ImageFormat) -> Unit,
     onSetQuality: (Int) -> Unit,
     onRequestEstimate: () -> Unit,
+    onAddStroke: (com.zerotoship.foldex.ui.imageedit.model.Stroke) -> Unit,
+    onAddText: (Float, Int) -> Unit,
+    onSelectText: (String?) -> Unit,
+    onChangeText: ((com.zerotoship.foldex.ui.imageedit.model.Layer.Text) -> com.zerotoship.foldex.ui.imageedit.model.Layer.Text) -> Unit,
+    onMoveText: (Float, Float) -> Unit,
+    onMoveTextEnd: () -> Unit,
+    onDeleteText: () -> Unit,
     onSave: (SaveRequest) -> Unit,
 ) {
     val doc = state.document
     // 切り抜き枠は 0..1 の正規化座標で持つ (キャンバスの大きさが変わっても意味が変わらない)。
     var cropRect by remember { mutableStateOf(FULL_CROP) }
     var cropAspect by remember { mutableStateOf(CropAspect.FREE) }
+    var brush by remember { mutableStateOf(DEFAULT_BRUSH) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
 
@@ -160,17 +173,36 @@ fun ImageEditScreen(
                         state.error != null -> CenterMessage(state.error)
                         else -> EditCanvas(
                             preview = state.preview,
-                            cropRect = cropRect.takeIf { state.activeTool == EditTool.CROP },
-                            onCropRectChange = { next ->
-                                val ratio = cropAspect.effectiveRatio(
-                                    doc?.canvas?.width ?: 1,
-                                    doc?.canvas?.height ?: 1,
+                            canvasSize = doc?.let { EditSize(it.canvas.width, it.canvas.height) },
+                            mode = when {
+                                state.activeTool == EditTool.CROP -> CanvasMode.Crop(
+                                    rect = cropRect,
+                                    onChange = { next ->
+                                        val ratio = cropAspect.effectiveRatio(
+                                            doc?.canvas?.width ?: 1,
+                                            doc?.canvas?.height ?: 1,
+                                        )
+                                        cropRect = if (ratio == null) {
+                                            next
+                                        } else {
+                                            fitCropToRatio(
+                                                next,
+                                                ratio,
+                                                doc?.canvas?.width ?: 1,
+                                                doc?.canvas?.height ?: 1,
+                                            )
+                                        }
+                                    },
                                 )
-                                cropRect = if (ratio == null) {
-                                    next
-                                } else {
-                                    fitCropToRatio(next, ratio, doc?.canvas?.width ?: 1, doc?.canvas?.height ?: 1)
-                                }
+                                state.activeTool == EditTool.BRUSH ->
+                                    CanvasMode.Brush(settings = brush, onStroke = onAddStroke)
+                                state.activeTool == EditTool.TEXT && state.editingText != null ->
+                                    CanvasMode.TextMove(
+                                        bounds = state.editingText?.let { DocumentRenderer.measureText(it) },
+                                        onDrag = onMoveText,
+                                        onDragEnd = onMoveTextEnd,
+                                    )
+                                else -> CanvasMode.View
                             },
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -220,6 +252,10 @@ fun ImageEditScreen(
                                 cropRect = FULL_CROP
                                 onResetCrop()
                             },
+                            onRotateLeft = onRotateLeft,
+                            onRotateRight = onRotateRight,
+                            onFlipHorizontal = onFlipHorizontal,
+                            onFlipVertical = onFlipVertical,
                         )
                     }
                     EditTool.RESIZE -> {
@@ -230,6 +266,23 @@ fun ImageEditScreen(
                             onSetPercent = onSetPercent,
                         )
                     }
+                    EditTool.BRUSH -> {
+                        HorizontalDivider()
+                        BrushPanel(settings = brush, onSettingsChange = { brush = it })
+                    }
+                    EditTool.TEXT -> {
+                        HorizontalDivider()
+                        val canvasSize = doc?.let { EditSize(it.canvas.width, it.canvas.height) }
+                        TextPanel(
+                            editing = state.editingText,
+                            others = state.textLayers,
+                            canvasSize = canvasSize,
+                            onAdd = { onAddText(defaultTextSize(canvasSize), brush.color) },
+                            onSelect = onSelectText,
+                            onChange = onChangeText,
+                            onDelete = onDeleteText,
+                        )
+                    }
                     null -> Unit
                 }
 
@@ -238,10 +291,6 @@ fun ImageEditScreen(
                     activeTool = state.activeTool,
                     enabled = doc != null && !state.saving,
                     onSelectTool = onSelectTool,
-                    onRotateLeft = onRotateLeft,
-                    onRotateRight = onRotateRight,
-                    onFlipHorizontal = onFlipHorizontal,
-                    onFlipVertical = onFlipVertical,
                 )
             }
         }
@@ -288,10 +337,6 @@ private fun EditToolbar(
     activeTool: EditTool?,
     enabled: Boolean,
     onSelectTool: (EditTool?) -> Unit,
-    onRotateLeft: () -> Unit,
-    onRotateRight: () -> Unit,
-    onFlipHorizontal: () -> Unit,
-    onFlipVertical: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -316,32 +361,19 @@ private fun EditToolbar(
                 modifier = Modifier.weight(1f),
             )
             ToolButton(
-                icon = Icons.Default.Rotate90DegreesCcw,
-                label = "左回転",
+                icon = Icons.Default.Brush,
+                label = "ペン",
+                active = activeTool == EditTool.BRUSH,
                 enabled = enabled,
-                onClick = onRotateLeft,
+                onClick = { onSelectTool(EditTool.BRUSH) },
                 modifier = Modifier.weight(1f),
             )
             ToolButton(
-                icon = Icons.Default.Rotate90DegreesCw,
-                label = "右回転",
+                icon = Icons.Default.TextFields,
+                label = "文字",
+                active = activeTool == EditTool.TEXT,
                 enabled = enabled,
-                onClick = onRotateRight,
-                modifier = Modifier.weight(1f),
-            )
-            ToolButton(
-                icon = Icons.Default.Flip,
-                label = "左右反転",
-                enabled = enabled,
-                onClick = onFlipHorizontal,
-                modifier = Modifier.weight(1f),
-            )
-            ToolButton(
-                icon = Icons.Default.Flip,
-                label = "上下反転",
-                enabled = enabled,
-                onClick = onFlipVertical,
-                rotateIcon = true,
+                onClick = { onSelectTool(EditTool.TEXT) },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -391,6 +423,10 @@ private fun CropPanel(
     onAspectChange: (CropAspect) -> Unit,
     onApply: () -> Unit,
     onReset: () -> Unit,
+    onRotateLeft: () -> Unit,
+    onRotateRight: () -> Unit,
+    onFlipHorizontal: () -> Unit,
+    onFlipVertical: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -407,14 +443,27 @@ private fun CropPanel(
                     )
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = onReset) { Text("切り抜きを解除") }
-                Spacer(Modifier.width(4.dp))
+            // 回転・反転は切り抜きと一緒に使うことが多いのでここに置く
+            // (ツールバーに 8 個並べるとラベルが読めなくなるため)。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onRotateLeft) {
+                    Icon(Icons.Default.Rotate90DegreesCcw, contentDescription = "左に90度回転")
+                }
+                IconButton(onClick = onRotateRight) {
+                    Icon(Icons.Default.Rotate90DegreesCw, contentDescription = "右に90度回転")
+                }
+                IconButton(onClick = onFlipHorizontal) {
+                    Icon(Icons.Default.Flip, contentDescription = "左右反転")
+                }
+                IconButton(onClick = onFlipVertical) {
+                    Icon(
+                        Icons.Default.Flip,
+                        contentDescription = "上下反転",
+                        modifier = Modifier.rotate(90f),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onReset) { Text("解除") }
                 TextButton(onClick = onApply) { Text("適用") }
             }
         }
@@ -453,3 +502,12 @@ internal fun formatBytes(bytes: Long): String = when {
 }
 
 private val FULL_CROP = EditRect(0f, 0f, 1f, 1f)
+
+/** ブラシの初期値: 中くらいの太さ・白・くっきり。 */
+private val DEFAULT_BRUSH = BrushSettings(
+    widthScreenPx = 12f,
+    color = 0xFFE53935.toInt(),
+    mode = StrokeMode.DRAW,
+    hardness = 1f,
+    alpha = 1f,
+)

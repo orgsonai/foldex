@@ -15,13 +15,17 @@ import com.zerotoship.foldex.ui.imageedit.engine.DocumentRenderer
 import com.zerotoship.foldex.ui.imageedit.engine.ExifTransfer
 import com.zerotoship.foldex.ui.imageedit.engine.ImageEncoder
 import com.zerotoship.foldex.ui.imageedit.engine.ImageSource
+import com.zerotoship.foldex.ui.imageedit.model.CanvasTransforms
 import com.zerotoship.foldex.ui.imageedit.model.EditDocument
 import com.zerotoship.foldex.ui.imageedit.model.EditHistory
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
 import com.zerotoship.foldex.ui.imageedit.model.ImageFormat
 import com.zerotoship.foldex.ui.imageedit.model.Layer
+import com.zerotoship.foldex.ui.imageedit.model.LayerTransform
 import com.zerotoship.foldex.ui.imageedit.model.SaveNaming
+import com.zerotoship.foldex.ui.imageedit.model.Stroke
+import com.zerotoship.foldex.ui.imageedit.model.TextStyleSpec
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -127,13 +131,25 @@ class ImageEditViewModel @Inject constructor(
 
     // ---- 編集操作 ----
 
-    fun rotateRight() = mutateImage { it.rotatedRight() }
+    fun rotateRight() = reshape(
+        transformOthers = { layer, canvas -> CanvasTransforms.rotateRight(layer, canvas, ::textSizeOf) },
+        transformImage = { it.rotatedRight() },
+    )
 
-    fun rotateLeft() = mutateImage { it.rotatedLeft() }
+    fun rotateLeft() = reshape(
+        transformOthers = { layer, canvas -> CanvasTransforms.rotateLeft(layer, canvas, ::textSizeOf) },
+        transformImage = { it.rotatedLeft() },
+    )
 
-    fun flipHorizontal() = mutateImage { it.copy(flipH = !it.flipH) }
+    fun flipHorizontal() = reshape(
+        transformOthers = { layer, canvas -> CanvasTransforms.flipHorizontal(layer, canvas, ::textSizeOf) },
+        transformImage = { it.copy(flipH = !it.flipH) },
+    )
 
-    fun flipVertical() = mutateImage { it.copy(flipV = !it.flipV) }
+    fun flipVertical() = reshape(
+        transformOthers = { layer, canvas -> CanvasTransforms.flipVertical(layer, canvas, ::textSizeOf) },
+        transformImage = { it.copy(flipV = !it.flipV) },
+    )
 
     /** 切り抜きを確定する。[rect] は現在の論理キャンバス座標 (見たままの向き)。 */
     fun applyCrop(rect: EditRect) {
@@ -142,20 +158,60 @@ class ImageEditViewModel @Inject constructor(
         val sourceRect = canvasRectToSourceRect(layer, rect) ?: return
         val cropped = layer.withCrop(sourceRect)
         history.record(doc)
-        applyDocument(
-            doc.updateLayer(layer.id) { cropped }.withCanvasFitting(cropped.logicalSize),
-        )
+        // 切り抜くと原点が動く。後から描いた線や文字を同じ分だけずらして追従させる。
+        val next = doc.copy(
+            layers = doc.layers.map { other ->
+                if (other.id == layer.id) cropped
+                else CanvasTransforms.translate(other, -rect.left, -rect.top)
+            },
+        ).withCanvasFitting(cropped.logicalSize)
+        applyDocument(next, recordHistory = false)
     }
 
     /** 切り抜きを解除して元の範囲に戻す。 */
     fun resetCrop() {
         val doc = _state.value.document ?: return
         val layer = doc.activeLayer as? Layer.Image ?: return
-        if (layer.crop == null) return
+        val crop = layer.crop ?: return
         val restored = layer.withoutCrop()
         history.record(doc)
-        applyDocument(
-            doc.updateLayer(layer.id) { restored }.withCanvasFitting(restored.logicalSize),
+        // 解除で原点が元へ戻るので、線や文字も元の位置関係に戻す。
+        val next = doc.copy(
+            layers = doc.layers.map { other ->
+                if (other.id == layer.id) restored
+                else CanvasTransforms.translate(other, crop.left, crop.top)
+            },
+        ).withCanvasFitting(restored.logicalSize)
+        applyDocument(next, recordHistory = false)
+    }
+
+    /**
+     * キャンバスの形が変わる操作 (回転・反転) をまとめて扱う。
+     * 画像レイヤーは自分のフィールドを書き換え、その他のレイヤーは座標系を追従させる。
+     */
+    private fun reshape(
+        transformOthers: (Layer, EditSize) -> Layer,
+        transformImage: (Layer.Image) -> Layer.Image,
+    ) {
+        val doc = _state.value.document ?: return
+        val image = doc.activeLayer as? Layer.Image ?: return
+        history.record(doc)
+        val canvas = EditSize(doc.canvas.width, doc.canvas.height)
+        val transformedImage = transformImage(image)
+        val next = doc.copy(
+            layers = doc.layers.map { layer ->
+                if (layer.id == image.id) transformedImage else transformOthers(layer, canvas)
+            },
+        ).withCanvasFitting(transformedImage.logicalSize)
+        applyDocument(next, recordHistory = false)
+    }
+
+    /** テキストが占める大きさ (論理キャンバス座標)。座標変換で中心を求めるのに使う。 */
+    private fun textSizeOf(layer: Layer.Text): EditSize {
+        val bounds = DocumentRenderer.measureText(layer)
+        return EditSize(
+            width = bounds.width.toInt().coerceAtLeast(1),
+            height = bounds.height.toInt().coerceAtLeast(1),
         )
     }
 
@@ -206,13 +262,106 @@ class ImageEditViewModel @Inject constructor(
         if (_state.value.activeTool == EditTool.RESIZE) requestEstimate()
     }
 
-    private fun mutateImage(block: (Layer.Image) -> Layer.Image) {
+    // ---- ブラシ / 消しゴム (v2) ----
+
+    /** 1 本描き終わったときに呼ぶ。ストロークは点列のまま積む (画素には焼かない)。 */
+    fun addStroke(stroke: Stroke) {
+        if (stroke.points.isEmpty()) return
         val doc = _state.value.document ?: return
         history.record(doc)
-        val updated = doc.updateActiveImage(block)
-        val layer = updated.activeLayer as? Layer.Image
-        applyDocument(if (layer != null) updated.withCanvasFitting(layer.logicalSize) else updated)
+        val target = doc.layers.filterIsInstance<Layer.Drawing>().lastOrNull()
+        val next = if (target == null) {
+            // 最初の 1 本。描画用のレイヤーを画像の上に作る。
+            doc.copy(
+                layers = doc.layers + Layer.Drawing(
+                    id = "draw-${doc.layers.size}",
+                    name = "描画",
+                    strokes = listOf(stroke),
+                ),
+            )
+        } else {
+            doc.updateLayer(target.id) { (it as Layer.Drawing).plus(stroke) }
+        }
+        applyDocument(next, recordHistory = false)
     }
+
+    // ---- テキスト (v2) ----
+
+    /** キャンバス中央に新しいテキストを置き、それを編集対象にする。 */
+    fun addText(initialSizePx: Float, color: Int) {
+        val doc = _state.value.document ?: return
+        history.record(doc)
+        val id = "text-${doc.layers.size}"
+        val layer = Layer.Text(
+            id = id,
+            name = "文字",
+            text = "",
+            style = TextStyleSpec(sizePx = initialSizePx, color = color),
+            transform = LayerTransform(
+                offsetX = doc.canvas.width * 0.1f,
+                offsetY = doc.canvas.height * 0.45f,
+            ),
+        )
+        _state.update { it.copy(editingTextId = id) }
+        applyDocument(doc.copy(layers = doc.layers + layer), recordHistory = false)
+    }
+
+    /**
+     * 編集中テキストの内容・見た目を更新する。
+     * ここは履歴に積まない — 打ち間違いは入力欄でそのまま直せるので、
+     * 1 文字ごとに Undo 履歴が伸びる方が邪魔になる。
+     */
+    fun updateText(block: (Layer.Text) -> Layer.Text) {
+        val doc = _state.value.document ?: return
+        val id = _state.value.editingTextId ?: return
+        val current = doc.layers.firstOrNull { it.id == id } as? Layer.Text ?: return
+        applyDocument(doc.updateLayer(id) { block(current) }, recordHistory = false)
+    }
+
+    /** テキストを指で動かす。指を離したとき ([commitTextMove]) に履歴へ積む。 */
+    fun moveEditingText(dx: Float, dy: Float) {
+        val doc = _state.value.document ?: return
+        val id = _state.value.editingTextId ?: return
+        if (!textMoveInProgress) {
+            history.record(doc)
+            textMoveInProgress = true
+        }
+        applyDocument(
+            doc.updateLayer(id) { (it as Layer.Text).movedBy(dx, dy) },
+            recordHistory = false,
+        )
+    }
+
+    fun commitTextMove() {
+        textMoveInProgress = false
+    }
+
+    /** 編集中のテキストを消す。空のまま完了したときも呼ばれる。 */
+    fun deleteEditingText() {
+        val doc = _state.value.document ?: return
+        val id = _state.value.editingTextId ?: return
+        history.record(doc)
+        _state.update { it.copy(editingTextId = null) }
+        applyDocument(doc.copy(layers = doc.layers.filterNot { it.id == id }), recordHistory = false)
+    }
+
+    /** 編集対象を切り替える (null で編集をやめる)。中身が空のテキストは残さず消す。 */
+    fun selectText(id: String?) {
+        val doc = _state.value.document
+        val current = _state.value.editingTextId
+        if (doc != null && current != null && current != id) {
+            val layer = doc.layers.firstOrNull { it.id == current } as? Layer.Text
+            if (layer != null && layer.text.isBlank()) {
+                applyDocument(
+                    doc.copy(layers = doc.layers.filterNot { it.id == current }),
+                    recordHistory = false,
+                )
+            }
+        }
+        _state.update { it.copy(editingTextId = id) }
+    }
+
+    private var textMoveInProgress = false
 
     private fun applyDocument(doc: EditDocument, recordHistory: Boolean = true) {
         _state.update {
@@ -495,12 +644,24 @@ data class ImageEditUiState(
     val hasLocation: Boolean = false,
     /** 別名保存ができるか (SAF 経由では不可)。 */
     val canSaveAs: Boolean = true,
+    /** 編集中のテキストレイヤー ID。null なら文字を触っていない。 */
+    val editingTextId: String? = null,
 ) {
     val outputSize: EditSize? get() = document?.outputSize
+
+    /** 編集中のテキストレイヤー。 */
+    val editingText: Layer.Text?
+        get() = editingTextId?.let { id ->
+            document?.layers?.firstOrNull { it.id == id } as? Layer.Text
+        }
+
+    /** 既に置いてあるテキストレイヤー (切り替え用)。 */
+    val textLayers: List<Layer.Text>
+        get() = document?.layers?.filterIsInstance<Layer.Text>().orEmpty()
 }
 
-/** ツールバーで選ぶツール。v1 は切り抜きとサイズだけ。 */
-enum class EditTool { CROP, RESIZE }
+/** ツールバーで選ぶツール。 */
+enum class EditTool { CROP, RESIZE, BRUSH, TEXT }
 
 /** 保存の指定。 */
 data class SaveRequest(

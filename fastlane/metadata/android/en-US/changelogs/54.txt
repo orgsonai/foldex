@@ -1,0 +1,6 @@
+1.2.0 (new)
+- Added brush and eraser to the image editor (width, 12 colors, opacity, softness)
+- Added text to the image editor (size, color, typeface, bold, white/black outline, tilt)
+- Text stays editable until you save; drag on the image to position it
+- Strokes and text keep their position when you crop or rotate afterwards
+- Rotate and flip moved into the crop tool
