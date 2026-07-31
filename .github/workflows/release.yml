@@ -21,19 +21,22 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
+      # v6 ではキャッシュ機能が非オープンソースの別ライブラリへ切り出され、
+      # 利用に Gradle 社の Terms of Use への同意が必要になった。
+      # Node 24 対応は v5 で済んでいるので、ここは v5 に留める。
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Decode signing keystore (require signing secrets)
         env:
@@ -63,7 +66,7 @@ jobs:
         run: ls -lh app/build/outputs/apk/release/
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: foldex-release-apk
           path: app/build/outputs/apk/release/*.apk
@@ -71,7 +74,7 @@ jobs:
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: app/build/outputs/apk/release/*.apk
           generate_release_notes: true
