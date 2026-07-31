@@ -19,8 +19,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.apache.ftpserver.DataConnectionConfigurationFactory
 import org.apache.ftpserver.FtpServer
 import org.apache.ftpserver.FtpServerFactory
@@ -144,33 +149,63 @@ class FtpServerManager @Inject constructor(
         return Result.Success(config)
     }
 
-    suspend fun stop(configId: String) = mutex.withLock {
-        running.remove(configId)?.let { server ->
-            runCatching { server.stop() }
-            _runningIds.update { it - configId }
+    suspend fun stop(configId: String) {
+        // SFTP 側と同じ方針: 状態更新は mutex の内側、実際の停止は外側でタイムアウト付き。
+        // FTP は転送中のデータ接続が残っていると stop() が戻らないことがあり、
+        // ロックを握ったまま待つと以後の起動/停止が全部詰まる。
+        val server = mutex.withLock { running.remove(configId) } ?: return
+        _runningIds.update { it - configId }
+        val closed = closeServer(server)
+        logger.record(
+            configId = configId,
+            event = ServerLogEvent.SERVER_STOPPED,
+            clientAddress = "self",
+            details = if (closed) "type=FTP" else "type=FTP,warn=close_timeout",
+        )
+    }
+
+    suspend fun stopAll() {
+        val servers = mutex.withLock {
+            val snapshot = running.toMap()
+            running.clear()
+            snapshot
+        }
+        if (servers.isEmpty()) return
+        _runningIds.value = emptySet()
+        servers.forEach { (configId, server) ->
+            val closed = closeServer(server)
             logger.record(
                 configId = configId,
                 event = ServerLogEvent.SERVER_STOPPED,
                 clientAddress = "self",
-                details = "type=FTP",
+                details = if (closed) "type=FTP,reason=stopAll" else "type=FTP,reason=stopAll,warn=close_timeout",
             )
         }
     }
 
-    suspend fun stopAll() = mutex.withLock {
-        val ids = running.keys.toList()
-        running.values.forEach { runCatching { it.stop() } }
-        running.clear()
-        _runningIds.value = emptySet()
-        ids.forEach { configId ->
-            logger.record(
-                configId = configId,
-                event = ServerLogEvent.SERVER_STOPPED,
-                clientAddress = "self",
-                details = "type=FTP,reason=stopAll",
-            )
+    /**
+     * FTP サーバーを停止する。完了したら true、[CLOSE_TIMEOUT_MS] を超えたら false。
+     *
+     * `FtpServer.stop()` は内部 (Apache MINA) のアクセプタ破棄でブロックすることがあり、
+     * データ接続が残っていると戻ってこない事例がある。割り込み可能なワーカーで実行し、
+     * 時間切れならスレッドに割り込みを入れて呼び出し元は先へ進む。閉じきれなかった
+     * 場合もサーバーは「停止扱い」にし、UI と常駐通知は必ず解放する。
+     */
+    private suspend fun closeServer(server: FtpServer): Boolean =
+        withContext(NonCancellable) {
+            val finished = withTimeoutOrNull(CLOSE_TIMEOUT_MS) {
+                runInterruptible(Dispatchers.IO) {
+                    runCatching { server.stop() }
+                }
+            }
+            if (finished == null) {
+                appLogger.warn(
+                    "Server/FTP",
+                    "停止要求を出しましたが ${CLOSE_TIMEOUT_MS}ms で解放が終わりませんでした (停止扱いにします)",
+                )
+            }
+            finished != null
         }
-    }
 
     private fun buildServer(
         config: ServerConfig,
@@ -240,5 +275,10 @@ class FtpServerManager @Inject constructor(
         if (!rootUri.startsWith(prefix)) return null
         val absolutePath = rootUri.removePrefix(prefix)
         return runCatching { Paths.get(absolutePath) }.getOrNull()
+    }
+
+    private companion object {
+        /** 停止の完了を待つ上限 (ミリ秒)。超えたら待たずに停止扱いにする。 */
+        const val CLOSE_TIMEOUT_MS = 5_000L
     }
 }

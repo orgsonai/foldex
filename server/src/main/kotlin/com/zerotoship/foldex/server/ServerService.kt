@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -49,15 +50,21 @@ class ServerService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val configId = intent.getStringExtra(EXTRA_CONFIG_ID)
-                if (configId != null) startServer(configId)
+                if (configId != null) startServer(configId) else stopIfIdle()
             }
             ACTION_STOP -> {
                 val configId = intent.getStringExtra(EXTRA_CONFIG_ID)
-                if (configId != null) stopServer(configId)
+                if (configId != null) stopServer(configId) else stopIfIdle()
             }
             ACTION_STOP_ALL -> stopAll()
+            // intent == null (プロセス再生成後の再配送) や未知の action。
+            // このとき実サーバーは 1 つも動いていないので、空の常駐通知を残さず自分を止める。
+            else -> stopIfIdle()
         }
-        return START_STICKY
+        // START_STICKY だとプロセスが落とされたあと action 無しで再生成され、
+        // 「サーバーは動いていないのに通知だけ残る」状態になり得る。サーバーの
+        // 再開はユーザーの明示操作 (または BootReceiver) に任せる。
+        return START_NOT_STICKY
     }
 
     private fun startForegroundIfNeeded() {
@@ -87,24 +94,52 @@ class ServerService : Service() {
                 }
             }
             // 起動失敗等でどのサーバーも動いていない場合は、空の常駐通知を残さず自分を止める。
-            if (allRunningIds().isEmpty()) stopSelf() else refreshNotification()
+            finishOrRefresh()
         }
     }
 
     private fun stopServer(configId: String) {
         scope.launch {
-            sftpManager.stop(configId)
-            ftpManager.stop(configId)
-            if (allRunningIds().isEmpty()) stopSelf() else refreshNotification()
+            // 停止処理がどこかで詰まっても、必ず後始末 (通知更新 or サービス終了) に
+            // 到達させる。ここを素通りすると「止めたのに常駐通知が消えない・以後
+            // 何を押しても反応しない」状態になり、ユーザー側の復旧手段が
+            // 強制停止しか無くなるため。
+            runCatching {
+                withTimeoutOrNull(STOP_DEADLINE_MS) {
+                    sftpManager.stop(configId)
+                    ftpManager.stop(configId)
+                }
+            }
+            finishOrRefresh()
         }
     }
 
     private fun stopAll() {
         scope.launch {
-            sftpManager.stopAll()
-            ftpManager.stopAll()
-            stopSelf()
+            runCatching {
+                withTimeoutOrNull(STOP_DEADLINE_MS) {
+                    sftpManager.stopAll()
+                    ftpManager.stopAll()
+                }
+            }
+            shutdown()
         }
+    }
+
+    /** どのサーバーも動いていなければサービスを終了、動いていれば通知を更新する。 */
+    private suspend fun finishOrRefresh() {
+        if (allRunningIds().isEmpty()) shutdown() else runCatching { refreshNotification() }
+    }
+
+    /** 起動していない場合だけサービスを終了する (空の常駐通知を残さないための後始末)。 */
+    private fun stopIfIdle() {
+        if (allRunningIds().isEmpty()) shutdown()
+    }
+
+    /** 常駐通知を確実に外してからサービスを終了する。 */
+    private fun shutdown() {
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        stopSelf()
     }
 
     private fun allRunningIds(): Set<String> =
@@ -128,6 +163,12 @@ class ServerService : Service() {
     }
 
     companion object {
+        /**
+         * 停止要求を打ち切るまでの上限 (ミリ秒)。各マネージャ側も個別にタイムアウトを
+         * 持つが、想定外の待ちが起きても後始末に必ず到達させるための二重の保険。
+         */
+        private const val STOP_DEADLINE_MS = 15_000L
+
         const val ACTION_START: String = "com.zerotoship.foldex.server.action.START"
         const val ACTION_STOP: String = "com.zerotoship.foldex.server.action.STOP"
         const val ACTION_STOP_ALL: String = "com.zerotoship.foldex.server.action.STOP_ALL"

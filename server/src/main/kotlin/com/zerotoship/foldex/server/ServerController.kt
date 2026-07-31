@@ -4,6 +4,7 @@
 package com.zerotoship.foldex.server
 
 import android.content.Context
+import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.zerotoship.foldex.server.ftp.FtpServerManager
 import com.zerotoship.foldex.server.sftp.SftpServerManager
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,23 +51,31 @@ class ServerController @Inject constructor(
         sftpManager.isRunning(configId) || ftpManager.isRunning(configId)
 
     fun start(configId: String) {
-        ContextCompat.startForegroundService(
-            context,
-            ServerService.startIntent(context, configId),
-        )
+        deliver(ServerService.startIntent(context, configId))
     }
 
     fun stop(configId: String) {
-        ContextCompat.startForegroundService(
-            context,
-            ServerService.stopIntent(context, configId),
-        )
+        if (deliver(ServerService.stopIntent(context, configId))) return
+        // サービスへ要求を届けられなかった場合 (バックグラウンド起動制限など) でも、
+        // 停止だけは必ず通す。マネージャは Singleton なので、プロセス内から直接
+        // 止めても UI が見ている状態と食い違わない。
+        scope.launch {
+            sftpManager.stop(configId)
+            ftpManager.stop(configId)
+        }
     }
 
     fun stopAll() {
-        ContextCompat.startForegroundService(
-            context,
-            ServerService.stopAllIntent(context),
-        )
+        if (deliver(ServerService.stopAllIntent(context))) return
+        scope.launch {
+            sftpManager.stopAll()
+            ftpManager.stopAll()
+        }
     }
+
+    /** [ServerService] へ要求を送る。送れたら true。 */
+    private fun deliver(intent: Intent): Boolean = runCatching {
+        ContextCompat.startForegroundService(context, intent)
+        true
+    }.getOrDefault(false)
 }

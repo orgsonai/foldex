@@ -21,8 +21,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.common.signature.BuiltinSignatures
 import org.apache.sshd.server.ServerBuilder
@@ -139,33 +142,58 @@ class SftpServerManager @Inject constructor(
         return Result.Success(config)
     }
 
-    suspend fun stop(configId: String) = mutex.withLock {
-        running.remove(configId)?.let { server ->
-            runCatching { server.stop(true) }
-            _runningIds.update { it - configId }
+    suspend fun stop(configId: String) {
+        // 「一覧から外して状態を落とす」までを mutex の内側、実際の close は外側で行う。
+        // close はクライアント接続が残っていると待たされることがあり、ロックを握ったまま
+        // 待つと以後の起動/停止が全部そこで詰まる (= 何度押しても止まらない) ため。
+        val server = mutex.withLock { running.remove(configId) } ?: return
+        _runningIds.update { it - configId }
+        val closed = closeServer(server)
+        logger.record(
+            configId = configId,
+            event = ServerLogEvent.SERVER_STOPPED,
+            clientAddress = "self",
+            details = if (closed) "type=SFTP" else "type=SFTP,warn=close_timeout",
+        )
+    }
+
+    suspend fun stopAll() {
+        val servers = mutex.withLock {
+            val snapshot = running.toMap()
+            running.clear()
+            snapshot
+        }
+        if (servers.isEmpty()) return
+        _runningIds.value = emptySet()
+        servers.forEach { (configId, server) ->
+            val closed = closeServer(server)
             logger.record(
                 configId = configId,
                 event = ServerLogEvent.SERVER_STOPPED,
                 clientAddress = "self",
-                details = "type=SFTP",
+                details = if (closed) "type=SFTP,reason=stopAll" else "type=SFTP,reason=stopAll,warn=close_timeout",
             )
         }
     }
 
-    suspend fun stopAll() = mutex.withLock {
-        val ids = running.keys.toList()
-        running.values.forEach { runCatching { it.stop(true) } }
-        running.clear()
-        _runningIds.value = emptySet()
-        ids.forEach { configId ->
-            logger.record(
-                configId = configId,
-                event = ServerLogEvent.SERVER_STOPPED,
-                clientAddress = "self",
-                details = "type=SFTP,reason=stopAll",
-            )
+    /**
+     * サーバーの待ち受けを閉じる。完了したら true、[CLOSE_TIMEOUT_MS] 以内に
+     * 閉じきらなければ false (呼び出し元は待たずに先へ進む)。
+     *
+     * `SshServer.stop(true)` は内部で close の完了を待つ (既定 10 秒、条件次第では
+     * さらに長い) ため、ここでは待たない `close(true)` を使い、完了確認だけ短い
+     * タイムアウトで行う。呼び出し元 (ForegroundService) を絶対に固めないことを優先し、
+     * 閉じきれなかった場合もサーバーは「停止扱い」にする。残った接続は
+     * サービス終了後に OS 側で回収される。
+     */
+    private suspend fun closeServer(server: SshServer): Boolean =
+        withContext(NonCancellable + Dispatchers.IO) {
+            runCatching { server.close(true).await(CLOSE_TIMEOUT_MS) }
+                .onFailure { t ->
+                    appLogger.warn("Server/SFTP", "サーバーの停止処理で例外: ${t.message}", t)
+                }
+                .getOrDefault(false)
         }
-    }
 
     private fun buildServer(config: ServerConfig, rootPath: Path, host: String): SshServer {
         val server = SshServer.setUpDefaultServer()
@@ -222,5 +250,10 @@ class SftpServerManager @Inject constructor(
         if (!rootUri.startsWith(prefix)) return null
         val absolutePath = rootUri.removePrefix(prefix)
         return runCatching { Paths.get(absolutePath) }.getOrNull()
+    }
+
+    private companion object {
+        /** 停止時に close の完了を待つ上限 (ミリ秒)。超えたら待たずに停止扱いにする。 */
+        const val CLOSE_TIMEOUT_MS = 5_000L
     }
 }
