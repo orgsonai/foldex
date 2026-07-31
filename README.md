@@ -2,7 +2,7 @@
 
 > folder + ex (= index) — フォルダにインデックスを張って、ローカル/リモートを横断的にアクセスできる Android ファイラー。
 
-[Zero to Ship](https://github.com/orgsonai/zero-to-ship) シリーズ第4弾。
+Zero to Ship シリーズ第4弾。
 広告なし・ローカルファースト・リモート全部入り。自分が日常使いするためのアプリ。
 
 リポジトリ: <https://github.com/orgsonai/foldex>
