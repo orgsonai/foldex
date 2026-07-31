@@ -8,6 +8,7 @@ package com.zerotoship.foldex.ui.viewer
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Typeface
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -207,6 +208,8 @@ private fun SoraEditor(
     var canUndo by remember { mutableStateOf(false) }
     var canRedo by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    // 状態行の色分け用。保存の失敗を「いつもの文字コード表示」と同じ色で出すと見落とすため。
+    var statusIsError by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     // 未保存の編集が下書きとして退避されているかの目印。最初の編集で true、保存成功でリセット。
     // 何も触っていない時に下書きを書かないようにするためのフラグ。
@@ -282,7 +285,7 @@ private fun SoraEditor(
             val newCanRedo = editor.canRedo()
             if (canUndo != newCanUndo) canUndo = newCanUndo
             if (canRedo != newCanRedo) canRedo = newCanRedo
-            if (status != null) status = null
+            if (status != null) { status = null; statusIsError = false }
             // 入力が落ち着いたタイミングで未保存テキストを下書きへ退避する。
             // 読みは main、書き込みは IO に逃がす。
             if (dirty) {
@@ -417,6 +420,8 @@ private fun SoraEditor(
         EditorBottomBar(
             charsetName = charset.name(),
             status = status,
+            statusIsError = statusIsError,
+            dirty = dirty,
             canUndo = canUndo,
             canRedo = canRedo,
             saving = saving,
@@ -430,6 +435,7 @@ private fun SoraEditor(
                     editor.pasteText(text)
                 } else {
                     status = "クリップボードが空です"
+                    statusIsError = true
                 }
             },
             onToggleWrap = { wordWrap = !wordWrap },
@@ -448,12 +454,23 @@ private fun SoraEditor(
                     // 2) Remote / SAF キャッシュ編集なら、続けて元 URI へ書き戻す。
                     //    ここを Activity 終了まで待たないことで、「保存後すぐタスクキル」しても
                     //    変更がリモートに反映されている状態を作る。
-                    status = when {
+                    val remoteOk = localOk && onSaveRemote != null && onSaveRemote(file)
+                    val ok = localOk && (onSaveRemote == null || remoteOk)
+                    val message = when {
                         !localOk -> "保存に失敗しました"
                         onSaveRemote == null -> "保存しました"
-                        onSaveRemote(file) -> "保存しました"
+                        remoteOk -> "保存しました (リモートへ反映)"
                         else -> "リモートへの保存に失敗しました (再試行してください)"
                     }
+                    status = message
+                    statusIsError = !ok
+                    // 下部の状態行は小さく、次の入力で消えてしまうので保存できたかどうかが
+                    // 分かりにくかった。押した結果はトーストでも必ず知らせる。
+                    Toast.makeText(
+                        context,
+                        message,
+                        if (ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
+                    ).show()
                     // ローカルへ書き出せた時点で下書きは陳腐化するので消す (リモート失敗時も
                     // ローカルには反映済みなので、再オープン時の内容は下書きと一致する)。
                     if (localOk) {
@@ -499,6 +516,10 @@ private fun CodeEditor.pasteText(text: String) {
 private fun EditorBottomBar(
     charsetName: String,
     status: String?,
+    /** [status] が失敗メッセージなら true。エラー色で出す。 */
+    statusIsError: Boolean,
+    /** 保存していない編集があるか。保存ボタンと状態行で知らせる。 */
+    dirty: Boolean,
     canUndo: Boolean,
     canRedo: Boolean,
     saving: Boolean,
@@ -520,11 +541,24 @@ private fun EditorBottomBar(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-            // 状態行 (charset / 保存メッセージ)。
+            // 状態行 (charset / 未保存の有無 / 保存メッセージ)。保存の結果はここと
+            // トーストの両方で知らせる。
+            val statusText = when {
+                status != null -> status
+                saving -> "保存中…"
+                dirty -> "$charsetName ・ 未保存の変更あり"
+                else -> charsetName
+            }
+            val statusColor = when {
+                statusIsError -> MaterialTheme.colorScheme.error
+                status != null -> MaterialTheme.colorScheme.primary
+                dirty -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
             Text(
-                text = status ?: charsetName,
+                text = statusText,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = statusColor,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
             )
             // ボタン行: 貼付 / 行番号 / 折り返し / 戻す / 進む / 検索 / 保存
@@ -586,8 +620,11 @@ private fun EditorBottomBar(
                 ToolbarButton(
                     onClick = onSave,
                     icon = Icons.Default.Save,
-                    label = "保存",
+                    // 未保存の編集があるときはラベルとアイコンを強調して「押すべき状態」を示す。
+                    label = if (dirty) "保存 *" else "保存",
                     enabled = !saving,
+                    active = dirty,
+                    activeColor = active,
                     inactiveColor = inactive,
                     modifier = Modifier.weight(1f),
                 )

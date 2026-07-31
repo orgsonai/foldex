@@ -1,0 +1,3 @@
+1.0.11 (improvement)
+- The built-in editor now shows a toast telling you whether a save succeeded
+- Unsaved changes are now visible on the save button and status line ("保存 *" / unsaved changes)
