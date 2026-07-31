@@ -72,11 +72,75 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           retention-days: 30
 
+      # リリース本文を組み立てる。F-Droid 用の changelog をそのまま流用し、
+      # 前回タグ以降に追加された分を全部載せる (複数バージョンを 1 タグでまとめて
+      # 出すことがあるため、今回の versionCode だけでは足りない)。
+      # 本文が空のままリリースを作らせないよう、最後に必ず中身を検査する。
+      - name: Compose release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          JA_DIR="fastlane/metadata/android/ja-JP/changelogs"
+          EN_DIR="fastlane/metadata/android/en-US/changelogs"
+
+          # 前回タグ以降に追加された changelog を新しい順に拾う。
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          CODES=""
+          if [ -n "${PREV}" ]; then
+            CODES="$(git diff --name-only --diff-filter=A "${PREV}..${TAG}" -- "${JA_DIR}" \
+              | xargs -r -n1 basename | sed 's/\.txt$//' | sort -rn || true)"
+          fi
+          # 前回タグが無い / 差分が取れないときは、今の versionCode 1 つで作る。
+          if [ -z "${CODES}" ]; then
+            CODES="$(grep -oE 'versionCode[[:space:]]*=[[:space:]]*[0-9]+' app/build.gradle.kts \
+              | grep -oE '[0-9]+' | head -1)"
+          fi
+
+          # 改行区切りの読み込みで回す (for + 変数展開はシェルの単語分割設定に左右されるため)。
+          emit_changelogs() {
+            dir="$1"
+            printf '%s\n' "${CODES}" | while IFS= read -r c; do
+              if [ -n "${c}" ] && [ -f "${dir}/${c}.txt" ]; then
+                cat "${dir}/${c}.txt"
+                echo
+              fi
+            done
+          }
+
+          {
+            echo "## 変更点"
+            echo
+            emit_changelogs "${JA_DIR}"
+            if [ -n "$(emit_changelogs "${EN_DIR}")" ]; then
+              echo "<details><summary>English</summary>"
+              echo
+              emit_changelogs "${EN_DIR}"
+              echo "</details>"
+            fi
+          } > RELEASE_NOTES.md
+
+          # changelog が 1 件も無ければ、タグの注釈メッセージで代替する。
+          if [ "$(grep -cve '^\s*$' RELEASE_NOTES.md)" -le 1 ]; then
+            git tag -l --format='%(contents)' "${TAG}" > RELEASE_NOTES.md
+          fi
+
+          # それでも空ならリリースを中止する。本文の無いリリースは作らない。
+          if [ ! -s RELEASE_NOTES.md ] || [ "$(grep -cve '^\s*$' RELEASE_NOTES.md)" -eq 0 ]; then
+            echo "::error::リリース本文が空です。${JA_DIR}/<versionCode>.txt を用意するか、git tag -a でタグに注釈を付けてください。"
+            exit 1
+          fi
+
+          echo "--- release notes ---"
+          cat RELEASE_NOTES.md
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: app/build/outputs/apk/release/*.apk
+          body_path: RELEASE_NOTES.md
+          # 本文の後ろにコミット一覧と Full Changelog のリンクが自動で付く。
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -84,4 +148,4 @@ jobs:
       - name: Cleanup keystore
         if: always()
         run: |
-          rm -f release.keystore keystore.properties
+          rm -f release.keystore keystore.properties RELEASE_NOTES.md
