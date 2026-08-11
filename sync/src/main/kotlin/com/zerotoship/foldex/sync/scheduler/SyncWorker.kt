@@ -7,6 +7,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
@@ -58,8 +59,16 @@ class SyncWorker @AssistedInject constructor(
         // 毎日/毎週/毎月 は OneTimeWork で次回を予約しているので、実行のたびに次回を再予約する。
         if (job.schedule.isRecurringOneShot) scheduler.scheduleNext(job)
 
-        val result = syncEngine.run(job, storage) { progress ->
-            setProgressAsync(progress.toData())
+        // 画面消灯/Doze から起動した直後の同期でも LAN 経路を維持する。
+        // WorkManager の CONNECTED/UNMETERED はネットワークの存在だけを保証し、
+        // SMB サーバーへの Wi-Fi 経路が処理中ずっと起きていることまでは保証しない。
+        val wifiLock = acquireWifiLock()
+        val result = try {
+            syncEngine.run(job, storage) { progress ->
+                setProgressAsync(progress.toData())
+            }
+        } finally {
+            runCatching { if (wifiLock?.isHeld == true) wifiLock.release() }
         }
 
         // 完了をシステム通知する (設定が ON のときだけ)。リトライ予定のときは「まだ終わって
@@ -122,6 +131,15 @@ class SyncWorker @AssistedInject constructor(
         nm.createNotificationChannel(channel)
     }
 
+    private fun acquireWifiLock(): WifiManager.WifiLock? = runCatching {
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            ?: return@runCatching null
+        wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, WIFI_LOCK_TAG).apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }.getOrNull()
+
     private fun SyncProgress.toData(): Data = workDataOf(
         KEY_PROGRESS_PHASE to phase.name,
         KEY_PROGRESS_TOTAL to totalActions,
@@ -145,6 +163,7 @@ class SyncWorker @AssistedInject constructor(
 
         private const val CHANNEL_ID = "foldex_sync"
         private const val FOREGROUND_NOTIFICATION_ID = 4344
+        private const val WIFI_LOCK_TAG = "Foldex:SyncWifiLock"
 
         const val KEY_PROGRESS_PHASE = "progress.phase"
         const val KEY_PROGRESS_TOTAL = "progress.totalActions"

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -516,7 +517,10 @@ private fun ViewerScreen(
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        // Scaffold が確保した system bar 分を消費済みとして子へ伝える。
+        // これが無いと TextViewer 側の navigationBarsPadding と重なり、3 ボタン
+        // ナビゲーションの上にバー1個分の空白が追加される。
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
             when (category) {
                 Category.IMAGE -> ImagePagerViewer(
                     paths = imagePaths,

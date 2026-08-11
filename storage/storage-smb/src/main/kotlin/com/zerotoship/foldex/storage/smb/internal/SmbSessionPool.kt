@@ -12,8 +12,10 @@ import com.hierynomus.smbj.share.DiskShare
 import com.zerotoship.foldex.core.data.repo.ConnectionRepository
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.Credential
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -71,7 +73,7 @@ internal class SmbSessionPool @Inject constructor(
         }
     }
 
-    private fun open(connection: Connection.Smb, credential: Credential): Holder {
+    private suspend fun open(connection: Connection.Smb, credential: Credential): Holder {
         val authContext = when (credential) {
             is Credential.Password -> {
                 val passwordChars = String(credential.secret, Charsets.UTF_8).toCharArray()
@@ -85,7 +87,11 @@ internal class SmbSessionPool @Inject constructor(
             is Credential.SshPrivateKey ->
                 error("SSH private key credential is not valid for SMB")
         }
-        val smbjConn: SmbjConnection = client.connect(connection.host, connection.port)
+        // バックグラウンド同期は端末をスリープから起こした直後に始まることがある。
+        // Android が「ネットワーク接続済み」と判定した時点でも、LAN 側の経路/ARP がまだ
+        // 復帰しておらず最初の connect だけ EHOSTUNREACH になるため、TCP 接続段階に限って
+        // 短時間再試行する。認証・共有接続の失敗は設定不備の可能性があるので再試行しない。
+        val smbjConn: SmbjConnection = connectWithRetry(connection)
         val session: Session = try {
             smbjConn.authenticate(authContext)
         } catch (t: Throwable) {
@@ -108,6 +114,19 @@ internal class SmbSessionPool @Inject constructor(
         )
     }
 
+    private suspend fun connectWithRetry(connection: Connection.Smb): SmbjConnection {
+        var lastError: IOException? = null
+        repeat(CONNECT_ATTEMPTS) { attempt ->
+            try {
+                return client.connect(connection.host, connection.port)
+            } catch (e: IOException) {
+                lastError = e
+                if (attempt < CONNECT_ATTEMPTS - 1) delay(CONNECT_RETRY_DELAYS_MS[attempt])
+            }
+        }
+        throw checkNotNull(lastError)
+    }
+
     private fun close(holder: Holder) {
         runCatching { holder.share.close() }
         runCatching { holder.session.close() }
@@ -127,5 +146,10 @@ internal class SmbSessionPool @Inject constructor(
                 spec.share == current.share &&
                 spec.username == current.username &&
                 spec.domain == current.domain
+    }
+
+    private companion object {
+        const val CONNECT_ATTEMPTS = 3
+        val CONNECT_RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L)
     }
 }
