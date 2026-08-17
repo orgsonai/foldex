@@ -131,6 +131,7 @@ import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.ui.common.DeleteConfirmDialog
+import com.zerotoship.foldex.ui.common.FilePropertiesDialog
 import com.zerotoship.foldex.ui.common.SelectionActionBar
 import com.zerotoship.foldex.ui.common.setPlainText
 import com.zerotoship.foldex.ui.components.FastScrollbar

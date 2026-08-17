@@ -71,8 +71,8 @@ import coil3.request.crossfade
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.ui.common.DeleteConfirmDialog
+import com.zerotoship.foldex.ui.common.FilePropertiesDialog
 import com.zerotoship.foldex.ui.common.SelectionActionBar
-import com.zerotoship.foldex.ui.filebrowser.FilePropertiesDialog
 import com.zerotoship.foldex.ui.filebrowser.RenameDialog
 import com.zerotoship.foldex.ui.viewer.ViewerActivity
 import java.io.File

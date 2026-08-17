@@ -1,0 +1,8 @@
+1.5.0 (New)
+- Properties now shows a lot more detail
+- Images: resolution, megapixels, aspect ratio, and EXIF (date taken, camera, aperture, shutter, ISO, focal length, location)
+- Video/audio: duration, resolution, bitrate, format, title, artist
+- Folders: number of files and folders, plus total size
+- Files: extension, MIME type, permissions (rwx)
+- "Compute hashes" shows MD5 and SHA-256, calculated only when you ask
+- Long-press any row to copy its value
