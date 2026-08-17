@@ -135,6 +135,7 @@ import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
+import com.zerotoship.foldex.ui.common.DeleteConfirmDialog
 import com.zerotoship.foldex.ui.common.setPlainText
 import com.zerotoship.foldex.ui.components.FastScrollbar
 import com.zerotoship.foldex.ui.connections.ConnectionsViewModel
@@ -795,9 +796,12 @@ fun FileBrowserScreen(
     // Dialogs
     if (state.pendingDeleteNodes.isNotEmpty()) {
         DeleteConfirmDialog(
-            nodes = state.pendingDeleteNodes,
+            count = state.pendingDeleteNodes.size,
+            singleName = state.pendingDeleteNodes.singleOrNull()?.name,
             defaultBehavior = state.deleteBehavior,
             askDestination = state.deleteBehavior == com.zerotoship.foldex.core.model.DeleteBehavior.ASK,
+            // ゴミ箱はローカル実体のみ。リモート/SAF しか選ばれていないなら完全削除しかない。
+            trashSupported = state.pendingDeleteNodes.any { it.uri is FileUri.Local },
             onConfirm = { behavior -> viewModel.confirmDelete(behavior) },
             onDismiss = { viewModel.dismissDeleteDialog() },
         )

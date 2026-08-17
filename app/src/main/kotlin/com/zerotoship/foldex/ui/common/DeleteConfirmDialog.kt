@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Zero to Ship
 
-package com.zerotoship.foldex.ui.filebrowser
+package com.zerotoship.foldex.ui.common
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,21 +24,43 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.Row
 import com.zerotoship.foldex.core.model.DeleteBehavior
-import com.zerotoship.foldex.core.model.FileNode
 
+/**
+ * 削除の確認ダイアログ。
+ *
+ * ファイルブラウザと HOME の「画像」/「動画」の両方から使う。どちらから削除しても
+ * 同じ文言・同じ選択肢になるように、ここ 1 か所にまとめている。
+ *
+ * @param count 削除対象の件数。
+ * @param singleName 1 件のときのファイル名。`null` なら件数だけを出す。
+ * @param defaultBehavior 設定「削除の行き先」。[askDestination] が false のときはこれで確定する。
+ * @param askDestination true なら「ゴミ箱へ移動 / 完全に削除」をその場で選ばせる。
+ * @param trashSupported ゴミ箱に入れられるか。リモート/SAF のように退避できない対象では
+ *   false を渡す。false のときは選択肢を出さず、完全削除であることをはっきり書く。
+ */
 @Composable
 fun DeleteConfirmDialog(
-    nodes: List<FileNode>,
+    count: Int,
+    singleName: String?,
     defaultBehavior: DeleteBehavior,
-    /** true なら「ゴミ箱へ移動 / 完全に削除」を選ばせる ([defaultBehavior] が ASK のとき)。 */
     askDestination: Boolean,
+    trashSupported: Boolean = true,
     onConfirm: (DeleteBehavior) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var chosen by remember { mutableStateOf(if (askDestination) DeleteBehavior.TRASH else defaultBehavior) }
-    val countText = if (nodes.size == 1) "「${nodes[0].name}」" else "${nodes.size}件のアイテム"
+    // ゴミ箱に入れられない対象は、設定が何であれ完全削除しかない。
+    val canChoose = askDestination && trashSupported
+    var chosen by remember {
+        mutableStateOf(
+            when {
+                !trashSupported -> DeleteBehavior.PERMANENT
+                askDestination -> DeleteBehavior.TRASH
+                else -> defaultBehavior
+            },
+        )
+    }
+    val countText = if (count == 1 && singleName != null) "「$singleName」" else "${count}件のアイテム"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -45,7 +68,7 @@ fun DeleteConfirmDialog(
         text = {
             Column {
                 when {
-                    askDestination -> {
+                    canChoose -> {
                         Text("${countText}をどうしますか？")
                         Spacer(Modifier.height(8.dp))
                         Column(Modifier.selectableGroup()) {
@@ -57,7 +80,9 @@ fun DeleteConfirmDialog(
                             }
                         }
                     }
-                    defaultBehavior == DeleteBehavior.TRASH -> Text("${countText}をゴミ箱に移動しますか？")
+                    !trashSupported ->
+                        Text("${countText}を削除しますか？\nこの場所はゴミ箱に対応していないため、完全に削除されます。")
+                    chosen == DeleteBehavior.TRASH -> Text("${countText}をゴミ箱に移動しますか？")
                     else -> Text("${countText}を削除しますか？\nこの操作は元に戻せません。")
                 }
             }

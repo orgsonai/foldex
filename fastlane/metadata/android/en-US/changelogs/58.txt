@@ -1,0 +1,5 @@
+1.3.1
+- Deleting from the Images/Videos collections now follows the "Delete behaviour" setting
+- Previously it always deleted permanently; by default items now go to the trash
+- The delete confirmation is now shared with the file list, so wording and choices match
+- Restoring a photo or video from the trash brings it back into the gallery

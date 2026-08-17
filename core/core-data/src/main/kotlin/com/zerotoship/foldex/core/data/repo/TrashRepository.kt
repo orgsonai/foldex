@@ -4,6 +4,7 @@
 package com.zerotoship.foldex.core.data.repo
 
 import android.content.Context
+import android.media.MediaScannerConnection
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -68,8 +69,28 @@ class TrashRepository @Inject constructor(
         target.parentFile?.mkdirs()
         val ok = runCatching { payload.renameTo(target) }.getOrDefault(false) ||
             runCatching { payload.copyRecursively(target, overwrite = false) && payload.deleteRecursively() }.getOrDefault(false)
-        if (ok) dir.deleteRecursively()
+        if (ok) {
+            dir.deleteRecursively()
+            // 戻したファイルを MediaStore に再登録する。これをしないと、写真や動画を
+            // 復元しても HOME の「画像」/「動画」やギャラリーアプリに出てこない。
+            rescan(target)
+        }
         ok
+    }
+
+    /** [target] (ファイルまたはフォルダ) を MediaStore に再登録する。 */
+    private fun rescan(target: File) {
+        val paths = runCatching {
+            if (target.isDirectory) {
+                target.walkTopDown().filter { it.isFile }.map { it.absolutePath }.toList()
+            } else {
+                listOf(target.absolutePath)
+            }
+        }.getOrDefault(listOf(target.absolutePath))
+        if (paths.isEmpty()) return
+        runCatching {
+            MediaScannerConnection.scanFile(context, paths.toTypedArray(), null, null)
+        }
     }
 
     suspend fun deletePermanently(id: String) = withContext(Dispatchers.IO) {

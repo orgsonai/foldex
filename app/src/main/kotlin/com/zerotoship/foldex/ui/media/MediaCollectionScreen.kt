@@ -41,7 +41,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,15 +52,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,6 +71,8 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.zerotoship.foldex.core.model.filetype.Category
+import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.ui.common.DeleteConfirmDialog
 import com.zerotoship.foldex.ui.viewer.ViewerActivity
 import java.io.File
 import java.util.Locale
@@ -135,22 +133,18 @@ fun MediaCollectionScreen(
         }
     }
 
-    // 削除確認ダイアログ
-    var pendingDelete by remember { mutableStateOf(false) }
-    if (pendingDelete) {
-        AlertDialog(
-            onDismissRequest = { pendingDelete = false },
-            title = { Text("${state.selectedUris.size} 件を削除") },
-            text = { Text("MediaStore から削除します (実体ファイルも削除されます)。元に戻せません。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingDelete = false
-                    viewModel.deleteSelected()
-                }) { Text("削除", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = false }) { Text("キャンセル") }
-            },
+    // 削除確認ダイアログ。ファイルブラウザと同じものを使う (文言・選択肢を揃えるため)。
+    if (state.pendingDelete) {
+        val selected = state.items.filter { it.contentUri.toString() in state.selectedUris }
+        DeleteConfirmDialog(
+            count = selected.size,
+            singleName = selected.singleOrNull()?.filePath?.let { File(it).name },
+            defaultBehavior = state.deleteBehavior,
+            askDestination = state.deleteBehavior == DeleteBehavior.ASK,
+            // 実体パスが取れないものはゴミ箱へ退避できない。
+            trashSupported = selected.any { it.filePath != null },
+            onConfirm = { behavior -> viewModel.confirmDelete(behavior) },
+            onDismiss = { viewModel.dismissDeleteDialog() },
         )
     }
 
@@ -208,7 +202,7 @@ fun MediaCollectionScreen(
                         }) {
                             Icon(Icons.Default.FolderOpen, contentDescription = "場所を開く")
                         }
-                        IconButton(onClick = { pendingDelete = true }) {
+                        IconButton(onClick = { viewModel.requestDelete() }) {
                             Icon(Icons.Default.Delete, contentDescription = "削除",
                                 tint = MaterialTheme.colorScheme.error)
                         }

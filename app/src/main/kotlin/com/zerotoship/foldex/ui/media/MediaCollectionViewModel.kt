@@ -10,6 +10,9 @@ import android.provider.MediaStore
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.core.data.repo.SettingsRepository
+import com.zerotoship.foldex.core.data.repo.TrashRepository
+import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
@@ -34,6 +37,8 @@ class MediaCollectionViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
     private val sharedClipboard: SharedClipboard,
+    private val settingsRepo: SettingsRepository,
+    private val trashRepo: TrashRepository,
 ) : ViewModel() {
 
     val kind: MediaKind = (savedStateHandle.get<String>(ARG_KIND) ?: "image").let {
@@ -42,6 +47,18 @@ class MediaCollectionViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(MediaCollectionState(kind = kind))
     val state: StateFlow<MediaCollectionState> = _state.asStateFlow()
+
+    init {
+        // 削除の行き先は設定に従う。ファイルブラウザ側と同じ挙動にするため同じ設定を見る。
+        viewModelScope.launch {
+            settingsRepo.settings.collect { s ->
+                _state.value = _state.value.copy(
+                    deleteBehavior = s.deleteBehavior,
+                    confirmBeforeDelete = s.confirmBeforeDelete,
+                )
+            }
+        }
+    }
 
     fun setPermissionGranted(granted: Boolean) {
         _state.value = _state.value.copy(hasPermission = granted)
@@ -74,32 +91,72 @@ class MediaCollectionViewModel @Inject constructor(
         _state.value = _state.value.copy(selectedUris = emptySet())
     }
 
-    /** 選択中のメディアを MediaStore から削除 (実体ファイルも削除される)。 */
-    fun deleteSelected() {
+    /**
+     * 削除を要求する。行き先は設定「削除の行き先」に従う。
+     * ファイルブラウザと同じく、確認オフ かつ 行き先が固定なら、ダイアログを出さずに実行する。
+     */
+    fun requestDelete() {
+        if (_state.value.selectedUris.isEmpty()) return
+        val behavior = _state.value.deleteBehavior
+        if (!_state.value.confirmBeforeDelete && behavior != DeleteBehavior.ASK) {
+            performDelete(behavior)
+        } else {
+            _state.value = _state.value.copy(pendingDelete = true)
+        }
+    }
+
+    fun dismissDeleteDialog() {
+        _state.value = _state.value.copy(pendingDelete = false)
+    }
+
+    fun confirmDelete(behavior: DeleteBehavior) {
+        _state.value = _state.value.copy(pendingDelete = false)
+        performDelete(behavior)
+    }
+
+    /**
+     * 選択中のメディアを削除する。
+     *
+     * ゴミ箱へ入れる場合は「実体を退避 → MediaStore のレコードを消す」の順で行う。
+     * 逆順にすると `ContentResolver.delete` が実体まで消してしまい、退避するものが無くなる。
+     */
+    private fun performDelete(behavior: DeleteBehavior) {
         val keys = _state.value.selectedUris
         if (keys.isEmpty()) return
         viewModelScope.launch {
             val targets = _state.value.items.filter { it.contentUri.toString() in keys }
-            val deleted = withContext(Dispatchers.IO) {
-                var n = 0
-                targets.forEach { item ->
-                    runCatching {
-                        // 1) MediaStore レコード削除を試みる。スコープドストレージで RecoverableSecurityException
-                        //    が出ることがあるが、MANAGE_EXTERNAL_STORAGE があれば通る想定。
-                        val rows = context.contentResolver.delete(item.contentUri, null, null)
-                        // 2) ContentResolver が 0 だった場合は File でフォールバック (path が取れていれば)。
-                        if (rows == 0 && item.filePath != null) {
-                            val f = File(item.filePath)
-                            if (f.exists()) f.delete()
+            var trashed = 0
+            var deleted = 0
+            for (item in targets) {
+                val localFile = item.filePath?.let { File(it) }
+                if (behavior == DeleteBehavior.TRASH && localFile != null && localFile.exists()) {
+                    if (trashRepo.moveToTrash(localFile)) {
+                        trashed++
+                        // 実体はもう無いので、残ったレコードだけを消す (消さないと一覧に出続ける)。
+                        withContext(Dispatchers.IO) {
+                            runCatching { context.contentResolver.delete(item.contentUri, null, null) }
                         }
-                        n++
                     }
+                } else {
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching {
+                            // MediaStore のレコード削除を試みる。0 件なら実体を直接消す。
+                            val rows = context.contentResolver.delete(item.contentUri, null, null)
+                            if (rows == 0 && localFile != null && localFile.exists()) localFile.delete()
+                            true
+                        }.getOrDefault(false)
+                    }
+                    if (ok) deleted++
                 }
-                n
             }
             // 状態を再ロード (FolderCount などのために)。
             reload()
-            _state.value = _state.value.copy(selectedUris = emptySet(), lastMessage = "${deleted} 件を削除しました")
+            val message = when {
+                trashed > 0 && deleted == 0 -> "${trashed}件をゴミ箱に移動しました"
+                trashed > 0 -> "${trashed + deleted}件削除しました (うち${trashed}件はゴミ箱)"
+                else -> "${deleted}件削除しました"
+            }
+            _state.value = _state.value.copy(selectedUris = emptySet(), lastMessage = message)
         }
     }
 
@@ -251,6 +308,11 @@ data class MediaCollectionState(
     val error: String? = null,
     val selectedUris: Set<String> = emptySet(),
     val lastMessage: String? = null,
+    /** 削除確認ダイアログを出しているか。 */
+    val pendingDelete: Boolean = false,
+    /** 設定「削除の行き先」。ファイルブラウザと同じ設定を見る。 */
+    val deleteBehavior: DeleteBehavior = DeleteBehavior.TRASH,
+    val confirmBeforeDelete: Boolean = true,
 ) {
     /** 現在の選択モード (1 件でも選択中か)。 */
     val isSelectionMode: Boolean get() = selectedUris.isNotEmpty()
