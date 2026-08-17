@@ -56,13 +56,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Home
@@ -73,7 +69,6 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GridView
@@ -136,6 +131,7 @@ import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.ui.common.DeleteConfirmDialog
+import com.zerotoship.foldex.ui.common.SelectionActionBar
 import com.zerotoship.foldex.ui.common.setPlainText
 import com.zerotoship.foldex.ui.components.FastScrollbar
 import com.zerotoship.foldex.ui.connections.ConnectionsViewModel
@@ -411,192 +407,171 @@ fun FileBrowserScreen(
                         }
                     },
                     actions = {
-                        if (state.isSelectionMode) {
-                            IconButton(onClick = { viewModel.selectAll() }) {
-                                Icon(Icons.Default.SelectAll, contentDescription = "全選択")
-                            }
-                            IconButton(onClick = { viewModel.copySelected() }) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = "コピー")
-                            }
-                            IconButton(onClick = { viewModel.cutSelected() }) {
-                                Icon(Icons.Default.ContentCut, contentDescription = "切り取り")
-                            }
-                            IconButton(
-                                onClick = {
-                                    val sel = state.selectedNodes
-                                    if (sel.size == 1) viewModel.requestRename(sel[0])
-                                },
-                                enabled = state.selectedUris.size == 1,
-                            ) {
-                                Icon(Icons.Default.DriveFileRenameOutline, contentDescription = "名前変更")
-                            }
-                            IconButton(onClick = { viewModel.requestDelete() }) {
-                                Icon(Icons.Default.Delete, contentDescription = "削除",
-                                    tint = MaterialTheme.colorScheme.error)
-                            }
-                            // 選択中の overflow: 共有 / 外部 / プロパティ / HOME 追加。
-                            var selMenuOpen by remember { mutableStateOf(false) }
-                            IconButton(onClick = { selMenuOpen = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "その他")
-                            }
-                            DropdownMenu(expanded = selMenuOpen, onDismissRequest = { selMenuOpen = false }) {
-                                val sel = state.selectedNodes
-                                val hasFile = sel.any { it.type == com.zerotoship.foldex.core.model.NodeType.FILE }
-                                val singleFile = sel.size == 1 && sel[0].type == com.zerotoship.foldex.core.model.NodeType.FILE
-                                val localFolders = sel.filter {
-                                    it.type == com.zerotoship.foldex.core.model.NodeType.DIRECTORY &&
-                                        it.uri is com.zerotoship.foldex.core.model.FileUri.Local
-                                }
+                        // タイトル (内部ストレージ名等) を埋もれさせないため、常時表示は検索と
+                        // オーバーフローの 2 つだけにする。表示モード切替・お気に入り・更新は ⋮ へ。
+                        IconButton(onClick = { viewModel.toggleSearch() }) {
+                            Icon(Icons.Default.Search, contentDescription = "検索")
+                        }
+                        var menuOpen by remember { mutableStateOf(false) }
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            val curUri = state.currentUri
+                            if (curUri != null) {
+                                val isFav = curUri.toStorageString() in state.favoriteUris
                                 DropdownMenuItem(
-                                    text = { Text("共有") },
-                                    leadingIcon = { Icon(Icons.Default.Share, null) },
-                                    enabled = hasFile,
-                                    onClick = { viewModel.shareSelected(); selMenuOpen = false },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("別のアプリで開く") },
-                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
-                                    enabled = singleFile,
-                                    onClick = { viewModel.openSelectedExternally(); selMenuOpen = false },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("プロパティ") },
-                                    leadingIcon = { Icon(Icons.Default.Info, null) },
-                                    enabled = sel.size == 1,
-                                    onClick = {
-                                        sel.firstOrNull()?.let { viewModel.showProperties(it) }
-                                        selMenuOpen = false
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("HOME に追加") },
-                                    leadingIcon = { Icon(Icons.Default.Home, null) },
-                                    enabled = localFolders.isNotEmpty(),
-                                    onClick = { viewModel.addSelectedFoldersToHome(); selMenuOpen = false },
-                                )
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    text = { Text("ZIP 圧縮") },
-                                    leadingIcon = { Icon(Icons.Default.FolderZip, null) },
-                                    onClick = { viewModel.requestZipCompress(); selMenuOpen = false },
-                                )
-                                val onlyZip = sel.singleOrNull()?.let {
-                                    it.type == com.zerotoship.foldex.core.model.NodeType.FILE && ZipOps.isLikelyZip(it.name)
-                                } == true
-                                DropdownMenuItem(
-                                    text = { Text("ZIP 解凍") },
-                                    leadingIcon = { Icon(Icons.Default.Archive, null) },
-                                    enabled = onlyZip,
-                                    onClick = { viewModel.requestZipExtract(); selMenuOpen = false },
-                                )
-                            }
-                        } else {
-                            // タイトル (内部ストレージ名等) を埋もれさせないため、常時表示は検索と
-                            // オーバーフローの 2 つだけにする。表示モード切替・お気に入り・更新は ⋮ へ。
-                            IconButton(onClick = { viewModel.toggleSearch() }) {
-                                Icon(Icons.Default.Search, contentDescription = "検索")
-                            }
-                            var menuOpen by remember { mutableStateOf(false) }
-                            IconButton(onClick = { menuOpen = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
-                            }
-                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                val curUri = state.currentUri
-                                if (curUri != null) {
-                                    val isFav = curUri.toStorageString() in state.favoriteUris
-                                    DropdownMenuItem(
-                                        text = { Text(if (isFav) "お気に入りから外す" else "お気に入りに追加") },
-                                        leadingIcon = {
-                                            Icon(if (isFav) Icons.Filled.Star else Icons.Outlined.StarBorder, null)
-                                        },
-                                        onClick = { viewModel.toggleFavorite(curUri); menuOpen = false },
-                                    )
-                                    HorizontalDivider()
-                                }
-                                ViewModeMenuItem(ViewMode.LIST, "リスト表示", Icons.AutoMirrored.Outlined.List, state.viewMode) {
-                                    viewModel.setViewMode(it); menuOpen = false
-                                }
-                                ViewModeMenuItem(ViewMode.DETAILED, "詳細表示", Icons.AutoMirrored.Outlined.ViewList, state.viewMode) {
-                                    viewModel.setViewMode(it); menuOpen = false
-                                }
-                                ViewModeMenuItem(ViewMode.GRID, "グリッド表示", Icons.Outlined.GridView, state.viewMode) {
-                                    viewModel.setViewMode(it); menuOpen = false
-                                }
-                                HorizontalDivider()
-                                // ソート
-                                Text(
-                                    "並び替え",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                )
-                                @Composable
-                                fun sortItem(label: String, by: com.zerotoship.foldex.core.model.SortBy) {
-                                    val selected = state.sortBy == by
-                                    val asc = state.sortAscending
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                label + if (selected) (if (asc) " ▲" else " ▼") else "",
-                                                color = if (selected) MaterialTheme.colorScheme.primary
-                                                        else MaterialTheme.colorScheme.onSurface,
-                                            )
-                                        },
-                                        leadingIcon = { Icon(Icons.Default.SortByAlpha, null) },
-                                        onClick = {
-                                            // 同じカラム再選択で昇降を反転、別カラム選択は昇順から。
-                                            val newAsc = if (selected) !asc else true
-                                            viewModel.setSort(by, newAsc); menuOpen = false
-                                        },
-                                    )
-                                }
-                                sortItem("名前", com.zerotoship.foldex.core.model.SortBy.NAME)
-                                sortItem("サイズ", com.zerotoship.foldex.core.model.SortBy.SIZE)
-                                sortItem("更新日時", com.zerotoship.foldex.core.model.SortBy.DATE)
-                                sortItem("種類", com.zerotoship.foldex.core.model.SortBy.TYPE)
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    text = { Text(if (state.showHidden) "隠しファイルを隠す" else "隠しファイルを表示") },
+                                    text = { Text(if (isFav) "お気に入りから外す" else "お気に入りに追加") },
                                     leadingIcon = {
-                                        Icon(
-                                            if (state.showHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            null,
+                                        Icon(if (isFav) Icons.Filled.Star else Icons.Outlined.StarBorder, null)
+                                    },
+                                    onClick = { viewModel.toggleFavorite(curUri); menuOpen = false },
+                                )
+                                HorizontalDivider()
+                            }
+                            ViewModeMenuItem(ViewMode.LIST, "リスト表示", Icons.AutoMirrored.Outlined.List, state.viewMode) {
+                                viewModel.setViewMode(it); menuOpen = false
+                            }
+                            ViewModeMenuItem(ViewMode.DETAILED, "詳細表示", Icons.AutoMirrored.Outlined.ViewList, state.viewMode) {
+                                viewModel.setViewMode(it); menuOpen = false
+                            }
+                            ViewModeMenuItem(ViewMode.GRID, "グリッド表示", Icons.Outlined.GridView, state.viewMode) {
+                                viewModel.setViewMode(it); menuOpen = false
+                            }
+                            HorizontalDivider()
+                            // ソート
+                            Text(
+                                "並び替え",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            )
+                            @Composable
+                            fun sortItem(label: String, by: com.zerotoship.foldex.core.model.SortBy) {
+                                val selected = state.sortBy == by
+                                val asc = state.sortAscending
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            label + if (selected) (if (asc) " ▲" else " ▼") else "",
+                                            color = if (selected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.onSurface,
                                         )
                                     },
-                                    onClick = { viewModel.toggleShowHidden(); menuOpen = false },
-                                )
-                                if (curUri != null) {
-                                    HorizontalDivider()
-                                    DropdownMenuItem(
-                                        text = { Text("使用量を分析") },
-                                        leadingIcon = { Icon(Icons.Outlined.PieChart, null) },
-                                        onClick = {
-                                            val name = state.breadcrumbs.lastOrNull()?.displayName ?: "使用量"
-                                            runCatching {
-                                                context.startActivity(
-                                                    com.zerotoship.foldex.ui.usage.DiskUsageActivity.intent(
-                                                        context, curUri.toStorageString(), name,
-                                                    ),
-                                                )
-                                            }
-                                            menuOpen = false
-                                        },
-                                    )
-                                }
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    text = { Text("更新") },
-                                    leadingIcon = { Icon(Icons.Outlined.Refresh, null) },
-                                    onClick = { viewModel.refresh(); menuOpen = false },
+                                    leadingIcon = { Icon(Icons.Default.SortByAlpha, null) },
+                                    onClick = {
+                                        // 同じカラム再選択で昇降を反転、別カラム選択は昇順から。
+                                        val newAsc = if (selected) !asc else true
+                                        viewModel.setSort(by, newAsc); menuOpen = false
+                                    },
                                 )
                             }
+                            sortItem("名前", com.zerotoship.foldex.core.model.SortBy.NAME)
+                            sortItem("サイズ", com.zerotoship.foldex.core.model.SortBy.SIZE)
+                            sortItem("更新日時", com.zerotoship.foldex.core.model.SortBy.DATE)
+                            sortItem("種類", com.zerotoship.foldex.core.model.SortBy.TYPE)
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(if (state.showHidden) "隠しファイルを隠す" else "隠しファイルを表示") },
+                                leadingIcon = {
+                                    Icon(
+                                        if (state.showHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        null,
+                                    )
+                                },
+                                onClick = { viewModel.toggleShowHidden(); menuOpen = false },
+                            )
+                            if (curUri != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("使用量を分析") },
+                                    leadingIcon = { Icon(Icons.Outlined.PieChart, null) },
+                                    onClick = {
+                                        val name = state.breadcrumbs.lastOrNull()?.displayName ?: "使用量"
+                                        runCatching {
+                                            context.startActivity(
+                                                com.zerotoship.foldex.ui.usage.DiskUsageActivity.intent(
+                                                    context, curUri.toStorageString(), name,
+                                                ),
+                                            )
+                                        }
+                                        menuOpen = false
+                                    },
+                                )
+                            }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("更新") },
+                                leadingIcon = { Icon(Icons.Outlined.Refresh, null) },
+                                onClick = { viewModel.refresh(); menuOpen = false },
+                            )
                         }
                     },
                 )
             }
         },
         bottomBar = {
-            if (state.canPaste && !state.isSelectionMode) {
+            if (state.isSelectionMode) {
+                val sel = state.selectedNodes
+                val hasFile = sel.any { it.type == com.zerotoship.foldex.core.model.NodeType.FILE }
+                val singleFile = sel.size == 1 && sel[0].type == com.zerotoship.foldex.core.model.NodeType.FILE
+                val localFolders = sel.filter {
+                    it.type == com.zerotoship.foldex.core.model.NodeType.DIRECTORY &&
+                        it.uri is FileUri.Local
+                }
+                val onlyZip = sel.singleOrNull()?.let {
+                    it.type == com.zerotoship.foldex.core.model.NodeType.FILE && ZipOps.isLikelyZip(it.name)
+                } == true
+
+                SelectionActionBar(
+                    selectedCount = sel.size,
+                    onSelectAll = { viewModel.selectAll() },
+                    onCopy = { viewModel.copySelected() },
+                    onCut = { viewModel.cutSelected() },
+                    onRename = { sel.singleOrNull()?.let { viewModel.requestRename(it) } },
+                    onDelete = { viewModel.requestDelete() },
+                ) { dismiss ->
+                    DropdownMenuItem(
+                        text = { Text("共有") },
+                        leadingIcon = { Icon(Icons.Default.Share, null) },
+                        enabled = hasFile,
+                        onClick = { viewModel.shareSelected(); dismiss() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("別のアプリで開く") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
+                        enabled = singleFile,
+                        onClick = { viewModel.openSelectedExternally(); dismiss() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("プロパティ") },
+                        leadingIcon = { Icon(Icons.Default.Info, null) },
+                        enabled = sel.size == 1,
+                        onClick = {
+                            sel.firstOrNull()?.let { viewModel.showProperties(it) }
+                            dismiss()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("HOME に追加") },
+                        leadingIcon = { Icon(Icons.Default.Home, null) },
+                        enabled = localFolders.isNotEmpty(),
+                        onClick = { viewModel.addSelectedFoldersToHome(); dismiss() },
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("ZIP 圧縮") },
+                        leadingIcon = { Icon(Icons.Default.FolderZip, null) },
+                        onClick = { viewModel.requestZipCompress(); dismiss() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("ZIP 解凍") },
+                        leadingIcon = { Icon(Icons.Default.Archive, null) },
+                        enabled = onlyZip,
+                        onClick = { viewModel.requestZipExtract(); dismiss() },
+                    )
+                }
+            } else if (state.canPaste) {
                 // BottomAppBar (Material3) は高さ 80dp + 余白で縦広いので、Surface + Row で
                 // コンパクト (約 48dp) に。背景は BottomAppBar 相当。
                 androidx.compose.material3.Surface(

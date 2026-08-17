@@ -35,15 +35,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentCut
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,6 +71,9 @@ import coil3.request.crossfade
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.ui.common.DeleteConfirmDialog
+import com.zerotoship.foldex.ui.common.SelectionActionBar
+import com.zerotoship.foldex.ui.filebrowser.FilePropertiesDialog
+import com.zerotoship.foldex.ui.filebrowser.RenameDialog
 import com.zerotoship.foldex.ui.viewer.ViewerActivity
 import java.io.File
 import java.util.Locale
@@ -148,10 +149,22 @@ fun MediaCollectionScreen(
         )
     }
 
+    // 名前変更・プロパティもファイル一覧と同じダイアログを使う。
+    state.renameNode?.let { node ->
+        RenameDialog(
+            node = node,
+            onConfirm = { viewModel.confirmRename(it) },
+            onDismiss = { viewModel.dismissRenameDialog() },
+        )
+    }
+    state.propertiesTarget?.let { node ->
+        FilePropertiesDialog(node = node, onDismiss = { viewModel.dismissProperties() })
+    }
+
     Scaffold(
         topBar = {
             val title = when {
-                state.isSelectionMode -> "${state.selectedUris.size} 件選択中"
+                state.isSelectionMode -> "${state.selectedUris.size}件選択中"
                 state.openedFolder != null -> File(state.openedFolder!!).name
                 state.kind == MediaKind.IMAGE -> "画像"
                 else -> "動画"
@@ -176,37 +189,44 @@ fun MediaCollectionScreen(
         },
         bottomBar = {
             if (state.isSelectionMode) {
-                BottomAppBar {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { viewModel.copySelected() }) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "コピー")
-                        }
-                        IconButton(onClick = { viewModel.cutSelected() }) {
-                            Icon(Icons.Default.ContentCut, contentDescription = "切り取り")
-                        }
-                        IconButton(onClick = { shareSelected(context, state) }) {
-                            Icon(Icons.Default.Share, contentDescription = "共有")
-                        }
-                        IconButton(onClick = { openSelectedExternally(context, state) }) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "別アプリで開く")
-                        }
-                        IconButton(onClick = {
-                            // 「場所を開く」: 選択した最初のアイテムの親フォルダを Files タブで開く。
-                            val firstPath = state.items.firstOrNull { it.contentUri.toString() in state.selectedUris }?.filePath
+                val singleFile = state.selectedUris.size == 1
+                SelectionActionBar(
+                    selectedCount = state.selectedUris.size,
+                    onSelectAll = { viewModel.selectAll() },
+                    onCopy = { viewModel.copySelected() },
+                    onCut = { viewModel.cutSelected() },
+                    onRename = { viewModel.requestRename() },
+                    onDelete = { viewModel.requestDelete() },
+                ) { dismiss ->
+                    DropdownMenuItem(
+                        text = { Text("共有") },
+                        leadingIcon = { Icon(Icons.Default.Share, null) },
+                        onClick = { shareSelected(context, state); dismiss() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("別のアプリで開く") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
+                        enabled = singleFile,
+                        onClick = { openSelectedExternally(context, state); dismiss() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("プロパティ") },
+                        leadingIcon = { Icon(Icons.Default.Info, null) },
+                        enabled = singleFile,
+                        onClick = { viewModel.showProperties(); dismiss() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("場所を開く") },
+                        leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
+                        onClick = {
+                            // 選択した最初のアイテムの親フォルダを Files タブで開く。
+                            val firstPath = state.items
+                                .firstOrNull { it.contentUri.toString() in state.selectedUris }?.filePath
                             val dir = firstPath?.let { File(it).parent }
                             if (dir != null) { onOpenLocalFolder(dir); viewModel.clearSelection() }
-                        }) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = "場所を開く")
-                        }
-                        IconButton(onClick = { viewModel.requestDelete() }) {
-                            Icon(Icons.Default.Delete, contentDescription = "削除",
-                                tint = MaterialTheme.colorScheme.error)
-                        }
-                    }
+                            dismiss()
+                        },
+                    )
                 }
             }
         },

@@ -5,6 +5,7 @@ package com.zerotoship.foldex.ui.media
 
 import android.content.ContentUris
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.lifecycle.SavedStateHandle
@@ -89,6 +90,96 @@ class MediaCollectionViewModel @Inject constructor(
 
     fun clearSelection() {
         _state.value = _state.value.copy(selectedUris = emptySet())
+    }
+
+    /** 表示中のものを全部選ぶ。既に全部選ばれていたら解除する。 */
+    fun selectAll() {
+        val visible = _state.value.visibleItems.map { it.contentUri.toString() }.toSet()
+        val cur = _state.value.selectedUris
+        _state.value = _state.value.copy(
+            selectedUris = if (cur.containsAll(visible)) emptySet() else visible,
+        )
+    }
+
+    // --- 名前変更 ---
+
+    /** 選択が 1 件のときだけ名前変更を受け付ける。 */
+    fun requestRename() {
+        val item = selectedItems().singleOrNull() ?: return
+        val node = item.toLocalFileNode()
+        if (node == null) {
+            _state.value = _state.value.copy(lastMessage = "実体パスが取得できないため変更できません")
+            return
+        }
+        // item は MediaStore のレコードを消すのに、node はダイアログの表示に使う。
+        _state.value = _state.value.copy(renameTarget = item, renameNode = node)
+    }
+
+    fun dismissRenameDialog() {
+        _state.value = _state.value.copy(renameTarget = null, renameNode = null)
+    }
+
+    /**
+     * 実体ファイルの名前を変えて、MediaStore を追従させる。
+     *
+     * MediaStore の DISPLAY_NAME を書き換える方法もあるが、端末やバージョンで実体が
+     * ついてこないことがある。このアプリは他の操作もすべて実体ファイルを直接触っているので、
+     * ここも「実体を rename → 古いレコードを消す → 新しいパスをスキャンさせる」で揃える。
+     */
+    fun confirmRename(newName: String) {
+        val item = _state.value.renameTarget ?: return
+        _state.value = _state.value.copy(renameTarget = null, renameNode = null)
+        val path = item.filePath
+        if (newName.isBlank() || path == null) return
+        val old = File(path)
+        if (newName == old.name) return
+
+        viewModelScope.launch {
+            val error = withContext(Dispatchers.IO) {
+                val dest = File(old.parentFile, newName)
+                when {
+                    !old.exists() -> "元のファイルが見つかりません"
+                    dest.exists() -> "「$newName」は既にあります"
+                    !runCatching { old.renameTo(dest) }.getOrDefault(false) -> "名前を変更できませんでした"
+                    else -> {
+                        // 実体はもう新しい名前になっているので、古いパスを指すレコードを消して
+                        // 新しいパスを登録し直す。消さないと一覧に幽霊が残る。
+                        runCatching { context.contentResolver.delete(item.contentUri, null, null) }
+                        runCatching {
+                            MediaScannerConnection.scanFile(
+                                context, arrayOf(dest.absolutePath), null,
+                            ) { _, _ -> reload() }
+                        }
+                        null
+                    }
+                }
+            }
+            reload()
+            _state.value = _state.value.copy(
+                selectedUris = emptySet(),
+                lastMessage = error ?: "「$newName」に変更しました",
+            )
+        }
+    }
+
+    // --- プロパティ ---
+
+    fun showProperties() {
+        val node = selectedItems().singleOrNull()?.toLocalFileNode()
+        if (node == null) {
+            _state.value = _state.value.copy(lastMessage = "実体パスが取得できないため表示できません")
+            return
+        }
+        _state.value = _state.value.copy(propertiesTarget = node)
+    }
+
+    fun dismissProperties() {
+        _state.value = _state.value.copy(propertiesTarget = null)
+    }
+
+    private fun selectedItems(): List<MediaItem> {
+        val keys = _state.value.selectedUris
+        return _state.value.items.filter { it.contentUri.toString() in keys }
     }
 
     /**
@@ -310,6 +401,12 @@ data class MediaCollectionState(
     val lastMessage: String? = null,
     /** 削除確認ダイアログを出しているか。 */
     val pendingDelete: Boolean = false,
+    /** 名前変更の対象。MediaStore のレコードを消すのに contentUri が要るので MediaItem で持つ。 */
+    val renameTarget: MediaItem? = null,
+    /** 名前変更ダイアログに渡す表示用 (null なら出さない)。 */
+    val renameNode: FileNode? = null,
+    /** プロパティダイアログの対象 (null なら出さない)。 */
+    val propertiesTarget: FileNode? = null,
     /** 設定「削除の行き先」。ファイルブラウザと同じ設定を見る。 */
     val deleteBehavior: DeleteBehavior = DeleteBehavior.TRASH,
     val confirmBeforeDelete: Boolean = true,

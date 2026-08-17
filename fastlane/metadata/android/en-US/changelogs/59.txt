@@ -1,0 +1,5 @@
+1.4.0 (Usability)
+- The selection action bar is now the same in the file list and the Images/Videos collections
+- It sits at the bottom, ordered: select all, copy, cut, rename, delete, more
+- Select all, rename and properties are now available in Images/Videos too
+- Share and "Open with" now live under "more" on both screens
