@@ -33,6 +33,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.automirrored.outlined.WrapText
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -40,7 +41,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.WrapText
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -585,7 +585,7 @@ private fun EditorBottomBar(
                 )
                 ToolbarButton(
                     onClick = onToggleWrap,
-                    icon = Icons.Outlined.WrapText,
+                    icon = Icons.AutoMirrored.Outlined.WrapText,
                     label = "折り返し",
                     active = wordWrap,
                     activeColor = active,

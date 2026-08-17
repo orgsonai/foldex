@@ -61,6 +61,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.Protocol
+import com.zerotoship.foldex.ui.common.setPlainText
+import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -482,7 +484,8 @@ private fun SftpExtraFields(
             modifier = Modifier.fillMaxWidth(),
         )
     } else {
-        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        val clipboard = androidx.compose.ui.platform.LocalClipboard.current
+        val clipboardScope = androidx.compose.runtime.rememberCoroutineScope()
         TextButton(onClick = onGenerateKey) {
             Text(if (state.sftpPublicKeyOpenSsh.isBlank()) "鍵を生成" else "鍵を再生成")
         }
@@ -500,7 +503,9 @@ private fun SftpExtraFields(
                 modifier = Modifier.fillMaxWidth(),
             )
             TextButton(onClick = {
-                clipboard.setText(androidx.compose.ui.text.AnnotatedString(state.sftpPublicKeyOpenSsh))
+                clipboardScope.launch {
+                    clipboard.setPlainText("SSH 公開鍵", state.sftpPublicKeyOpenSsh)
+                }
             }) { Text("公開鍵をコピー") }
         } else if (!state.isNew) {
             Text(

@@ -32,13 +32,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -198,7 +198,7 @@ fun MediaCollectionScreen(
                             Icon(Icons.Default.Share, contentDescription = "共有")
                         }
                         IconButton(onClick = { openSelectedExternally(context, state) }) {
-                            Icon(Icons.Default.OpenInNew, contentDescription = "別アプリで開く")
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "別アプリで開く")
                         }
                         IconButton(onClick = {
                             // 「場所を開く」: 選択した最初のアイテムの親フォルダを Files タブで開く。

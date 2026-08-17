@@ -23,8 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
@@ -511,7 +511,7 @@ private fun ViewerScreen(
                         }
                     }
                     IconButton(onClick = { onOpenExternallyId(displayedId) }) {
-                        Icon(Icons.Default.OpenInNew, contentDescription = "別のアプリで開く")
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "別のアプリで開く")
                     }
                 },
             )

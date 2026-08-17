@@ -35,7 +35,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CreateNewFolder
@@ -66,7 +68,6 @@ import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SortByAlpha
@@ -79,7 +80,6 @@ import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.PieChart
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -135,6 +135,7 @@ import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
+import com.zerotoship.foldex.ui.common.setPlainText
 import com.zerotoship.foldex.ui.components.FastScrollbar
 import com.zerotoship.foldex.ui.connections.ConnectionsViewModel
 import com.zerotoship.foldex.ui.viewer.ViewerActivity
@@ -373,7 +374,7 @@ fun FileBrowserScreen(
                         } else {
                             // タップ: パスを手動入力するダイアログを開く。
                             // 長押し: 現在の絶対パスをクリップボードへコピー。
-                            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                            val clipboard = androidx.compose.ui.platform.LocalClipboard.current
                             Text(
                                 text = state.breadcrumbs.lastOrNull()?.displayName ?: "Foldex",
                                 maxLines = 1,
@@ -383,8 +384,8 @@ fun FileBrowserScreen(
                                     onLongClick = {
                                         val path = viewModel.currentAbsolutePath()
                                         if (path != null) {
-                                            clipboard.setText(androidx.compose.ui.text.AnnotatedString(path))
                                             drawerScope.launch {
+                                                clipboard.setPlainText("パス", path)
                                                 snackbarHostState.showSnackbar("パスをコピーしました: $path")
                                             }
                                         }
@@ -453,7 +454,7 @@ fun FileBrowserScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text("別のアプリで開く") },
-                                    leadingIcon = { Icon(Icons.Default.OpenInNew, null) },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
                                     enabled = singleFile,
                                     onClick = { viewModel.openSelectedExternally(); selMenuOpen = false },
                                 )
@@ -514,7 +515,7 @@ fun FileBrowserScreen(
                                 ViewModeMenuItem(ViewMode.LIST, "リスト表示", Icons.AutoMirrored.Outlined.List, state.viewMode) {
                                     viewModel.setViewMode(it); menuOpen = false
                                 }
-                                ViewModeMenuItem(ViewMode.DETAILED, "詳細表示", Icons.Outlined.ViewList, state.viewMode) {
+                                ViewModeMenuItem(ViewMode.DETAILED, "詳細表示", Icons.AutoMirrored.Outlined.ViewList, state.viewMode) {
                                     viewModel.setViewMode(it); menuOpen = false
                                 }
                                 ViewModeMenuItem(ViewMode.GRID, "グリッド表示", Icons.Outlined.GridView, state.viewMode) {

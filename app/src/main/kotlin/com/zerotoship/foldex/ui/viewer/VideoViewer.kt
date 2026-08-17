@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -152,7 +152,7 @@ private fun UnsupportedOverlay(modifier: Modifier, message: String, onOpen: () -
             )
             Spacer(Modifier.height(20.dp))
             Button(onClick = onOpen) {
-                Icon(Icons.Default.OpenInNew, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
                 Spacer(Modifier.height(0.dp))
                 Text("  別のアプリで開く")
             }

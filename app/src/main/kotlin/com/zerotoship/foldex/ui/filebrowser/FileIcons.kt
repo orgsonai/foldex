@@ -9,12 +9,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
@@ -59,7 +59,7 @@ fun iconFor(category: Category): ImageVector = when (category) {
     Category.VIDEO -> Icons.Outlined.Movie
     Category.AUDIO -> Icons.Outlined.Album
     Category.TEXT -> Icons.Outlined.Code
-    Category.MARKDOWN -> Icons.Outlined.Article
+    Category.MARKDOWN -> Icons.AutoMirrored.Outlined.Article
     Category.HTML -> Icons.Outlined.Language
     Category.PDF -> Icons.Outlined.PictureAsPdf
     Category.ARCHIVE -> Icons.Outlined.Archive
