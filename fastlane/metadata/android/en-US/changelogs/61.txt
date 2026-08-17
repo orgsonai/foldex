@@ -1,0 +1,4 @@
+1.5.1
+- Groundwork for showing Foldex in English on non-Japanese devices
+- The shared parts are translated first: selection bar, delete confirmation, rename, properties
+- Remaining screens will follow. Nothing changes on Japanese devices

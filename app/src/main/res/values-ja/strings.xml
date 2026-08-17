@@ -23,4 +23,153 @@
     <string name="shortcut_servers_long">ローカルサーバーを開く</string>
     <string name="shortcut_trash_short">ゴミ箱</string>
     <string name="shortcut_trash_long">ゴミ箱を開く</string>
+
+    <!-- ============================================================
+         画面をまたいで使う操作。用途を限定する語を入れないこと。
+         ============================================================ -->
+    <string name="action_cancel">キャンセル</string>
+    <string name="action_close">閉じる</string>
+    <string name="action_delete">削除</string>
+    <string name="action_copy">コピー</string>
+    <string name="action_cut">切り取り</string>
+    <string name="action_rename">名前変更</string>
+    <string name="action_select_all">全選択</string>
+    <string name="action_more">その他</string>
+    <string name="action_share">共有</string>
+    <string name="action_open_with">別のアプリで開く</string>
+    <string name="action_properties">プロパティ</string>
+
+    <!-- 選択中の操作バー -->
+    <string name="sel_open_location">場所を開く</string>
+    <string name="sel_add_to_home">HOME に追加</string>
+    <string name="sel_zip_compress">ZIP 圧縮</string>
+    <string name="sel_zip_extract">ZIP 解凍</string>
+
+    <!-- 削除の確認 -->
+    <string name="delete_title">削除の確認</string>
+    <string name="delete_single_name">「%1$s」</string>
+    <plurals name="delete_item_count">
+        <item quantity="other">%d件のアイテム</item>
+    </plurals>
+    <string name="delete_ask_question">%1$sをどうしますか？</string>
+    <string name="delete_to_trash_option">ゴミ箱へ移動 (後で復元できます)</string>
+    <string name="delete_permanently_option">完全に削除 (元に戻せません)</string>
+    <string name="delete_no_trash_support">%1$sを削除しますか？\nこの場所はゴミ箱に対応していないため、完全に削除されます。</string>
+    <string name="delete_to_trash_question">%1$sをゴミ箱に移動しますか？</string>
+    <string name="delete_permanent_question">%1$sを削除しますか？\nこの操作は元に戻せません。</string>
+    <string name="delete_confirm_trash">ゴミ箱へ移動</string>
+
+    <!-- 名前の変更 -->
+    <string name="rename_title">名前を変更</string>
+    <string name="rename_field_label">名前</string>
+    <string name="rename_confirm">変更</string>
+
+    <!-- ============================================================
+         プロパティ
+         ============================================================ -->
+    <string name="prop_title">プロパティ</string>
+    <string name="prop_compute_hashes">ハッシュを計算 (MD5 / SHA-256)</string>
+    <string name="prop_computing">計算中…</string>
+    <string name="prop_hash_section">ハッシュ</string>
+    <string name="prop_long_press_hint">長押しで値をコピーできます</string>
+    <string name="prop_copied">%1$sをコピーしました</string>
+
+    <!-- 基本 -->
+    <string name="prop_name">名前</string>
+    <string name="prop_kind">種類</string>
+    <string name="prop_location">場所</string>
+    <string name="prop_size">サイズ</string>
+    <string name="prop_extension">拡張子</string>
+    <string name="prop_mime_type">MIME タイプ</string>
+    <string name="prop_modified">更新日時</string>
+    <string name="prop_permissions">権限</string>
+    <string name="prop_attributes">属性</string>
+    <string name="prop_hidden">隠しファイル</string>
+    <string name="prop_size_value">%1$s  (%2$s B)</string>
+    <string name="prop_extension_value">.%1$s</string>
+
+    <!-- 種類 -->
+    <string name="kind_folder">フォルダ</string>
+    <string name="kind_image">画像</string>
+    <string name="kind_video">動画</string>
+    <string name="kind_audio">音声</string>
+    <string name="kind_text">テキスト</string>
+    <string name="kind_markdown">Markdown</string>
+    <string name="kind_html">HTML</string>
+    <string name="kind_pdf">PDF</string>
+    <string name="kind_archive">書庫</string>
+    <string name="kind_office">Office 文書</string>
+    <string name="kind_apk">Android アプリ</string>
+    <string name="kind_iso">ディスクイメージ</string>
+    <string name="kind_binary">バイナリ</string>
+    <string name="kind_file">ファイル</string>
+
+    <!-- 権限 -->
+    <string name="perm_read">読み取り</string>
+    <string name="perm_write">書き込み</string>
+    <string name="perm_execute">実行</string>
+    <string name="perm_none">権限なし</string>
+    <string name="perm_value">%1$s (%2$s)</string>
+    <string name="perm_separator">"・"</string>
+
+    <!-- フォルダの中身 -->
+    <string name="prop_folder_section">中身</string>
+    <string name="prop_file_count">ファイル数</string>
+    <string name="prop_folder_count">フォルダ数</string>
+    <string name="prop_total_size">合計サイズ</string>
+    <plurals name="prop_item_count_value">
+        <item quantity="other">%d 個</item>
+    </plurals>
+
+    <!-- 画像 -->
+    <string name="prop_image_section">画像</string>
+    <string name="prop_resolution">解像度</string>
+    <string name="prop_pixels">画素数</string>
+    <string name="prop_aspect_ratio">縦横比</string>
+    <string name="prop_format">形式</string>
+    <string name="prop_resolution_value">%1$d × %2$d</string>
+    <string name="prop_megapixels">約 %1$.1f メガピクセル</string>
+    <string name="prop_pixels_value">%1$s ピクセル</string>
+
+    <!-- EXIF -->
+    <string name="prop_exif_section">撮影情報 (EXIF)</string>
+    <string name="prop_date_taken">撮影日時</string>
+    <string name="prop_camera">カメラ</string>
+    <string name="prop_lens">レンズ</string>
+    <string name="prop_aperture">F 値</string>
+    <string name="prop_shutter">シャッター速度</string>
+    <string name="prop_iso">ISO 感度</string>
+    <string name="prop_focal_length">焦点距離</string>
+    <string name="prop_orientation">向き</string>
+    <string name="prop_location_taken">撮影場所</string>
+    <string name="prop_aperture_value">f/%1$s</string>
+    <string name="prop_focal_length_value">%1$.0f mm</string>
+    <string name="prop_shutter_fraction">1/%1$d 秒</string>
+    <string name="prop_shutter_seconds">%1$.1f 秒</string>
+    <string name="prop_unavailable">-</string>
+
+    <!-- 向き -->
+    <string name="orientation_normal">そのまま</string>
+    <string name="orientation_rotate_90">右に 90° 回転</string>
+    <string name="orientation_rotate_180">180° 回転</string>
+    <string name="orientation_rotate_270">左に 90° 回転</string>
+    <string name="orientation_flip_horizontal">左右反転</string>
+    <string name="orientation_flip_vertical">上下反転</string>
+
+    <!-- メディア -->
+    <string name="prop_media_section">メディア情報</string>
+    <string name="prop_duration">再生時間</string>
+    <string name="prop_frame_rate">フレームレート</string>
+    <string name="prop_bitrate">ビットレート</string>
+    <string name="prop_track_title">タイトル</string>
+    <string name="prop_artist">アーティスト</string>
+    <string name="prop_album">アルバム</string>
+    <string name="prop_frame_rate_value">%1$.2f fps</string>
+    <string name="prop_bitrate_value">%1$s kbps</string>
+
+    <!-- ハッシュ -->
+    <string name="prop_md5">MD5</string>
+    <string name="prop_sha256">SHA-256</string>
+    <string name="prop_hash_failed_label">ハッシュ</string>
+    <string name="prop_hash_failed">計算できませんでした (%1$s)</string>
 </resources>

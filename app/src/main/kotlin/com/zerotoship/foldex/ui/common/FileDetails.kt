@@ -3,9 +3,11 @@
 
 package com.zerotoship.foldex.ui.common
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import androidx.exifinterface.media.ExifInterface
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
@@ -41,28 +43,54 @@ data class DetailSection(val title: String?, val rows: List<DetailRow>)
  *
  * 実体を読む処理はローカルファイルにしか効かない。リモート (SMB/SFTP 等) や SAF は
  * ダウンロードが要るので、ここでは基本情報だけにしている。
+ *
+ * 見出しやラベルは `strings.xml` から引くので [Context] を受け取る。数値そのものの
+ * 変換 ([megaPixels] や [shutterText] 等) は言語に依存しないので Context を取らない。
  */
 object FileDetails {
 
     /** ダイアログを開いた瞬間に出せる情報。 */
-    fun basicSections(node: FileNode): List<DetailSection> {
+    fun basicSections(context: Context, node: FileNode): List<DetailSection> {
         val rows = buildList {
-            add(DetailRow("名前", node.name))
-            add(DetailRow("種類", typeLabel(node)))
-            add(DetailRow("場所", locationOf(node), mono = true))
+            add(DetailRow(context.getString(R.string.prop_name), node.name))
+            add(DetailRow(context.getString(R.string.prop_kind), typeLabel(context, node)))
+            add(DetailRow(context.getString(R.string.prop_location), locationOf(node), mono = true))
             if (node.type == NodeType.FILE) {
-                add(DetailRow("サイズ", "${formatBytes(node.size)}  (${"%,d".format(node.size)} B)"))
+                add(
+                    DetailRow(
+                        context.getString(R.string.prop_size),
+                        context.getString(
+                            R.string.prop_size_value,
+                            formatBytes(node.size),
+                            "%,d".format(node.size),
+                        ),
+                    ),
+                )
                 val ext = node.extension
                 if (ext.isNotEmpty() && ext != node.name) {
-                    add(DetailRow("拡張子", ".${ext.lowercase()}"))
+                    add(
+                        DetailRow(
+                            context.getString(R.string.prop_extension),
+                            context.getString(R.string.prop_extension_value, ext.lowercase()),
+                        ),
+                    )
                 }
-                mimeOf(node)?.let { add(DetailRow("MIME タイプ", it, mono = true)) }
+                mimeOf(node)?.let {
+                    add(DetailRow(context.getString(R.string.prop_mime_type), it, mono = true))
+                }
             }
             node.lastModified?.toEpochMilliseconds()?.let {
-                add(DetailRow("更新日時", TIMESTAMP.format(Date(it))))
+                add(DetailRow(context.getString(R.string.prop_modified), timestamp().format(Date(it))))
             }
-            add(DetailRow("権限", permissionText(node)))
-            if (node.isHidden) add(DetailRow("属性", "隠しファイル"))
+            add(DetailRow(context.getString(R.string.prop_permissions), permissionText(context, node)))
+            if (node.isHidden) {
+                add(
+                    DetailRow(
+                        context.getString(R.string.prop_attributes),
+                        context.getString(R.string.prop_hidden),
+                    ),
+                )
+            }
         }
         return listOf(DetailSection(null, rows))
     }
@@ -71,58 +99,68 @@ object FileDetails {
      * 実体を読まないと分からない情報。ローカル以外や、読めなかった場合は空を返す。
      * 呼び出し側はこれを基本情報の後ろに足すだけでよい。
      */
-    suspend fun loadExtraSections(node: FileNode): List<DetailSection> = withContext(Dispatchers.IO) {
-        val path = (node.uri as? FileUri.Local)?.absolutePath ?: return@withContext emptyList()
-        val file = File(path)
-        if (!file.exists()) return@withContext emptyList()
+    suspend fun loadExtraSections(context: Context, node: FileNode): List<DetailSection> =
+        withContext(Dispatchers.IO) {
+            val path = (node.uri as? FileUri.Local)?.absolutePath ?: return@withContext emptyList()
+            val file = File(path)
+            if (!file.exists()) return@withContext emptyList()
 
-        try {
-            when {
-                node.type == NodeType.DIRECTORY -> listOfNotNull(folderSection(file))
-                else -> when (FileTypeRegistry.categorize(node.name)) {
-                    Category.IMAGE -> listOfNotNull(imageSection(path), exifSection(path))
-                    Category.VIDEO, Category.AUDIO -> listOfNotNull(mediaSection(path))
-                    else -> emptyList()
+            try {
+                when {
+                    node.type == NodeType.DIRECTORY -> listOfNotNull(folderSection(context, file))
+                    else -> when (FileTypeRegistry.categorize(node.name)) {
+                        Category.IMAGE -> listOfNotNull(
+                            imageSection(context, path),
+                            exifSection(context, path),
+                        )
+                        Category.VIDEO, Category.AUDIO -> listOfNotNull(mediaSection(context, path))
+                        else -> emptyList()
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptyList()
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            emptyList()
         }
-    }
 
     /** ハッシュは大きいファイルだと重いので、ユーザーが押したときだけ計算する。 */
-    suspend fun computeHashes(node: FileNode): List<DetailRow> = withContext(Dispatchers.IO) {
-        val path = (node.uri as? FileUri.Local)?.absolutePath ?: return@withContext emptyList()
-        val file = File(path)
-        if (!file.isFile) return@withContext emptyList()
-        try {
-            val md5 = MessageDigest.getInstance("MD5")
-            val sha = MessageDigest.getInstance("SHA-256")
-            file.inputStream().use { input ->
-                val buf = ByteArray(1 shl 16)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n <= 0) break
-                    md5.update(buf, 0, n)
-                    sha.update(buf, 0, n)
+    suspend fun computeHashes(context: Context, node: FileNode): List<DetailRow> =
+        withContext(Dispatchers.IO) {
+            val path = (node.uri as? FileUri.Local)?.absolutePath ?: return@withContext emptyList()
+            val file = File(path)
+            if (!file.isFile) return@withContext emptyList()
+            try {
+                val md5 = MessageDigest.getInstance("MD5")
+                val sha = MessageDigest.getInstance("SHA-256")
+                file.inputStream().use { input ->
+                    val buf = ByteArray(1 shl 16)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n <= 0) break
+                        md5.update(buf, 0, n)
+                        sha.update(buf, 0, n)
+                    }
                 }
+                listOf(
+                    DetailRow(context.getString(R.string.prop_md5), md5.digest().toHex(), mono = true),
+                    DetailRow(context.getString(R.string.prop_sha256), sha.digest().toHex(), mono = true),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                listOf(
+                    DetailRow(
+                        context.getString(R.string.prop_hash_failed_label),
+                        context.getString(R.string.prop_hash_failed, e.javaClass.simpleName),
+                    ),
+                )
             }
-            listOf(
-                DetailRow("MD5", md5.digest().toHex(), mono = true),
-                DetailRow("SHA-256", sha.digest().toHex(), mono = true),
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            listOf(DetailRow("ハッシュ", "計算できませんでした (${e.javaClass.simpleName})"))
         }
-    }
 
     // --- 個別のセクション ---
 
-    private fun folderSection(dir: File): DetailSection? {
+    private fun folderSection(context: Context, dir: File): DetailSection {
         var files = 0
         var dirs = 0
         var bytes = 0L
@@ -133,83 +171,112 @@ object FileDetails {
                 else -> { files++; bytes += it.length() }
             }
         }
+        fun count(n: Int) = context.resources.getQuantityString(R.plurals.prop_item_count_value, n, n)
         return DetailSection(
-            "中身",
+            context.getString(R.string.prop_folder_section),
             listOf(
-                DetailRow("ファイル数", "%,d 個".format(files)),
-                DetailRow("フォルダ数", "%,d 個".format(dirs)),
-                DetailRow("合計サイズ", "${formatBytes(bytes)}  (${"%,d".format(bytes)} B)"),
+                DetailRow(context.getString(R.string.prop_file_count), count(files)),
+                DetailRow(context.getString(R.string.prop_folder_count), count(dirs)),
+                DetailRow(
+                    context.getString(R.string.prop_total_size),
+                    context.getString(R.string.prop_size_value, formatBytes(bytes), "%,d".format(bytes)),
+                ),
             ),
         )
     }
 
-    private fun imageSection(path: String): DetailSection? {
+    private fun imageSection(context: Context, path: String): DetailSection? {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, opts)
         val w = opts.outWidth
         val h = opts.outHeight
         if (w <= 0 || h <= 0) return null
         val rows = buildList {
-            add(DetailRow("解像度", "$w × $h"))
-            add(DetailRow("画素数", megaPixels(w, h)))
-            aspectRatio(w, h)?.let { add(DetailRow("縦横比", it)) }
-            opts.outMimeType?.let { add(DetailRow("形式", it, mono = true)) }
+            add(
+                DetailRow(
+                    context.getString(R.string.prop_resolution),
+                    context.getString(R.string.prop_resolution_value, w, h),
+                ),
+            )
+            add(DetailRow(context.getString(R.string.prop_pixels), megaPixels(context, w, h)))
+            aspectRatio(w, h)?.let {
+                add(DetailRow(context.getString(R.string.prop_aspect_ratio), it))
+            }
+            opts.outMimeType?.let {
+                add(DetailRow(context.getString(R.string.prop_format), it, mono = true))
+            }
         }
-        return DetailSection("画像", rows)
+        return DetailSection(context.getString(R.string.prop_image_section), rows)
     }
 
-    private fun exifSection(path: String): DetailSection? {
+    private fun exifSection(context: Context, path: String): DetailSection? {
         val exif = runCatching { ExifInterface(path) }.getOrNull() ?: return null
         val rows = buildList {
+            fun row(labelRes: Int, value: String, mono: Boolean = false) =
+                add(DetailRow(context.getString(labelRes), value, mono))
+
             exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
-                ?.let { add(DetailRow("撮影日時", it)) }
+                ?.let { row(R.string.prop_date_taken, it) }
             val make = exif.getAttribute(ExifInterface.TAG_MAKE)?.trim()
             val model = exif.getAttribute(ExifInterface.TAG_MODEL)?.trim()
             listOfNotNull(make, model).filter { it.isNotEmpty() }
                 .takeIf { it.isNotEmpty() }
-                ?.let { add(DetailRow("カメラ", it.joinToString(" "))) }
+                ?.let { row(R.string.prop_camera, it.joinToString(" ")) }
             exif.getAttribute(ExifInterface.TAG_LENS_MODEL)?.takeIf { it.isNotBlank() }
-                ?.let { add(DetailRow("レンズ", it)) }
+                ?.let { row(R.string.prop_lens, it) }
             exif.getAttribute(ExifInterface.TAG_F_NUMBER)?.takeIf { it.isNotBlank() }
-                ?.let { add(DetailRow("F 値", "f/$it")) }
+                ?.let { row(R.string.prop_aperture, context.getString(R.string.prop_aperture_value, it)) }
             exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)?.toDoubleOrNull()
-                ?.let { add(DetailRow("シャッター速度", shutterText(it))) }
+                ?.let { row(R.string.prop_shutter, shutterText(context, it)) }
             exif.getAttribute(ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY)?.takeIf { it.isNotBlank() }
-                ?.let { add(DetailRow("ISO 感度", it)) }
+                ?.let { row(R.string.prop_iso, it) }
             exif.getAttribute(ExifInterface.TAG_FOCAL_LENGTH)?.let { raw ->
-                fractionToDouble(raw)?.let { add(DetailRow("焦点距離", "%.0f mm".format(it))) }
+                fractionToDouble(raw)?.let {
+                    row(R.string.prop_focal_length, context.getString(R.string.prop_focal_length_value, it))
+                }
             }
-            orientationText(exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED))
-                ?.let { add(DetailRow("向き", it)) }
+            orientationRes(
+                exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED),
+            )?.let { row(R.string.prop_orientation, context.getString(it)) }
             exif.latLong?.let { (lat, lon) ->
-                add(DetailRow("撮影場所", "%.6f, %.6f".format(lat, lon), mono = true))
+                row(R.string.prop_location_taken, "%.6f, %.6f".format(lat, lon), mono = true)
             }
         }
-        return if (rows.isEmpty()) null else DetailSection("撮影情報 (EXIF)", rows)
+        return if (rows.isEmpty()) null else DetailSection(context.getString(R.string.prop_exif_section), rows)
     }
 
-    private fun mediaSection(path: String): DetailSection? {
+    private fun mediaSection(context: Context, path: String): DetailSection? {
         val mmr = MediaMetadataRetriever()
         return try {
             mmr.setDataSource(path)
             fun meta(key: Int): String? = mmr.extractMetadata(key)?.takeIf { it.isNotBlank() }
             val rows = buildList {
+                fun row(labelRes: Int, value: String, mono: Boolean = false) =
+                    add(DetailRow(context.getString(labelRes), value, mono))
+
                 meta(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
-                    ?.let { add(DetailRow("再生時間", formatDuration(it))) }
-                val w = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                val h = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                if (w != null && h != null) add(DetailRow("解像度", "$w × $h"))
+                    ?.let { row(R.string.prop_duration, formatDuration(it)) }
+                val w = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                val h = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                if (w != null && h != null) {
+                    row(R.string.prop_resolution, context.getString(R.string.prop_resolution_value, w, h))
+                }
                 meta(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
-                    ?.let { add(DetailRow("フレームレート", "%.2f fps".format(it))) }
+                    ?.let { row(R.string.prop_frame_rate, context.getString(R.string.prop_frame_rate_value, it)) }
                 meta(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull()
-                    ?.let { add(DetailRow("ビットレート", "%,d kbps".format(it / 1000))) }
+                    ?.let {
+                        row(
+                            R.string.prop_bitrate,
+                            context.getString(R.string.prop_bitrate_value, "%,d".format(it / 1000)),
+                        )
+                    }
                 meta(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
-                    ?.let { add(DetailRow("形式", it, mono = true)) }
-                meta(MediaMetadataRetriever.METADATA_KEY_TITLE)?.let { add(DetailRow("タイトル", it)) }
-                meta(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.let { add(DetailRow("アーティスト", it)) }
-                meta(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.let { add(DetailRow("アルバム", it)) }
+                    ?.let { row(R.string.prop_format, it, mono = true) }
+                meta(MediaMetadataRetriever.METADATA_KEY_TITLE)?.let { row(R.string.prop_track_title, it) }
+                meta(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.let { row(R.string.prop_artist, it) }
+                meta(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.let { row(R.string.prop_album, it) }
             }
-            if (rows.isEmpty()) null else DetailSection("メディア情報", rows)
+            if (rows.isEmpty()) null else DetailSection(context.getString(R.string.prop_media_section), rows)
         } catch (_: Exception) {
             null
         } finally {
@@ -219,23 +286,24 @@ object FileDetails {
 
     // --- 表示用の細かい変換 ---
 
-    private fun typeLabel(node: FileNode): String {
-        if (node.type == NodeType.DIRECTORY) return "フォルダ"
-        return when (FileTypeRegistry.categorize(node.name)) {
-            Category.IMAGE -> "画像"
-            Category.VIDEO -> "動画"
-            Category.AUDIO -> "音声"
-            Category.TEXT -> "テキスト"
-            Category.MARKDOWN -> "Markdown"
-            Category.HTML -> "HTML"
-            Category.PDF -> "PDF"
-            Category.ARCHIVE -> "書庫"
-            Category.OFFICE -> "Office 文書"
-            Category.APK -> "Android アプリ"
-            Category.ISO -> "ディスクイメージ"
-            Category.BINARY -> "バイナリ"
-            Category.UNKNOWN -> "ファイル"
+    private fun typeLabel(context: Context, node: FileNode): String {
+        if (node.type == NodeType.DIRECTORY) return context.getString(R.string.kind_folder)
+        val res = when (FileTypeRegistry.categorize(node.name)) {
+            Category.IMAGE -> R.string.kind_image
+            Category.VIDEO -> R.string.kind_video
+            Category.AUDIO -> R.string.kind_audio
+            Category.TEXT -> R.string.kind_text
+            Category.MARKDOWN -> R.string.kind_markdown
+            Category.HTML -> R.string.kind_html
+            Category.PDF -> R.string.kind_pdf
+            Category.ARCHIVE -> R.string.kind_archive
+            Category.OFFICE -> R.string.kind_office
+            Category.APK -> R.string.kind_apk
+            Category.ISO -> R.string.kind_iso
+            Category.BINARY -> R.string.kind_binary
+            Category.UNKNOWN -> R.string.kind_file
         }
+        return context.getString(res)
     }
 
     private fun locationOf(node: FileNode): String = when (val u = node.uri) {
@@ -248,27 +316,42 @@ object FileDetails {
         node.mimeType?.takeIf { it.isNotBlank() } ?: FileTypeRegistry.mimeTypeFor(node.name)
 
     /** `rwx` 表記。読めるだけなら `r--`。 */
-    private fun permissionText(node: FileNode): String {
+    private fun permissionText(context: Context, node: FileNode): String {
         val p = node.permissions
-        val s = buildString {
+        val flags = buildString {
             append(if (p.readable) 'r' else '-')
             append(if (p.writable) 'w' else '-')
             append(if (p.executable) 'x' else '-')
         }
         val words = buildList {
-            if (p.readable) add("読み取り")
-            if (p.writable) add("書き込み")
-            if (p.executable) add("実行")
+            if (p.readable) add(context.getString(R.string.perm_read))
+            if (p.writable) add(context.getString(R.string.perm_write))
+            if (p.executable) add(context.getString(R.string.perm_execute))
         }
-        return if (words.isEmpty()) "$s (権限なし)" else "$s (${words.joinToString("・")})"
+        val detail = if (words.isEmpty()) {
+            context.getString(R.string.perm_none)
+        } else {
+            words.joinToString(context.getString(R.string.perm_separator))
+        }
+        return context.getString(R.string.perm_value, flags, detail)
     }
 
-    internal fun megaPixels(w: Int, h: Int): String {
-        val mp = w.toLong() * h / 1_000_000.0
-        return if (mp >= 1) "約 %.1f メガピクセル".format(mp) else "%,d ピクセル".format(w.toLong() * h)
+    /** 総画素数。言語に依存しない。 */
+    internal fun pixelCount(w: Int, h: Int): Long = w.toLong() * h
+
+    /** メガピクセル値。1.0 以上ならメガピクセル表記にする。 */
+    internal fun megaPixelValue(w: Int, h: Int): Double = pixelCount(w, h) / 1_000_000.0
+
+    private fun megaPixels(context: Context, w: Int, h: Int): String {
+        val mp = megaPixelValue(w, h)
+        return if (mp >= 1) {
+            context.getString(R.string.prop_megapixels, mp)
+        } else {
+            context.getString(R.string.prop_pixels_value, "%,d".format(pixelCount(w, h)))
+        }
     }
 
-    /** よくある比 (16:9 等) に丸めて出す。当てはまらなければ約分した比。 */
+    /** よくある比 (16:9 等) に丸めて出す。当てはまらなければ約分した比。言語に依存しない。 */
     internal fun aspectRatio(w: Int, h: Int): String? {
         if (w <= 0 || h <= 0) return null
         val ratio = w.toDouble() / h
@@ -283,14 +366,25 @@ object FileDetails {
 
     private tailrec fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
 
-    /** 1 秒未満は 1/125 のような分数で出す (カメラの表記に合わせる)。 */
-    internal fun shutterText(seconds: Double): String = when {
-        seconds <= 0 -> "-"
-        seconds >= 1 -> "%.1f 秒".format(seconds)
-        else -> "1/${Math.round(1 / seconds)} 秒"
+    /**
+     * 1 秒未満のシャッター速度を `1/N` の N に直す (カメラの表記に合わせる)。
+     * 1 秒以上や 0 以下は分数にしないので null。言語に依存しない。
+     */
+    internal fun shutterDenominator(seconds: Double): Int? =
+        if (seconds <= 0 || seconds >= 1) null else Math.round(1 / seconds).toInt()
+
+    private fun shutterText(context: Context, seconds: Double): String {
+        shutterDenominator(seconds)?.let {
+            return context.getString(R.string.prop_shutter_fraction, it)
+        }
+        return if (seconds <= 0) {
+            context.getString(R.string.prop_unavailable)
+        } else {
+            context.getString(R.string.prop_shutter_seconds, seconds)
+        }
     }
 
-    /** EXIF は "24/1" のような分数で入っていることがある。 */
+    /** EXIF は "24/1" のような分数で入っていることがある。言語に依存しない。 */
     internal fun fractionToDouble(raw: String): Double? {
         val parts = raw.split('/')
         return when (parts.size) {
@@ -304,18 +398,19 @@ object FileDetails {
         }
     }
 
-    private fun orientationText(value: Int): String? = when (value) {
-        ExifInterface.ORIENTATION_NORMAL -> "そのまま"
-        ExifInterface.ORIENTATION_ROTATE_90 -> "右に 90° 回転"
-        ExifInterface.ORIENTATION_ROTATE_180 -> "180° 回転"
-        ExifInterface.ORIENTATION_ROTATE_270 -> "左に 90° 回転"
-        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> "左右反転"
-        ExifInterface.ORIENTATION_FLIP_VERTICAL -> "上下反転"
+    private fun orientationRes(value: Int): Int? = when (value) {
+        ExifInterface.ORIENTATION_NORMAL -> R.string.orientation_normal
+        ExifInterface.ORIENTATION_ROTATE_90 -> R.string.orientation_rotate_90
+        ExifInterface.ORIENTATION_ROTATE_180 -> R.string.orientation_rotate_180
+        ExifInterface.ORIENTATION_ROTATE_270 -> R.string.orientation_rotate_270
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> R.string.orientation_flip_horizontal
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> R.string.orientation_flip_vertical
         else -> null
     }
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
+    /** `1:23:45` 形式。区切りは言語を問わず同じなのでリソース化しない。 */
     fun formatDuration(ms: Long): String {
         val total = ms / 1000
         val h = total / 3600
@@ -324,6 +419,7 @@ object FileDetails {
         return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
     }
 
+    /** `1.5 GB` 形式。単位記号は各国共通なのでリソース化しない。 */
     fun formatBytes(b: Long): String {
         if (b <= 0) return "0 B"
         val u = arrayOf("B", "KB", "MB", "GB", "TB")
@@ -333,6 +429,5 @@ object FileDetails {
         return String.format(Locale.US, if (i == 0) "%.0f %s" else "%.1f %s", v, u[i])
     }
 
-    private val TIMESTAMP: SimpleDateFormat
-        get() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    private fun timestamp() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 }

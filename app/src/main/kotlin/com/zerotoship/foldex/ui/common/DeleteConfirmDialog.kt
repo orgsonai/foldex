@@ -23,7 +23,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.DeleteBehavior
 
 /**
@@ -60,39 +63,54 @@ fun DeleteConfirmDialog(
             },
         )
     }
-    val countText = if (count == 1 && singleName != null) "「$singleName」" else "${count}件のアイテム"
+    val countText = if (count == 1 && singleName != null) {
+        stringResource(R.string.delete_single_name, singleName)
+    } else {
+        pluralStringResource(R.plurals.delete_item_count, count, count)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("削除の確認") },
+        title = { Text(stringResource(R.string.delete_title)) },
         text = {
             Column {
                 when {
                     canChoose -> {
-                        Text("${countText}をどうしますか？")
+                        Text(stringResource(R.string.delete_ask_question, countText))
                         Spacer(Modifier.height(8.dp))
                         Column(Modifier.selectableGroup()) {
-                            DestinationRow("ゴミ箱へ移動 (後で復元できます)", chosen == DeleteBehavior.TRASH) {
-                                chosen = DeleteBehavior.TRASH
-                            }
-                            DestinationRow("完全に削除 (元に戻せません)", chosen == DeleteBehavior.PERMANENT) {
-                                chosen = DeleteBehavior.PERMANENT
-                            }
+                            DestinationRow(
+                                stringResource(R.string.delete_to_trash_option),
+                                chosen == DeleteBehavior.TRASH,
+                            ) { chosen = DeleteBehavior.TRASH }
+                            DestinationRow(
+                                stringResource(R.string.delete_permanently_option),
+                                chosen == DeleteBehavior.PERMANENT,
+                            ) { chosen = DeleteBehavior.PERMANENT }
                         }
                     }
                     !trashSupported ->
-                        Text("${countText}を削除しますか？\nこの場所はゴミ箱に対応していないため、完全に削除されます。")
-                    chosen == DeleteBehavior.TRASH -> Text("${countText}をゴミ箱に移動しますか？")
-                    else -> Text("${countText}を削除しますか？\nこの操作は元に戻せません。")
+                        Text(stringResource(R.string.delete_no_trash_support, countText))
+                    chosen == DeleteBehavior.TRASH ->
+                        Text(stringResource(R.string.delete_to_trash_question, countText))
+                    else ->
+                        Text(stringResource(R.string.delete_permanent_question, countText))
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(chosen) }) {
-                Text(if (chosen == DeleteBehavior.TRASH) "ゴミ箱へ移動" else "削除")
+                Text(
+                    stringResource(
+                        if (chosen == DeleteBehavior.TRASH) R.string.delete_confirm_trash
+                        else R.string.action_delete,
+                    ),
+                )
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
     )
 }
 

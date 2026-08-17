@@ -5,6 +5,7 @@ package com.zerotoship.foldex.ui.common
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -42,14 +43,28 @@ class FileDetailsTest {
     // --- 画素数 ---
 
     @Test
-    fun `100万画素以上はメガピクセル表記`() {
-        assertEquals("約 12.0 メガピクセル", FileDetails.megaPixels(4000, 3000))
-        assertEquals("約 2.1 メガピクセル", FileDetails.megaPixels(1920, 1080))
+    fun `総画素数は幅かける高さ`() {
+        assertEquals(12_000_000L, FileDetails.pixelCount(4000, 3000))
+        assertEquals(10_000L, FileDetails.pixelCount(100, 100))
     }
 
     @Test
-    fun `小さい画像は実数で出す`() {
-        assertEquals("10,000 ピクセル", FileDetails.megaPixels(100, 100))
+    fun `メガピクセル値に直せる`() {
+        assertEquals(12.0, FileDetails.megaPixelValue(4000, 3000), 1e-9)
+        assertEquals(2.0736, FileDetails.megaPixelValue(1920, 1080), 1e-9)
+    }
+
+    @Test
+    fun `100万画素未満は1を下回る`() {
+        // 1.0 未満のときは「N ピクセル」表記に切り替える判断に使う。
+        assertTrue(FileDetails.megaPixelValue(100, 100) < 1.0)
+        assertTrue(FileDetails.megaPixelValue(1920, 1080) >= 1.0)
+    }
+
+    @Test
+    fun `大きな画像でも桁あふれしない`() {
+        // Int どうしの掛け算だと 3 万 x 3 万でオーバーフローする。
+        assertEquals(900_000_000L, FileDetails.pixelCount(30_000, 30_000))
     }
 
     // --- 縦横比 ---
@@ -76,21 +91,21 @@ class FileDetailsTest {
     // --- シャッター速度 ---
 
     @Test
-    fun `1秒未満はカメラと同じ分数表記`() {
-        assertEquals("1/125 秒", FileDetails.shutterText(1.0 / 125))
-        assertEquals("1/60 秒", FileDetails.shutterText(1.0 / 60))
+    fun `1秒未満はカメラと同じ分数になる`() {
+        assertEquals(125, FileDetails.shutterDenominator(1.0 / 125))
+        assertEquals(60, FileDetails.shutterDenominator(1.0 / 60))
     }
 
     @Test
-    fun `1秒以上は小数の秒`() {
-        assertEquals("1.0 秒", FileDetails.shutterText(1.0))
-        assertEquals("2.5 秒", FileDetails.shutterText(2.5))
+    fun `1秒以上は分数にしない`() {
+        assertNull(FileDetails.shutterDenominator(1.0))
+        assertNull(FileDetails.shutterDenominator(2.5))
     }
 
     @Test
-    fun `0以下は横棒`() {
-        assertEquals("-", FileDetails.shutterText(0.0))
-        assertEquals("-", FileDetails.shutterText(-1.0))
+    fun `0以下は分数にしない`() {
+        assertNull(FileDetails.shutterDenominator(0.0))
+        assertNull(FileDetails.shutterDenominator(-1.0))
     }
 
     // --- EXIF の分数 ---

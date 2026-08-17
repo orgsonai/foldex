@@ -31,8 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
@@ -53,7 +55,7 @@ fun FilePropertiesDialog(node: FileNode, onDismiss: () -> Unit) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
-    val basic = remember(node) { FileDetails.basicSections(node) }
+    val basic = remember(node, context) { FileDetails.basicSections(context, node) }
     var extra by remember(node) { mutableStateOf<List<DetailSection>>(emptyList()) }
     var loadingExtra by remember(node) { mutableStateOf(false) }
     var hashRows by remember(node) { mutableStateOf<List<DetailRow>>(emptyList()) }
@@ -65,13 +67,13 @@ fun FilePropertiesDialog(node: FileNode, onDismiss: () -> Unit) {
     LaunchedEffect(node) {
         if (!isLocal) return@LaunchedEffect
         loadingExtra = true
-        extra = FileDetails.loadExtraSections(node)
+        extra = FileDetails.loadExtraSections(context, node)
         loadingExtra = false
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("プロパティ") },
+        title = { Text(stringResource(R.string.prop_title)) },
         text = {
             Column(
                 Modifier
@@ -102,7 +104,7 @@ fun FilePropertiesDialog(node: FileNode, onDismiss: () -> Unit) {
                 if (hashRows.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "ハッシュ",
+                        stringResource(R.string.prop_hash_section),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -118,25 +120,25 @@ fun FilePropertiesDialog(node: FileNode, onDismiss: () -> Unit) {
                         onClick = {
                             hashing = true
                             scope.launch {
-                                hashRows = FileDetails.computeHashes(node)
+                                hashRows = FileDetails.computeHashes(context, node)
                                 hashing = false
                             }
                         },
                         enabled = !hashing,
                     ) {
-                        Text(if (hashing) "計算中…" else "ハッシュを計算 (MD5 / SHA-256)")
+                        Text(stringResource(if (hashing) R.string.prop_computing else R.string.prop_compute_hashes))
                     }
                 }
 
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "長押しで値をコピーできます",
+                    stringResource(R.string.prop_long_press_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
     )
 }
 
@@ -170,6 +172,6 @@ private fun copy(
 ) {
     scope.launch {
         clipboard.setPlainText(row.label, row.value)
-        Toast.makeText(context, "${row.label}をコピーしました", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.prop_copied, row.label), Toast.LENGTH_SHORT).show()
     }
 }

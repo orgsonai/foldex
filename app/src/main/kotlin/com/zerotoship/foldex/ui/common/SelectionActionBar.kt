@@ -27,7 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.zerotoship.foldex.R
 
 /**
  * 長押しで選択モードに入ったときに出る操作バー。
@@ -60,26 +62,26 @@ fun SelectionActionBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onSelectAll) {
-                Icon(Icons.Default.SelectAll, contentDescription = "全選択")
+                Icon(Icons.Default.SelectAll, contentDescription = stringResource(R.string.action_select_all))
             }
             IconButton(onClick = onCopy) {
-                Icon(Icons.Default.ContentCopy, contentDescription = "コピー")
+                Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.action_copy))
             }
             IconButton(onClick = onCut) {
-                Icon(Icons.Default.ContentCut, contentDescription = "切り取り")
+                Icon(Icons.Default.ContentCut, contentDescription = stringResource(R.string.action_cut))
             }
             IconButton(onClick = onRename, enabled = selectedCount == 1) {
-                Icon(Icons.Default.DriveFileRenameOutline, contentDescription = "名前変更")
+                Icon(Icons.Default.DriveFileRenameOutline, contentDescription = stringResource(R.string.action_rename))
             }
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,
-                    contentDescription = "削除",
+                    contentDescription = stringResource(R.string.action_delete),
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
             IconButton(onClick = { menuOpen = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "その他")
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.action_more))
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     overflow { menuOpen = false }
                 }

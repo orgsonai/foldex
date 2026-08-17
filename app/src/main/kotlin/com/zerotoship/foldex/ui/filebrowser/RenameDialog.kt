@@ -16,10 +16,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.FileNode
 
 @Composable
@@ -44,12 +46,12 @@ fun RenameDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("名前を変更") },
+        title = { Text(stringResource(R.string.rename_title)) },
         text = {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                label = { Text("名前") },
+                label = { Text(stringResource(R.string.rename_field_label)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onConfirm(text.text) }),
@@ -60,10 +62,10 @@ fun RenameDialog(
             TextButton(
                 onClick = { onConfirm(text.text) },
                 enabled = text.text.isNotBlank() && text.text != node.name,
-            ) { Text("変更") }
+            ) { Text(stringResource(R.string.rename_confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 

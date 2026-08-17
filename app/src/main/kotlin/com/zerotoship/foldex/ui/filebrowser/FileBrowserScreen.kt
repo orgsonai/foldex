@@ -120,12 +120,14 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
@@ -533,19 +535,19 @@ fun FileBrowserScreen(
                     onDelete = { viewModel.requestDelete() },
                 ) { dismiss ->
                     DropdownMenuItem(
-                        text = { Text("共有") },
+                        text = { Text(stringResource(R.string.action_share)) },
                         leadingIcon = { Icon(Icons.Default.Share, null) },
                         enabled = hasFile,
                         onClick = { viewModel.shareSelected(); dismiss() },
                     )
                     DropdownMenuItem(
-                        text = { Text("別のアプリで開く") },
+                        text = { Text(stringResource(R.string.action_open_with)) },
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
                         enabled = singleFile,
                         onClick = { viewModel.openSelectedExternally(); dismiss() },
                     )
                     DropdownMenuItem(
-                        text = { Text("プロパティ") },
+                        text = { Text(stringResource(R.string.action_properties)) },
                         leadingIcon = { Icon(Icons.Default.Info, null) },
                         enabled = sel.size == 1,
                         onClick = {
@@ -554,19 +556,19 @@ fun FileBrowserScreen(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("HOME に追加") },
+                        text = { Text(stringResource(R.string.sel_add_to_home)) },
                         leadingIcon = { Icon(Icons.Default.Home, null) },
                         enabled = localFolders.isNotEmpty(),
                         onClick = { viewModel.addSelectedFoldersToHome(); dismiss() },
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("ZIP 圧縮") },
+                        text = { Text(stringResource(R.string.sel_zip_compress)) },
                         leadingIcon = { Icon(Icons.Default.FolderZip, null) },
                         onClick = { viewModel.requestZipCompress(); dismiss() },
                     )
                     DropdownMenuItem(
-                        text = { Text("ZIP 解凍") },
+                        text = { Text(stringResource(R.string.sel_zip_extract)) },
                         leadingIcon = { Icon(Icons.Default.Archive, null) },
                         enabled = onlyZip,
                         onClick = { viewModel.requestZipExtract(); dismiss() },

@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -68,6 +69,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.ui.common.DeleteConfirmDialog
@@ -199,24 +201,24 @@ fun MediaCollectionScreen(
                     onDelete = { viewModel.requestDelete() },
                 ) { dismiss ->
                     DropdownMenuItem(
-                        text = { Text("共有") },
+                        text = { Text(stringResource(R.string.action_share)) },
                         leadingIcon = { Icon(Icons.Default.Share, null) },
                         onClick = { shareSelected(context, state); dismiss() },
                     )
                     DropdownMenuItem(
-                        text = { Text("別のアプリで開く") },
+                        text = { Text(stringResource(R.string.action_open_with)) },
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
                         enabled = singleFile,
                         onClick = { openSelectedExternally(context, state); dismiss() },
                     )
                     DropdownMenuItem(
-                        text = { Text("プロパティ") },
+                        text = { Text(stringResource(R.string.action_properties)) },
                         leadingIcon = { Icon(Icons.Default.Info, null) },
                         enabled = singleFile,
                         onClick = { viewModel.showProperties(); dismiss() },
                     )
                     DropdownMenuItem(
-                        text = { Text("場所を開く") },
+                        text = { Text(stringResource(R.string.sel_open_location)) },
                         leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
                         onClick = {
                             // 選択した最初のアイテムの親フォルダを Files タブで開く。

@@ -23,4 +23,157 @@
     <string name="shortcut_servers_long">Local servers</string>
     <string name="shortcut_trash_short">Trash</string>
     <string name="shortcut_trash_long">Open trash</string>
+
+    <!-- ============================================================
+         Shared actions. Used across several screens; keep them generic.
+         ============================================================ -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_cut">Cut</string>
+    <string name="action_rename">Rename</string>
+    <string name="action_select_all">Select all</string>
+    <string name="action_more">More</string>
+    <string name="action_share">Share</string>
+    <string name="action_open_with">Open with…</string>
+    <string name="action_properties">Properties</string>
+
+    <!-- Selection action bar -->
+    <string name="sel_open_location">Open location</string>
+    <string name="sel_add_to_home">Add to Home</string>
+    <string name="sel_zip_compress">Compress to ZIP</string>
+    <string name="sel_zip_extract">Extract ZIP</string>
+
+    <!-- Delete confirmation -->
+    <string name="delete_title">Confirm delete</string>
+    <string name="delete_single_name">“%1$s”</string>
+    <plurals name="delete_item_count">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <string name="delete_ask_question">What should happen to %1$s?</string>
+    <string name="delete_to_trash_option">Move to trash (can be restored later)</string>
+    <string name="delete_permanently_option">Delete permanently (cannot be undone)</string>
+    <string name="delete_no_trash_support">Delete %1$s?\nThis location has no trash, so it will be deleted permanently.</string>
+    <string name="delete_to_trash_question">Move %1$s to the trash?</string>
+    <string name="delete_permanent_question">Delete %1$s?\nThis cannot be undone.</string>
+    <string name="delete_confirm_trash">Move to trash</string>
+
+    <!-- Rename -->
+    <string name="rename_title">Rename</string>
+    <string name="rename_field_label">Name</string>
+    <string name="rename_confirm">Rename</string>
+
+    <!-- ============================================================
+         Properties dialog
+         ============================================================ -->
+    <string name="prop_title">Properties</string>
+    <string name="prop_compute_hashes">Compute hashes (MD5 / SHA-256)</string>
+    <string name="prop_computing">Computing…</string>
+    <string name="prop_hash_section">Hashes</string>
+    <string name="prop_long_press_hint">Long-press a row to copy its value</string>
+    <string name="prop_copied">Copied %1$s</string>
+
+    <!-- Basic rows -->
+    <string name="prop_name">Name</string>
+    <string name="prop_kind">Kind</string>
+    <string name="prop_location">Location</string>
+    <string name="prop_size">Size</string>
+    <string name="prop_extension">Extension</string>
+    <string name="prop_mime_type">MIME type</string>
+    <string name="prop_modified">Modified</string>
+    <string name="prop_permissions">Permissions</string>
+    <string name="prop_attributes">Attributes</string>
+    <string name="prop_hidden">Hidden</string>
+    <!-- "1.2 MB  (1,234,567 B)" -->
+    <string name="prop_size_value">%1$s  (%2$s B)</string>
+    <string name="prop_extension_value">.%1$s</string>
+
+    <!-- Kind labels -->
+    <string name="kind_folder">Folder</string>
+    <string name="kind_image">Image</string>
+    <string name="kind_video">Video</string>
+    <string name="kind_audio">Audio</string>
+    <string name="kind_text">Text</string>
+    <string name="kind_markdown">Markdown</string>
+    <string name="kind_html">HTML</string>
+    <string name="kind_pdf">PDF</string>
+    <string name="kind_archive">Archive</string>
+    <string name="kind_office">Office document</string>
+    <string name="kind_apk">Android app</string>
+    <string name="kind_iso">Disc image</string>
+    <string name="kind_binary">Binary</string>
+    <string name="kind_file">File</string>
+
+    <!-- Permissions -->
+    <string name="perm_read">read</string>
+    <string name="perm_write">write</string>
+    <string name="perm_execute">execute</string>
+    <string name="perm_none">no access</string>
+    <!-- "rw- (read, write)" -->
+    <string name="perm_value">%1$s (%2$s)</string>
+    <string name="perm_separator">", "</string>
+
+    <!-- Folder contents -->
+    <string name="prop_folder_section">Contents</string>
+    <string name="prop_file_count">Files</string>
+    <string name="prop_folder_count">Folders</string>
+    <string name="prop_total_size">Total size</string>
+    <plurals name="prop_item_count_value">
+        <item quantity="one">%d</item>
+        <item quantity="other">%d</item>
+    </plurals>
+
+    <!-- Image -->
+    <string name="prop_image_section">Image</string>
+    <string name="prop_resolution">Resolution</string>
+    <string name="prop_pixels">Pixel count</string>
+    <string name="prop_aspect_ratio">Aspect ratio</string>
+    <string name="prop_format">Format</string>
+    <string name="prop_resolution_value">%1$d × %2$d</string>
+    <string name="prop_megapixels">About %1$.1f megapixels</string>
+    <string name="prop_pixels_value">%1$s pixels</string>
+
+    <!-- EXIF -->
+    <string name="prop_exif_section">Shot info (EXIF)</string>
+    <string name="prop_date_taken">Date taken</string>
+    <string name="prop_camera">Camera</string>
+    <string name="prop_lens">Lens</string>
+    <string name="prop_aperture">Aperture</string>
+    <string name="prop_shutter">Shutter speed</string>
+    <string name="prop_iso">ISO</string>
+    <string name="prop_focal_length">Focal length</string>
+    <string name="prop_orientation">Orientation</string>
+    <string name="prop_location_taken">Location</string>
+    <string name="prop_aperture_value">f/%1$s</string>
+    <string name="prop_focal_length_value">%1$.0f mm</string>
+    <string name="prop_shutter_fraction">1/%1$d s</string>
+    <string name="prop_shutter_seconds">%1$.1f s</string>
+    <string name="prop_unavailable">-</string>
+
+    <!-- Orientation values -->
+    <string name="orientation_normal">As shot</string>
+    <string name="orientation_rotate_90">Rotated 90° right</string>
+    <string name="orientation_rotate_180">Rotated 180°</string>
+    <string name="orientation_rotate_270">Rotated 90° left</string>
+    <string name="orientation_flip_horizontal">Flipped horizontally</string>
+    <string name="orientation_flip_vertical">Flipped vertically</string>
+
+    <!-- Media -->
+    <string name="prop_media_section">Media info</string>
+    <string name="prop_duration">Duration</string>
+    <string name="prop_frame_rate">Frame rate</string>
+    <string name="prop_bitrate">Bit rate</string>
+    <string name="prop_track_title">Title</string>
+    <string name="prop_artist">Artist</string>
+    <string name="prop_album">Album</string>
+    <string name="prop_frame_rate_value">%1$.2f fps</string>
+    <string name="prop_bitrate_value">%1$s kbps</string>
+
+    <!-- Hashes -->
+    <string name="prop_md5">MD5</string>
+    <string name="prop_sha256">SHA-256</string>
+    <string name="prop_hash_failed_label">Hashes</string>
+    <string name="prop_hash_failed">Could not be computed (%1$s)</string>
 </resources>
