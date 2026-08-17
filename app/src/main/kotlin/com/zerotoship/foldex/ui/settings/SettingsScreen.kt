@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -47,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.core.data.update.UpdateStatus
 import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
@@ -74,6 +77,8 @@ fun SettingsScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var pendingClear by remember { mutableStateOf(false) }
+    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
+    val showUpdateDialog by viewModel.showUpdateDialog.collectAsStateWithLifecycle()
 
     // 画面を開いたタイミングと、クリア完了直後にサイズを再計測する。
     LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
@@ -342,12 +347,79 @@ fun SettingsScreen(
             SettingsSectionHeader("詳細")
             SettingRow(title = "バージョン", subtitle = versionName)
             SettingRow(
+                title = "更新を確認",
+                subtitle = when (val s = updateStatus) {
+                    is UpdateStatus.Idle -> "GitHub の最新リリースと比べます"
+                    is UpdateStatus.Checking -> "確認中…"
+                    is UpdateStatus.UpToDate -> "最新版です (${s.current})"
+                    is UpdateStatus.Available -> "${s.latest} が公開されています"
+                    is UpdateStatus.Failed -> "確認できませんでした: ${s.reason}"
+                },
+                onClick = {
+                    // 既に見つかっているときは、押し直しで変更履歴をもう一度出す。
+                    if (updateStatus is UpdateStatus.Available) {
+                        viewModel.reopenUpdateDialog()
+                    } else {
+                        viewModel.checkForUpdate()
+                    }
+                },
+                control = {
+                    if (updateStatus is UpdateStatus.Checking) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                },
+            )
+            SettingRow(
                 title = "ライセンス",
                 subtitle = "MIT © 2026 Zero to Ship",
                 onClick = onOpenLicenses,
             )
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    // 新しいバージョンが見つかったとき、変更履歴を出して入手先へ誘導する。
+    // アプリ内でダウンロード/インストールはしない (入手経路はユーザーが選ぶ)。
+    val available = updateStatus as? UpdateStatus.Available
+    if (showUpdateDialog && available != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdateDialog() },
+            title = { Text("新しいバージョン ${available.latest}") },
+            text = {
+                Column(
+                    Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        "今お使いのバージョンは $versionName です。",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (available.notes.isNotBlank()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("変更履歴", style = MaterialTheme.typography.labelMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(available.notes, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissUpdateDialog()
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(available.pageUrl),
+                            ),
+                        )
+                    }
+                }) { Text("リリースページを開く") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissUpdateDialog() }) { Text("閉じる") }
+            },
+        )
     }
 
     if (pendingClear) {

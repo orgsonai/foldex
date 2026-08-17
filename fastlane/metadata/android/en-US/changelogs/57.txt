@@ -1,0 +1,4 @@
+1.3.0 (New)
+- Added "Check for updates" to Settings
+- It tells you whether a newer release exists, with its changelog and a link to the release page
+- It only checks when you tap it: no background requests and no in-app install

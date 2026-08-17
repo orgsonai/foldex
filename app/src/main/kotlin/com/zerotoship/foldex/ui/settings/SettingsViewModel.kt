@@ -8,6 +8,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
+import com.zerotoship.foldex.core.data.update.UpdateChecker
+import com.zerotoship.foldex.core.data.update.UpdateStatus
 import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
@@ -29,10 +31,46 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repo: SettingsRepository,
+    private val updateChecker: UpdateChecker,
 ) : ViewModel() {
 
     val settings: StateFlow<UserSettings> = repo.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UserSettings())
+
+    /** 更新確認の状態。ユーザーが設定画面で押したときだけ動かす (自動確認はしない)。 */
+    private val _updateStatus = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
+    val updateStatus: StateFlow<UpdateStatus> = _updateStatus.asStateFlow()
+
+    /**
+     * 変更履歴ダイアログを出すか。
+     * 閉じても [updateStatus] は残すので、設定の行には「1.3.0 が公開されています」が出たままになる。
+     */
+    private val _showUpdateDialog = MutableStateFlow(false)
+    val showUpdateDialog: StateFlow<Boolean> = _showUpdateDialog.asStateFlow()
+
+    fun checkForUpdate() {
+        // 連打で何本も走らせない。
+        if (_updateStatus.value is UpdateStatus.Checking) return
+        _updateStatus.value = UpdateStatus.Checking
+        viewModelScope.launch {
+            val current = runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull().orEmpty()
+            val result = updateChecker.check(current)
+            _updateStatus.value = result
+            _showUpdateDialog.value = result is UpdateStatus.Available
+        }
+    }
+
+    /** 更新が見つかったあと、行の表示だけ残してダイアログを閉じる。 */
+    fun dismissUpdateDialog() {
+        _showUpdateDialog.value = false
+    }
+
+    /** 行をもう一度押したとき、既に見つかっている更新のダイアログを開き直す。 */
+    fun reopenUpdateDialog() {
+        if (_updateStatus.value is UpdateStatus.Available) _showUpdateDialog.value = true
+    }
 
     /** 内部/外部キャッシュの合計バイト数。設定画面が開かれたら refresh する。 */
     private val _cacheBytes = MutableStateFlow<Long?>(null)
