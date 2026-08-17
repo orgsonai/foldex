@@ -176,4 +176,130 @@
     <string name="prop_sha256">SHA-256</string>
     <string name="prop_hash_failed_label">Hashes</string>
     <string name="prop_hash_failed">Could not be computed (%1$s)</string>
+
+    <!-- ============================================================
+         Settings screen
+         ============================================================ -->
+    <string name="settings_title">Settings</string>
+
+    <string name="settings_section_display">Appearance</string>
+    <string name="settings_section_behavior">Behaviour</string>
+    <string name="settings_section_notifications">Notifications</string>
+    <string name="settings_section_trash">Trash</string>
+    <string name="settings_section_sync">Sync</string>
+    <string name="settings_section_files">Files</string>
+    <string name="settings_section_logs">Logs</string>
+    <string name="settings_section_storage">Storage</string>
+    <string name="settings_section_advanced">About</string>
+
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_sub">Light or dark across the app</string>
+    <string name="settings_material_you">Material You</string>
+    <string name="settings_material_you_sub">Colours taken from your wallpaper (Android 12+)</string>
+    <string name="settings_accent">Accent colour</string>
+    <string name="settings_accent_sub_locked">Turn Material You off to choose one</string>
+    <string name="settings_accent_sub">Used for highlights and tiles (surfaces stay grey)</string>
+    <string name="settings_ext_badge">Extension badge</string>
+    <string name="settings_ext_badge_sub">Show the extension after the file name</string>
+
+    <string name="settings_confirm_delete">Confirm before deleting</string>
+    <string name="settings_confirm_delete_sub">Show a dialog every time you delete</string>
+    <string name="settings_undo_timeout">Undo bar duration</string>
+    <string name="settings_undo_timeout_sub">How long the undo bar stays on screen</string>
+    <plurals name="settings_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+
+    <string name="settings_notify_fileop">Notify when copy/move finishes</string>
+    <string name="settings_notify_fileop_sub">Tell me when a paste has completed</string>
+    <string name="settings_notify_extract">Notify when extraction finishes</string>
+    <string name="settings_notify_extract_sub">Tell me when a ZIP has been extracted</string>
+    <string name="settings_notify_sync">Notify when sync finishes</string>
+    <string name="settings_notify_sync_sub">Tell me when a background sync has completed</string>
+
+    <string name="settings_delete_behavior">Where deletions go</string>
+    <string name="settings_delete_behavior_sub">What happens when you delete a file</string>
+    <string name="settings_trash_retention">Keep trash for</string>
+    <string name="settings_trash_retention_sub">Anything older is deleted permanently</string>
+    <plurals name="settings_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <string name="settings_forever">Forever</string>
+    <string name="settings_open_trash">Open trash</string>
+    <string name="settings_open_trash_sub">Restore or permanently delete removed files</string>
+
+    <string name="settings_sync_backup">Back up before sync deletes</string>
+    <string name="settings_sync_backup_sub">Keep copies of files a delete-sync would remove</string>
+    <string name="settings_sync_generations">Copies to keep</string>
+    <string name="settings_sync_generations_sub">The oldest is removed automatically</string>
+    <plurals name="settings_generations">
+        <item quantity="one">%d copy</item>
+        <item quantity="other">%d copies</item>
+    </plurals>
+    <string name="settings_sync_threshold">Back up without asking up to</string>
+    <string name="settings_sync_threshold_sub">Larger files follow the setting below</string>
+    <string name="settings_sync_over_threshold">Files over the limit</string>
+    <string name="settings_sync_over_threshold_sub">In the background, “Ask” takes the safe route and backs up</string>
+    <string name="settings_queue_timeout_enabled">Give up on queued syncs</string>
+    <string name="settings_queue_timeout_enabled_sub">Cancel syncs left waiting for Wi-Fi after a while</string>
+    <string name="settings_queue_timeout">Give up after</string>
+    <string name="settings_queue_timeout_sub">Cancelled if it has not started by then</string>
+    <plurals name="settings_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="settings_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+
+    <string name="settings_file_types">How files open</string>
+    <string name="settings_file_types_sub">Built-in viewer, ask every time, or another app — per extension</string>
+    <string name="settings_editor_limit">Editable text size limit</string>
+    <string name="settings_editor_limit_sub">Larger text opens read-only (tune this to your device)</string>
+    <string name="settings_unlimited">No limit</string>
+
+    <string name="settings_logs">Activity log</string>
+    <string name="settings_logs_sub">View and share logs for sync, server start-up and crashes</string>
+
+    <string name="settings_clear_cache">Clear cache</string>
+    <string name="settings_clear_cache_sub">Removes temporary files from the viewer and ZIP handling</string>
+    <string name="settings_cache_in_use">\nCurrently using: %1$s</string>
+    <string name="settings_clear_cache_body">Deletes the download cache used by the built-in viewer and the temporary files from compressing and extracting. Servers, sync jobs, connections, the trash and sync backups are kept.</string>
+    <string name="settings_clear">Clear</string>
+    <string name="settings_freed">Freed %1$s</string>
+
+    <string name="settings_version">Version</string>
+    <string name="settings_license">Licence</string>
+    <string name="settings_license_sub">MIT © 2026 Zero to Ship</string>
+
+    <string name="settings_check_update">Check for updates</string>
+    <string name="settings_update_idle">Compares against the latest release on GitHub</string>
+    <string name="settings_update_checking">Checking…</string>
+    <string name="settings_update_up_to_date">Up to date (%1$s)</string>
+    <string name="settings_update_available">%1$s is available</string>
+    <string name="settings_update_failed">Could not check: %1$s</string>
+    <string name="settings_update_dialog_title">Version %1$s is available</string>
+    <string name="settings_update_dialog_current">You are on %1$s.</string>
+    <string name="settings_update_changelog">What\'s new</string>
+    <string name="settings_update_open_page">Open release page</string>
+
+    <!-- Enum labels -->
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="color_green">Green</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_teal">Teal</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_rose">Rose</string>
+    <string name="delete_behavior_trash">To trash</string>
+    <string name="delete_behavior_permanent">Permanent</string>
+    <string name="delete_behavior_ask">Ask</string>
+    <string name="sync_backup_ask">Ask</string>
+    <string name="sync_backup_backup">Back up</string>
+    <string name="sync_backup_skip">Do not back up</string>
 </resources>

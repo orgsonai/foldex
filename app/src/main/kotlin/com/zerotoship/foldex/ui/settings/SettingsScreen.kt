@@ -46,9 +46,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.annotation.StringRes
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.update.UpdateStatus
 import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
@@ -85,7 +89,7 @@ fun SettingsScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { TopAppBar(title = { Text("設定") }) },
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_title)) }) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -93,32 +97,35 @@ fun SettingsScreen(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
         ) {
-            SettingsSectionHeader("表示")
-            SettingRow(title = "テーマ", subtitle = "アプリ全体の明暗", wide = true) {
+            SettingsSectionHeader(stringResource(R.string.settings_section_display))
+            SettingRow(
+                title = stringResource(R.string.settings_theme),
+                subtitle = stringResource(R.string.settings_theme_sub),
+                wide = true,
+            ) {
                 ChipsControl {
                     ThemeMode.entries.forEach { mode ->
                         FilterChip(
                             selected = settings.themeMode == mode,
                             onClick = { viewModel.setThemeMode(mode) },
-                            label = { Text(mode.displayName) },
+                            label = { Text(stringResource(mode.labelRes)) },
                         )
                     }
                 }
             }
             SwitchRow(
-                title = "Material You",
-                subtitle = "壁紙に合わせた配色 (Android 12 以上)",
+                title = stringResource(R.string.settings_material_you),
+                subtitle = stringResource(R.string.settings_material_you_sub),
                 checked = settings.dynamicColor,
                 onCheckedChange = viewModel::setDynamicColor,
             )
             // Material You OFF のときだけアクセント配色を選べる (ON のときは壁紙が優先)。
             SettingRow(
-                title = "アクセントカラー",
-                subtitle = if (settings.dynamicColor) {
-                    "Material You を OFF にすると選べます"
-                } else {
-                    "primary とタイルの色 (地の面はグレーのまま)"
-                },
+                title = stringResource(R.string.settings_accent),
+                subtitle = stringResource(
+                    if (settings.dynamicColor) R.string.settings_accent_sub_locked
+                    else R.string.settings_accent_sub,
+                ),
                 wide = true,
             ) {
                 ChipsControl {
@@ -135,112 +142,133 @@ fun SettingsScreen(
                                         .background(appColorThemeSwatch(theme)),
                                 )
                             },
-                            label = { Text(theme.displayName) },
+                            label = { Text(stringResource(theme.labelRes)) },
                         )
                     }
                 }
             }
             SwitchRow(
-                title = "拡張子バッジ",
-                subtitle = "ファイル名の後ろに拡張子を表示",
+                title = stringResource(R.string.settings_ext_badge),
+                subtitle = stringResource(R.string.settings_ext_badge_sub),
                 checked = settings.showExtensionBadge,
                 onCheckedChange = viewModel::setShowExtensionBadge,
             )
 
             HorizontalDivider()
-            SettingsSectionHeader("動作")
+            SettingsSectionHeader(stringResource(R.string.settings_section_behavior))
             SwitchRow(
-                title = "削除前に確認",
-                subtitle = "削除のたびにダイアログを表示",
+                title = stringResource(R.string.settings_confirm_delete),
+                subtitle = stringResource(R.string.settings_confirm_delete_sub),
                 checked = settings.confirmBeforeDelete,
                 onCheckedChange = viewModel::setConfirmBeforeDelete,
             )
-            SettingRow(title = "アンドゥの表示時間", subtitle = "操作の取り消しバーが消えるまでの秒数", wide = true) {
+            SettingRow(
+                title = stringResource(R.string.settings_undo_timeout),
+                subtitle = stringResource(R.string.settings_undo_timeout_sub),
+                wide = true,
+            ) {
                 ChipsControl {
                     listOf(3, 5, 10).forEach { sec ->
                         FilterChip(
                             selected = settings.undoTimeoutSeconds == sec,
                             onClick = { viewModel.setUndoTimeoutSeconds(sec) },
-                            label = { Text("${sec}秒") },
+                            label = { Text(pluralStringResource(R.plurals.settings_seconds, sec, sec)) },
                         )
                     }
                 }
             }
 
             HorizontalDivider()
-            SettingsSectionHeader("通知")
+            SettingsSectionHeader(stringResource(R.string.settings_section_notifications))
             SwitchRow(
-                title = "コピー・移動の完了を通知",
-                subtitle = "コピー/切り取り貼り付けが終わったらお知らせ",
+                title = stringResource(R.string.settings_notify_fileop),
+                subtitle = stringResource(R.string.settings_notify_fileop_sub),
                 checked = settings.notifyOnFileOpComplete,
                 onCheckedChange = viewModel::setNotifyOnFileOpComplete,
             )
             SwitchRow(
-                title = "解凍の完了を通知",
-                subtitle = "ZIP の展開が終わったらお知らせ",
+                title = stringResource(R.string.settings_notify_extract),
+                subtitle = stringResource(R.string.settings_notify_extract_sub),
                 checked = settings.notifyOnExtractComplete,
                 onCheckedChange = viewModel::setNotifyOnExtractComplete,
             )
             SwitchRow(
-                title = "同期の完了を通知",
-                subtitle = "バックグラウンド同期が終わったらお知らせ",
+                title = stringResource(R.string.settings_notify_sync),
+                subtitle = stringResource(R.string.settings_notify_sync_sub),
                 checked = settings.notifyOnSyncComplete,
                 onCheckedChange = viewModel::setNotifyOnSyncComplete,
             )
 
             HorizontalDivider()
-            SettingsSectionHeader("ゴミ箱")
-            SettingRow(title = "削除の行き先", subtitle = "ファイルを削除したときの動作", wide = true) {
+            SettingsSectionHeader(stringResource(R.string.settings_section_trash))
+            SettingRow(
+                title = stringResource(R.string.settings_delete_behavior),
+                subtitle = stringResource(R.string.settings_delete_behavior_sub),
+                wide = true,
+            ) {
                 ChipsControl {
                     DeleteBehavior.entries.forEach { b ->
                         FilterChip(
                             selected = settings.deleteBehavior == b,
                             onClick = { viewModel.setDeleteBehavior(b) },
-                            label = { Text(b.displayName) },
-                        )
-                    }
-                }
-            }
-            SettingRow(title = "ゴミ箱の保持期間", subtitle = "これより古いものは自動で完全削除", wide = true) {
-                ChipsControl {
-                    listOf(7 to "7日", 30 to "30日", 90 to "90日", 0 to "無期限").forEach { (days, label) ->
-                        FilterChip(
-                            selected = settings.trashRetentionDays == days,
-                            onClick = { viewModel.setTrashRetentionDays(days) },
-                            label = { Text(label) },
+                            label = { Text(stringResource(b.labelRes)) },
                         )
                     }
                 }
             }
             SettingRow(
-                title = "ゴミ箱を開く",
-                subtitle = "削除したファイルの復元・完全削除",
+                title = stringResource(R.string.settings_trash_retention),
+                subtitle = stringResource(R.string.settings_trash_retention_sub),
+                wide = true,
+            ) {
+                ChipsControl {
+                    listOf(7, 30, 90, 0).forEach { days ->
+                        FilterChip(
+                            selected = settings.trashRetentionDays == days,
+                            onClick = { viewModel.setTrashRetentionDays(days) },
+                            label = {
+                                Text(
+                                    if (days == 0) stringResource(R.string.settings_forever)
+                                    else pluralStringResource(R.plurals.settings_days, days, days),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+            SettingRow(
+                title = stringResource(R.string.settings_open_trash),
+                subtitle = stringResource(R.string.settings_open_trash_sub),
                 onClick = onOpenTrash,
             )
 
             HorizontalDivider()
-            SettingsSectionHeader("同期")
+            SettingsSectionHeader(stringResource(R.string.settings_section_sync))
             SwitchRow(
-                title = "削除時にバックアップ",
-                subtitle = "delete 同期で消えるファイルをアプリ内に世代保存",
+                title = stringResource(R.string.settings_sync_backup),
+                subtitle = stringResource(R.string.settings_sync_backup_sub),
                 checked = settings.syncDeleteBackup,
                 onCheckedChange = viewModel::setSyncDeleteBackup,
             )
             if (settings.syncDeleteBackup) {
-                SettingRow(title = "保存する世代数", subtitle = "古い世代から自動で削除", wide = true) {
+                SettingRow(
+                    title = stringResource(R.string.settings_sync_generations),
+                    subtitle = stringResource(R.string.settings_sync_generations_sub),
+                    wide = true,
+                ) {
                     ChipsControl {
                         listOf(1, 3, 5).forEach { n ->
                             FilterChip(
                                 selected = settings.syncBackupGenerations == n,
                                 onClick = { viewModel.setSyncBackupGenerations(n) },
-                                label = { Text("${n}世代") },
+                                label = { Text(pluralStringResource(R.plurals.settings_generations, n, n)) },
                             )
                         }
                     }
                 }
                 SettingRow(
-                    title = "確認なしでバックアップする上限",
-                    subtitle = "これより大きいファイルは下の設定に従う",
+                    title = stringResource(R.string.settings_sync_threshold),
+                    subtitle = stringResource(R.string.settings_sync_threshold_sub),
                     wide = true,
                 ) {
                     ChipsControl {
@@ -254,8 +282,8 @@ fun SettingsScreen(
                     }
                 }
                 SettingRow(
-                    title = "上限を超えたファイル",
-                    subtitle = "バックグラウンド実行では「確認」は安全側 (バックアップ) になります",
+                    title = stringResource(R.string.settings_sync_over_threshold),
+                    subtitle = stringResource(R.string.settings_sync_over_threshold_sub),
                     wide = true,
                 ) {
                     ChipsControl {
@@ -263,26 +291,35 @@ fun SettingsScreen(
                             FilterChip(
                                 selected = settings.syncBackupPolicyOverThreshold == p,
                                 onClick = { viewModel.setSyncBackupPolicyOverThreshold(p) },
-                                label = { Text(p.displayName) },
+                                label = { Text(stringResource(p.labelRes)) },
                             )
                         }
                     }
                 }
             }
             SwitchRow(
-                title = "キュー待ちの自動解除",
-                subtitle = "Wi-Fi 待ちなどでキューに溜まったままの同期を一定時間で解除",
+                title = stringResource(R.string.settings_queue_timeout_enabled),
+                subtitle = stringResource(R.string.settings_queue_timeout_enabled_sub),
                 checked = settings.syncQueueTimeoutEnabled,
                 onCheckedChange = viewModel::setSyncQueueTimeoutEnabled,
             )
             if (settings.syncQueueTimeoutEnabled) {
-                SettingRow(title = "解除までの時間", subtitle = "この時間を過ぎても開始しなければ自動で解除", wide = true) {
+                SettingRow(
+                    title = stringResource(R.string.settings_queue_timeout),
+                    subtitle = stringResource(R.string.settings_queue_timeout_sub),
+                    wide = true,
+                ) {
                     ChipsControl {
                         listOf(1, 5, 10, 30, 60).forEach { min ->
                             FilterChip(
                                 selected = settings.syncQueueTimeoutMinutes == min,
                                 onClick = { viewModel.setSyncQueueTimeoutMinutes(min) },
-                                label = { Text(if (min >= 60) "${min / 60}時間" else "${min}分") },
+                                label = {
+                                Text(
+                                    if (min >= 60) pluralStringResource(R.plurals.settings_hours, min / 60, min / 60)
+                                    else pluralStringResource(R.plurals.settings_minutes, min, min),
+                                )
+                            },
                             )
                         }
                     }
@@ -290,15 +327,15 @@ fun SettingsScreen(
             }
 
             HorizontalDivider()
-            SettingsSectionHeader("ファイル")
+            SettingsSectionHeader(stringResource(R.string.settings_section_files))
             SettingRow(
-                title = "ファイルの開き方",
-                subtitle = "拡張子ごとに内蔵ビューア / 毎回選択 / 外部アプリ を指定",
+                title = stringResource(R.string.settings_file_types),
+                subtitle = stringResource(R.string.settings_file_types_sub),
                 onClick = onOpenFileTypes,
             )
             SettingRow(
-                title = "テキストエディタの編集可能上限",
-                subtitle = "これを超えるテキストは閲覧専用で開きます (端末性能に合わせて調整)",
+                title = stringResource(R.string.settings_editor_limit),
+                subtitle = stringResource(R.string.settings_editor_limit_sub),
                 wide = true,
             ) {
                 ChipsControl {
@@ -309,7 +346,7 @@ fun SettingsScreen(
                             label = {
                                 Text(
                                     when {
-                                        kb == UNLIMITED_EDITABLE_LIMIT_KB -> "無制限"
+                                        kb == UNLIMITED_EDITABLE_LIMIT_KB -> stringResource(R.string.settings_unlimited)
                                         kb >= 1024 -> "${kb / 1024}MB"
                                         else -> "${kb}KB"
                                     },
@@ -321,39 +358,33 @@ fun SettingsScreen(
             }
 
             HorizontalDivider()
-            SettingsSectionHeader("ログ")
+            SettingsSectionHeader(stringResource(R.string.settings_section_logs))
             SettingRow(
-                title = "実行ログ",
-                subtitle = "同期 / サーバ起動失敗 / クラッシュ等の集約ログを確認・共有",
+                title = stringResource(R.string.settings_logs),
+                subtitle = stringResource(R.string.settings_logs_sub),
                 onClick = onOpenLogs,
             )
 
             HorizontalDivider()
-            SettingsSectionHeader("ストレージ")
+            SettingsSectionHeader(stringResource(R.string.settings_section_storage))
             SettingRow(
-                title = "キャッシュをクリア",
-                subtitle = buildString {
-                    append("内蔵ビューア / 圧縮・解凍 の一時ファイルを削除します")
-                    val bytes = cacheBytes
-                    if (bytes != null) {
-                        append("\n現在の使用量: ")
-                        append(formatBytes(bytes))
-                    }
-                },
+                title = stringResource(R.string.settings_clear_cache),
+                subtitle = stringResource(R.string.settings_clear_cache_sub) +
+                    (cacheBytes?.let { stringResource(R.string.settings_cache_in_use, formatBytes(it)) } ?: ""),
                 onClick = { pendingClear = true },
             )
 
             HorizontalDivider()
-            SettingsSectionHeader("詳細")
-            SettingRow(title = "バージョン", subtitle = versionName)
+            SettingsSectionHeader(stringResource(R.string.settings_section_advanced))
+            SettingRow(title = stringResource(R.string.settings_version), subtitle = versionName)
             SettingRow(
-                title = "更新を確認",
+                title = stringResource(R.string.settings_check_update),
                 subtitle = when (val s = updateStatus) {
-                    is UpdateStatus.Idle -> "GitHub の最新リリースと比べます"
-                    is UpdateStatus.Checking -> "確認中…"
-                    is UpdateStatus.UpToDate -> "最新版です (${s.current})"
-                    is UpdateStatus.Available -> "${s.latest} が公開されています"
-                    is UpdateStatus.Failed -> "確認できませんでした: ${s.reason}"
+                    is UpdateStatus.Idle -> stringResource(R.string.settings_update_idle)
+                    is UpdateStatus.Checking -> stringResource(R.string.settings_update_checking)
+                    is UpdateStatus.UpToDate -> stringResource(R.string.settings_update_up_to_date, s.current)
+                    is UpdateStatus.Available -> stringResource(R.string.settings_update_available, s.latest)
+                    is UpdateStatus.Failed -> stringResource(R.string.settings_update_failed, s.reason)
                 },
                 onClick = {
                     // 既に見つかっているときは、押し直しで変更履歴をもう一度出す。
@@ -370,8 +401,8 @@ fun SettingsScreen(
                 },
             )
             SettingRow(
-                title = "ライセンス",
-                subtitle = "MIT © 2026 Zero to Ship",
+                title = stringResource(R.string.settings_license),
+                subtitle = stringResource(R.string.settings_license_sub),
                 onClick = onOpenLicenses,
             )
             Spacer(Modifier.height(16.dp))
@@ -384,7 +415,7 @@ fun SettingsScreen(
     if (showUpdateDialog && available != null) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissUpdateDialog() },
-            title = { Text("新しいバージョン ${available.latest}") },
+            title = { Text(stringResource(R.string.settings_update_dialog_title, available.latest)) },
             text = {
                 Column(
                     Modifier
@@ -392,12 +423,12 @@ fun SettingsScreen(
                         .verticalScroll(rememberScrollState()),
                 ) {
                     Text(
-                        "今お使いのバージョンは $versionName です。",
+                        stringResource(R.string.settings_update_dialog_current, versionName),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     if (available.notes.isNotBlank()) {
                         Spacer(Modifier.height(12.dp))
-                        Text("変更履歴", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.settings_update_changelog), style = MaterialTheme.typography.labelMedium)
                         Spacer(Modifier.height(4.dp))
                         Text(available.notes, style = MaterialTheme.typography.bodySmall)
                     }
@@ -414,10 +445,10 @@ fun SettingsScreen(
                             ),
                         )
                     }
-                }) { Text("リリースページを開く") }
+                }) { Text(stringResource(R.string.settings_update_open_page)) }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.dismissUpdateDialog() }) { Text("閉じる") }
+                TextButton(onClick = { viewModel.dismissUpdateDialog() }) { Text(stringResource(R.string.action_close)) }
             },
         )
     }
@@ -425,23 +456,24 @@ fun SettingsScreen(
     if (pendingClear) {
         AlertDialog(
             onDismissRequest = { pendingClear = false },
-            title = { Text("キャッシュをクリア") },
+            title = { Text(stringResource(R.string.settings_clear_cache)) },
             text = {
-                Text(
-                    "内蔵ビューア用のダウンロードキャッシュや圧縮・解凍の一時ファイルを削除します。" +
-                        "サーバ/同期ジョブ・接続情報・ゴミ箱・同期バックアップは消えません。",
-                )
+                Text(stringResource(R.string.settings_clear_cache_body))
             },
             confirmButton = {
                 TextButton(onClick = {
                     pendingClear = false
                     viewModel.clearCache { freed ->
-                        scope.launch { snackbar.showSnackbar("${formatBytes(freed)} を解放しました") }
+                        scope.launch {
+                            snackbar.showSnackbar(
+                                context.getString(R.string.settings_freed, formatBytes(freed)),
+                            )
+                        }
                     }
-                }) { Text("クリア") }
+                }) { Text(stringResource(R.string.settings_clear)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingClear = false }) { Text("キャンセル") }
+                TextButton(onClick = { pendingClear = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -454,35 +486,42 @@ private fun formatBytes(b: Long): String = when {
     else -> "$b B"
 }
 
-private val ThemeMode.displayName: String
+// チップのラベルは stringResource で引くため、文字列ではなくリソース ID を返す。
+// (この形なら端末の言語が変わってもそのまま追従する)
+
+@get:StringRes
+private val ThemeMode.labelRes: Int
     get() = when (this) {
-        ThemeMode.SYSTEM -> "システム"
-        ThemeMode.LIGHT -> "ライト"
-        ThemeMode.DARK -> "ダーク"
+        ThemeMode.SYSTEM -> R.string.theme_system
+        ThemeMode.LIGHT -> R.string.theme_light
+        ThemeMode.DARK -> R.string.theme_dark
     }
 
-private val AppColorTheme.displayName: String
+@get:StringRes
+private val AppColorTheme.labelRes: Int
     get() = when (this) {
-        AppColorTheme.GREEN -> "グリーン"
-        AppColorTheme.BLUE -> "ブルー"
-        AppColorTheme.PURPLE -> "パープル"
-        AppColorTheme.TEAL -> "ティール"
-        AppColorTheme.ORANGE -> "オレンジ"
-        AppColorTheme.ROSE -> "ローズ"
+        AppColorTheme.GREEN -> R.string.color_green
+        AppColorTheme.BLUE -> R.string.color_blue
+        AppColorTheme.PURPLE -> R.string.color_purple
+        AppColorTheme.TEAL -> R.string.color_teal
+        AppColorTheme.ORANGE -> R.string.color_orange
+        AppColorTheme.ROSE -> R.string.color_rose
     }
 
-private val DeleteBehavior.displayName: String
+@get:StringRes
+private val DeleteBehavior.labelRes: Int
     get() = when (this) {
-        DeleteBehavior.TRASH -> "ゴミ箱へ"
-        DeleteBehavior.PERMANENT -> "完全削除"
-        DeleteBehavior.ASK -> "毎回確認"
+        DeleteBehavior.TRASH -> R.string.delete_behavior_trash
+        DeleteBehavior.PERMANENT -> R.string.delete_behavior_permanent
+        DeleteBehavior.ASK -> R.string.delete_behavior_ask
     }
 
-private val SyncBackupPolicy.displayName: String
+@get:StringRes
+private val SyncBackupPolicy.labelRes: Int
     get() = when (this) {
-        SyncBackupPolicy.ASK -> "確認"
-        SyncBackupPolicy.BACKUP -> "バックアップ"
-        SyncBackupPolicy.SKIP -> "バックアップしない"
+        SyncBackupPolicy.ASK -> R.string.sync_backup_ask
+        SyncBackupPolicy.BACKUP -> R.string.sync_backup_backup
+        SyncBackupPolicy.SKIP -> R.string.sync_backup_skip
     }
 
 @Composable

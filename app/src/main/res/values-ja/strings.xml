@@ -172,4 +172,125 @@
     <string name="prop_sha256">SHA-256</string>
     <string name="prop_hash_failed_label">ハッシュ</string>
     <string name="prop_hash_failed">計算できませんでした (%1$s)</string>
+
+    <!-- ============================================================
+         設定画面
+         ============================================================ -->
+    <string name="settings_title">設定</string>
+
+    <string name="settings_section_display">表示</string>
+    <string name="settings_section_behavior">動作</string>
+    <string name="settings_section_notifications">通知</string>
+    <string name="settings_section_trash">ゴミ箱</string>
+    <string name="settings_section_sync">同期</string>
+    <string name="settings_section_files">ファイル</string>
+    <string name="settings_section_logs">ログ</string>
+    <string name="settings_section_storage">ストレージ</string>
+    <string name="settings_section_advanced">詳細</string>
+
+    <string name="settings_theme">テーマ</string>
+    <string name="settings_theme_sub">アプリ全体の明暗</string>
+    <string name="settings_material_you">Material You</string>
+    <string name="settings_material_you_sub">壁紙に合わせた配色 (Android 12 以上)</string>
+    <string name="settings_accent">アクセントカラー</string>
+    <string name="settings_accent_sub_locked">Material You を OFF にすると選べます</string>
+    <string name="settings_accent_sub">primary とタイルの色 (地の面はグレーのまま)</string>
+    <string name="settings_ext_badge">拡張子バッジ</string>
+    <string name="settings_ext_badge_sub">ファイル名の後ろに拡張子を表示</string>
+
+    <string name="settings_confirm_delete">削除前に確認</string>
+    <string name="settings_confirm_delete_sub">削除のたびにダイアログを表示</string>
+    <string name="settings_undo_timeout">アンドゥの表示時間</string>
+    <string name="settings_undo_timeout_sub">操作の取り消しバーが消えるまでの秒数</string>
+    <plurals name="settings_seconds">
+        <item quantity="other">%d秒</item>
+    </plurals>
+
+    <string name="settings_notify_fileop">コピー・移動の完了を通知</string>
+    <string name="settings_notify_fileop_sub">コピー/切り取り貼り付けが終わったらお知らせ</string>
+    <string name="settings_notify_extract">解凍の完了を通知</string>
+    <string name="settings_notify_extract_sub">ZIP の展開が終わったらお知らせ</string>
+    <string name="settings_notify_sync">同期の完了を通知</string>
+    <string name="settings_notify_sync_sub">バックグラウンド同期が終わったらお知らせ</string>
+
+    <string name="settings_delete_behavior">削除の行き先</string>
+    <string name="settings_delete_behavior_sub">ファイルを削除したときの動作</string>
+    <string name="settings_trash_retention">ゴミ箱の保持期間</string>
+    <string name="settings_trash_retention_sub">これより古いものは自動で完全削除</string>
+    <plurals name="settings_days">
+        <item quantity="other">%d日</item>
+    </plurals>
+    <string name="settings_forever">無期限</string>
+    <string name="settings_open_trash">ゴミ箱を開く</string>
+    <string name="settings_open_trash_sub">削除したファイルの復元・完全削除</string>
+
+    <string name="settings_sync_backup">削除時にバックアップ</string>
+    <string name="settings_sync_backup_sub">delete 同期で消えるファイルをアプリ内に世代保存</string>
+    <string name="settings_sync_generations">保存する世代数</string>
+    <string name="settings_sync_generations_sub">古い世代から自動で削除</string>
+    <plurals name="settings_generations">
+        <item quantity="other">%d世代</item>
+    </plurals>
+    <string name="settings_sync_threshold">確認なしでバックアップする上限</string>
+    <string name="settings_sync_threshold_sub">これより大きいファイルは下の設定に従う</string>
+    <string name="settings_sync_over_threshold">上限を超えたファイル</string>
+    <string name="settings_sync_over_threshold_sub">バックグラウンド実行では「確認」は安全側 (バックアップ) になります</string>
+    <string name="settings_queue_timeout_enabled">キュー待ちの自動解除</string>
+    <string name="settings_queue_timeout_enabled_sub">Wi-Fi 待ちなどでキューに溜まったままの同期を一定時間で解除</string>
+    <string name="settings_queue_timeout">解除までの時間</string>
+    <string name="settings_queue_timeout_sub">この時間を過ぎても開始しなければ自動で解除</string>
+    <plurals name="settings_minutes">
+        <item quantity="other">%d分</item>
+    </plurals>
+    <plurals name="settings_hours">
+        <item quantity="other">%d時間</item>
+    </plurals>
+
+    <string name="settings_file_types">ファイルの開き方</string>
+    <string name="settings_file_types_sub">拡張子ごとに内蔵ビューア / 毎回選択 / 外部アプリ を指定</string>
+    <string name="settings_editor_limit">テキストエディタの編集可能上限</string>
+    <string name="settings_editor_limit_sub">これを超えるテキストは閲覧専用で開きます (端末性能に合わせて調整)</string>
+    <string name="settings_unlimited">無制限</string>
+
+    <string name="settings_logs">実行ログ</string>
+    <string name="settings_logs_sub">同期 / サーバ起動失敗 / クラッシュ等の集約ログを確認・共有</string>
+
+    <string name="settings_clear_cache">キャッシュをクリア</string>
+    <string name="settings_clear_cache_sub">内蔵ビューア / 圧縮・解凍 の一時ファイルを削除します</string>
+    <string name="settings_cache_in_use">\n現在の使用量: %1$s</string>
+    <string name="settings_clear_cache_body">内蔵ビューア用のダウンロードキャッシュや圧縮・解凍の一時ファイルを削除します。サーバ/同期ジョブ・接続情報・ゴミ箱・同期バックアップは消えません。</string>
+    <string name="settings_clear">クリア</string>
+    <string name="settings_freed">%1$s を解放しました</string>
+
+    <string name="settings_version">バージョン</string>
+    <string name="settings_license">ライセンス</string>
+    <string name="settings_license_sub">MIT © 2026 Zero to Ship</string>
+
+    <string name="settings_check_update">更新を確認</string>
+    <string name="settings_update_idle">GitHub の最新リリースと比べます</string>
+    <string name="settings_update_checking">確認中…</string>
+    <string name="settings_update_up_to_date">最新版です (%1$s)</string>
+    <string name="settings_update_available">%1$s が公開されています</string>
+    <string name="settings_update_failed">確認できませんでした: %1$s</string>
+    <string name="settings_update_dialog_title">新しいバージョン %1$s</string>
+    <string name="settings_update_dialog_current">今お使いのバージョンは %1$s です。</string>
+    <string name="settings_update_changelog">変更履歴</string>
+    <string name="settings_update_open_page">リリースページを開く</string>
+
+    <!-- 選択肢のラベル -->
+    <string name="theme_system">システム</string>
+    <string name="theme_light">ライト</string>
+    <string name="theme_dark">ダーク</string>
+    <string name="color_green">グリーン</string>
+    <string name="color_blue">ブルー</string>
+    <string name="color_purple">パープル</string>
+    <string name="color_teal">ティール</string>
+    <string name="color_orange">オレンジ</string>
+    <string name="color_rose">ローズ</string>
+    <string name="delete_behavior_trash">ゴミ箱へ</string>
+    <string name="delete_behavior_permanent">完全削除</string>
+    <string name="delete_behavior_ask">毎回確認</string>
+    <string name="sync_backup_ask">確認</string>
+    <string name="sync_backup_backup">バックアップ</string>
+    <string name="sync_backup_skip">バックアップしない</string>
 </resources>
