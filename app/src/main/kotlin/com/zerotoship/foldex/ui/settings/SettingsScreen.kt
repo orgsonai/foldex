@@ -3,6 +3,10 @@
 
 package com.zerotoship.foldex.ui.settings
 
+import android.app.LocaleManager
+import android.content.Context
+import android.os.Build
+import android.os.LocaleList
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +54,8 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.annotation.StringRes
 import com.zerotoship.foldex.R
@@ -147,6 +153,7 @@ fun SettingsScreen(
                     }
                 }
             }
+            LanguageRow()
             SwitchRow(
                 title = stringResource(R.string.settings_ext_badge),
                 subtitle = stringResource(R.string.settings_ext_badge_sub),
@@ -523,6 +530,67 @@ private val SyncBackupPolicy.labelRes: Int
         SyncBackupPolicy.BACKUP -> R.string.sync_backup_backup
         SyncBackupPolicy.SKIP -> R.string.sync_backup_skip
     }
+
+/**
+ * アプリの表示言語。
+ *
+ * Android 13 以上は OS が「アプリごとの言語」を持っているので、独自に保存せず
+ * [LocaleManager] へ書くだけにする (OS の設定画面から変えた場合とも食い違わない)。
+ * 変更すると Activity が作り直されて即座に反映される。
+ *
+ * 13 未満は OS 側にこの仕組みが無く、対応するには AppCompat の導入が要るため、
+ * 「端末の言語に従う」旨だけ出して選べないようにしておく。
+ */
+@Composable
+private fun LanguageRow() {
+    val context = LocalContext.current
+    val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+    // OS 側の設定画面から変えられることもあるので、画面に戻るたびに読み直す。
+    var currentTag by remember { mutableStateOf(currentAppLanguageTag(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { currentTag = currentAppLanguageTag(context) }
+
+    SettingRow(
+        title = stringResource(R.string.settings_language),
+        subtitle = stringResource(
+            if (supported) R.string.settings_language_sub
+            else R.string.settings_language_sub_unsupported,
+        ),
+        wide = true,
+    ) {
+        ChipsControl {
+            // "" = システムに従う。
+            listOf(
+                "" to R.string.settings_language_system,
+                "ja" to R.string.settings_language_ja,
+                "en" to R.string.settings_language_en,
+            ).forEach { (tag, labelRes) ->
+                FilterChip(
+                    selected = currentTag == tag,
+                    enabled = supported,
+                    onClick = {
+                        setAppLanguageTag(context, tag)
+                        currentTag = tag
+                    },
+                    label = { Text(stringResource(labelRes)) },
+                )
+            }
+        }
+    }
+}
+
+/** 今のアプリ言語。システム追従なら空文字。`en-US` のような形で返るので言語部分だけ見る。 */
+private fun currentAppLanguageTag(context: Context): String {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return ""
+    val locales = context.getSystemService(LocaleManager::class.java)?.applicationLocales
+    return locales?.takeIf { !it.isEmpty }?.get(0)?.language.orEmpty()
+}
+
+private fun setAppLanguageTag(context: Context, tag: String) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    context.getSystemService(LocaleManager::class.java)?.applicationLocales =
+        LocaleList.forLanguageTags(tag)
+}
 
 @Composable
 private fun SettingsSectionHeader(text: String) {

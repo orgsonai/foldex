@@ -122,9 +122,13 @@ class MediaCollectionViewModel @Inject constructor(
     /**
      * 実体ファイルの名前を変えて、MediaStore を追従させる。
      *
-     * MediaStore の DISPLAY_NAME を書き換える方法もあるが、端末やバージョンで実体が
-     * ついてこないことがある。このアプリは他の操作もすべて実体ファイルを直接触っているので、
-     * ここも「実体を rename → 古いレコードを消す → 新しいパスをスキャンさせる」で揃える。
+     * **`ContentResolver.delete()` を絶対に呼ばないこと。**
+     * MediaProvider は FUSE 経由でファイルシステムの rename を検知し、レコードの
+     * `DATA` を**新しいパスへ書き換える**。そのため rename の後に「古いレコードのつもり」で
+     * delete すると、リネームした実体そのものが消える (v1.4.0 の不具合。実際に写真を失った)。
+     *
+     * 正しくは rename したうえで**旧パスと新パスの両方をスキャンさせる**。
+     * 旧パスは実体が無いので MediaStore から自然に落ち、新パスが登録される。
      */
     fun confirmRename(newName: String) {
         val item = _state.value.renameTarget ?: return
@@ -142,12 +146,11 @@ class MediaCollectionViewModel @Inject constructor(
                     dest.exists() -> "「$newName」は既にあります"
                     !runCatching { old.renameTo(dest) }.getOrDefault(false) -> "名前を変更できませんでした"
                     else -> {
-                        // 実体はもう新しい名前になっているので、古いパスを指すレコードを消して
-                        // 新しいパスを登録し直す。消さないと一覧に幽霊が残る。
-                        runCatching { context.contentResolver.delete(item.contentUri, null, null) }
+                        // 旧パスと新パスをまとめてスキャンさせる。旧パスは実体が無いので
+                        // MediaStore から落ち、新パスが登録される。delete は使わない (上の説明)。
                         runCatching {
                             MediaScannerConnection.scanFile(
-                                context, arrayOf(dest.absolutePath), null,
+                                context, arrayOf(old.absolutePath, dest.absolutePath), null,
                             ) { _, _ -> reload() }
                         }
                         null
@@ -224,6 +227,12 @@ class MediaCollectionViewModel @Inject constructor(
                     if (trashRepo.moveToTrash(localFile)) {
                         trashed++
                         // 実体はもう無いので、残ったレコードだけを消す (消さないと一覧に出続ける)。
+                        //
+                        // ここで delete して安全なのは、退避先が Android/data/<pkg>/files/trash/ で
+                        // **MediaStore の索引対象外**だから。MediaProvider はこの移動を追えず、
+                        // レコードは元のパスを指したまま古くなる → delete は行を消すだけで済む。
+                        // 索引対象の場所へ動かす操作 (名前変更など) で同じことをすると、
+                        // MediaProvider が参照先を追従させているため実体まで消える。confirmRename 参照。
                         withContext(Dispatchers.IO) {
                             runCatching { context.contentResolver.delete(item.contentUri, null, null) }
                         }

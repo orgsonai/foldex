@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  アプリが用意している言語の一覧。
+  これを manifest の android:localeConfig から指すと、Android 13 以上の
+  「設定 → アプリ → Foldex → 言語」に個別の言語選択が現れる。
+  無いと端末全体の言語を変えるしか手が無くなる。
+
+  既定 (values/) が英語なので、ここに無い言語の端末では英語で表示される。
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="ja" />
+    <locale android:name="en" />
+</locale-config>

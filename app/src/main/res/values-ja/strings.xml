@@ -293,4 +293,12 @@
     <string name="sync_backup_ask">確認</string>
     <string name="sync_backup_backup">バックアップ</string>
     <string name="sync_backup_skip">バックアップしない</string>
+
+    <!-- 言語 (アプリ内で切り替え。Android 13 以上) -->
+    <string name="settings_language">言語</string>
+    <string name="settings_language_sub">アプリの表示に使う言語</string>
+    <string name="settings_language_sub_unsupported">端末の言語設定に従います (Android 13 以上ならアプリごとに選べます)</string>
+    <string name="settings_language_system">システムに従う</string>
+    <string name="settings_language_ja">日本語</string>
+    <string name="settings_language_en">English</string>
 </resources>

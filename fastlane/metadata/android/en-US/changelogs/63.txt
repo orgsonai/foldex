@@ -1,0 +1,4 @@
+1.5.3 (Important fix)
+- Fixed renaming an image or video deleting the file (introduced in 1.4.0)
+- Added Language to Settings → Appearance (follow system / 日本語 / English)
+- Foldex now also appears under Android's Settings → Apps → Foldex → Language
