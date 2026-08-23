@@ -28,7 +28,9 @@ import io.github.rosemoe.sora.widget.component.Magnifier
  * なぞっている指が画面の端に近づいたら、指を止めていても一定速度でスクロールし続ける
  * ([edgeScroller])。これが無いと「いま画面に映っている範囲」までしか選べない。
  *
- * なぞっている間は指の上に拡大鏡を出す ([showMagnifier])。指で隠れて選択位置が見えないため。
+ * なぞっている間と、選択の掴み (ハンドル) を持って動かしている間は、指の上に拡大鏡を出す
+ * ([showMagnifier])。指で隠れて選択位置が見えないため。ハンドルの操作自体は Sora が持つので、
+ * こちらは表示だけ相乗りする。
  * Sora 内蔵の拡大鏡は使わない (下の無効化のコメント参照) — あれは
  * `PixelCopy.request(Window, ...)` を自前で回す実装で落ちていた。ここで使うのは
  * フレームワーク標準の `android.widget.Magnifier` ([SystemMagnifier]) で、別経路。
@@ -46,6 +48,17 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
     /** 直近の指の位置。指が止まっている間の端スクロールでも使うので覚えておく。 */
     private var lastX = 0f
     private var lastY = 0f
+
+    /** なぞりを始めた指の位置。どちら向きへ伸ばしているかの判定に使う。 */
+    private var anchorTouchX = 0f
+
+    /**
+     * 位置を求めるときに、伸ばしている向きへずらす量。
+     *
+     * 選択の端は掴みの内側 (開始は掴みの右、終了は掴みの左) にあるため、指の位置ちょうどで
+     * 判定すると実際の選択位置が指より内側に来る。画面の端ではその分だけ最後の文字に届かない。
+     */
+    private val selectionNudge = NUDGE_DP * context.resources.displayMetrics.density
 
     /** 端から何 px 以内を「端」とみなすか。 */
     private val edgeSize = EDGE_DP * context.resources.displayMetrics.density
@@ -126,6 +139,7 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 dragSelecting = false
+                anchorTouchX = e.x
                 removeCallbacks(edgeScroller)
             }
 
@@ -139,19 +153,25 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
                 removeCallbacks(edgeScroller)
                 if (edgeStepX() != 0 || edgeStepY() != 0) postDelayed(edgeScroller, EDGE_INTERVAL_MS)
                 return true
+            } else if (isHoldingHandle()) {
+                // 掴み (ハンドル) を持って動かしている間も拡大鏡を出す。
+                // 操作自体は Sora 側が処理するので、こちらは表示だけ足して super に渡す。
+                showMagnifier(e.x, e.y)
             }
 
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragSelecting) {
-                dragSelecting = false
-                removeCallbacks(edgeScroller)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 runCatching { magnifier?.dismiss() }
-                // Sora 側のタッチ状態 (エッジスクロール等) を正常に終了させてから、
-                super.onTouchEvent(e)
-                // 指を離した位置の選択範囲に対してコピー等のメニューを出す。
-                if (e.actionMasked == MotionEvent.ACTION_UP && cursor.isSelected) {
-                    textAction.displayWindow()
+                if (dragSelecting) {
+                    dragSelecting = false
+                    removeCallbacks(edgeScroller)
+                    // Sora 側のタッチ状態 (エッジスクロール等) を正常に終了させてから、
+                    super.onTouchEvent(e)
+                    // 指を離した位置の選択範囲に対してコピー等のメニューを出す。
+                    if (e.actionMasked == MotionEvent.ACTION_UP && cursor.isSelected) {
+                        textAction.displayWindow()
+                    }
+                    return true
                 }
-                return true
             }
         }
         return super.onTouchEvent(e)
@@ -162,6 +182,12 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         runCatching { magnifier?.dismiss() }
         super.onDetachedFromWindow()
     }
+
+    /** 選択の掴み (ハンドル) を持っている最中か。Sora 側のタッチ状態を見る。 */
+    private fun isHoldingHandle(): Boolean = runCatching {
+        val handler = eventHandler
+        handler.hasAnyHeldHandle() || handler.isHandleMoving()
+    }.getOrDefault(false)
 
     /** なぞっている位置を指の上に拡大して見せる。 */
     private fun showMagnifier(x: Float, y: Float) {
@@ -197,7 +223,10 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
     }
 
     private fun extendSelectionTo(x: Float, y: Float) {
-        val pos = getPointPositionOnScreen(x, y)
+        // 伸ばしている向きへ少しずらしてから行・桁に変換する ([selectionNudge] のコメント参照)。
+        // 画面外に出た分は Sora がその行の端に丸めるので、端の文字まで届くようになる。
+        val nudged = if (x >= anchorTouchX) x + selectionNudge else x - selectionNudge
+        val pos = getPointPositionOnScreen(nudged, y)
         val line = IntPair.getFirst(pos)
         val column = IntPair.getSecond(pos)
         // アンカーと現在位置の前後関係を整えてから範囲指定する (左へ逆ドラッグしても破綻しないように)。
@@ -256,5 +285,8 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
 
         /** 行の高さが取れないときの拡大鏡の最小サイズ (dp)。 */
         const val MIN_MAGNIFIER_DP = 56f
+
+        /** 位置を求めるときに伸ばす向きへずらす量 (dp)。1 文字弱。 */
+        const val NUDGE_DP = 6f
     }
 }
