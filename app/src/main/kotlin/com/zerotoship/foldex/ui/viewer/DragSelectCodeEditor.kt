@@ -11,6 +11,7 @@ import io.github.rosemoe.sora.util.IntPair
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.component.EditorTextActionWindow
 import io.github.rosemoe.sora.widget.component.Magnifier
+import io.github.rosemoe.sora.widget.style.builtin.HandleStyleDrop
 
 /**
  * 標準の Sora [CodeEditor] に「長押し → 指を離さず、そのままドラッグで範囲選択」を足したエディタ。
@@ -51,6 +52,12 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         isHardwareAcceleratedDrawAllowed = false
         // 長い行専用の RenderNode キャッシュも同根なので合わせて切る。
         props.cacheRenderNodeForLongLines = false
+
+        // Sora 既定の SideDrop は左右の選択ハンドルをカーソルから斜め外側へ描く。
+        // ドラッグ時はその横幅ぶん指の座標をカーソル側へ戻すため、画面端では指をそれ以上
+        // 外へ運べず、先頭・末尾からハンドル幅ぶん内側までしか選択できない。
+        // 真下へ描く Drop なら指と選択位置の x 座標が一致し、左右どちらの端にも届く。
+        setSelectionHandleStyle(HandleStyleDrop(context))
 
         // 選択拡大鏡 (Magnifier) を無効化する。これがクラッシュの真因と判断した。
         // Sora の Magnifier は内部で android.view.PixelCopy.request(Window, ...) を使い、
