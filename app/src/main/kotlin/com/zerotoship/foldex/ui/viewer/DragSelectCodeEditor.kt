@@ -49,14 +49,6 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
     private var lastX = 0f
     private var lastY = 0f
 
-    /**
-     * 位置を求めるときに、伸ばしている向きへずらす量。
-     *
-     * 選択の端は掴みの内側 (開始は掴みの右、終了は掴みの左) にあるため、指の位置ちょうどで
-     * 判定すると実際の選択位置が指より内側に来る。画面の端ではその分だけ最後の文字に届かない。
-     */
-    private val selectionNudge = NUDGE_DP * context.resources.displayMetrics.density
-
     /** 端から何 px 以内を「端」とみなすか。 */
     private val edgeSize = EDGE_DP * context.resources.displayMetrics.density
 
@@ -176,11 +168,13 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         super.onDetachedFromWindow()
     }
 
-    /** 選択の掴み (ハンドル) を持っている最中か。Sora 側のタッチ状態を見る。 */
-    private fun isHoldingHandle(): Boolean = runCatching {
-        val handler = eventHandler
-        handler.hasAnyHeldHandle() || handler.isHandleMoving()
-    }.getOrDefault(false)
+    /**
+     * 選択の掴み (ハンドル) を**動かしている**最中か。
+     * `hasAnyHeldHandle()` はカーソルのつまみを持っているだけでも真になり、ただスライドした
+     * だけで拡大鏡が出てしまうので使わない。
+     */
+    private fun isHoldingHandle(): Boolean =
+        runCatching { eventHandler.isHandleMoving() }.getOrDefault(false)
 
     /** なぞっている位置を指の上に拡大して見せる。 */
     private fun showMagnifier(x: Float, y: Float) {
@@ -216,17 +210,7 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
     }
 
     private fun extendSelectionTo(x: Float, y: Float) {
-        // まず素の指の位置でアンカーとの前後関係を見る。
-        // 指の x だけで向きを決めると、行をまたいだ瞬間に逆向きへずれてしまう
-        // (下の行の左寄りにいるのは「終わり側」なのに、x が小さいので「始まり側」と誤判定する)。
-        val rawPos = getPointPositionOnScreen(x, y)
-        val rawLine = IntPair.getFirst(rawPos)
-        val rawColumn = IntPair.getSecond(rawPos)
-        val afterAnchor = anchorLine < rawLine || (anchorLine == rawLine && anchorColumn <= rawColumn)
-        // 伸ばしている向きへ少しずらしてから行・桁に変換する ([selectionNudge] のコメント参照)。
-        // 画面外に出た分は Sora がその行の端に丸めるので、端の文字まで届くようになる。
-        val nudged = if (afterAnchor) x + selectionNudge else x - selectionNudge
-        val pos = getPointPositionOnScreen(nudged, y)
+        val pos = getPointPositionOnScreen(x, y)
         val line = IntPair.getFirst(pos)
         val column = IntPair.getSecond(pos)
         // アンカーと現在位置の前後関係を整えてから範囲指定する (左へ逆ドラッグしても破綻しないように)。
@@ -286,7 +270,5 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         /** 行の高さが取れないときの拡大鏡の最小サイズ (dp)。 */
         const val MIN_MAGNIFIER_DP = 56f
 
-        /** 位置を求めるときに伸ばす向きへずらす量 (dp)。1 文字弱。 */
-        const val NUDGE_DP = 6f
     }
 }
