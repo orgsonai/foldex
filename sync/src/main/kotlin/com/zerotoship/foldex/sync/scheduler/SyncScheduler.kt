@@ -8,13 +8,16 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.zerotoship.foldex.core.data.repo.SyncJobRepository
 import com.zerotoship.foldex.core.model.SyncJob
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,9 +25,12 @@ import javax.inject.Singleton
  * SyncJob のスケジュールを WorkManager / AlarmManager へ橋渡しする — 仕様書 §8-K。
  *
  * - すべての定期種別 (`INTERVAL` / `DAILY` / `WEEKLY` / `MONTHLY` / `DATETIME`) は次回実行時刻を
- *   算出し、`AlarmManager.setAndAllowWhileIdle` でアラームを貼る ([scheduleNext])。発火は
+ *   算出し、`AlarmManager` でアラームを貼る ([scheduleNext])。正確アラームが許可されていれば
+ *   `setExactAndAllowWhileIdle`、無ければ `setAndAllowWhileIdle` ([setAlarm])。発火は
  *   [SyncAlarmReceiver] が受け、そこで expedited な `OneTimeWorkRequest` を即時実行する。
  *   1 回限りの `DATETIME` 以外は実行のたびに次回を再予約する。
+ *   予約は発火の連鎖で繋がっているので、鎖が切れたときのために [rescheduleAll] を
+ *   アプリ起動 / 端末再起動 / アプリ更新後から呼んで貼り直す。
  *   (旧実装は INTERVAL を `PeriodicWorkRequest` で回していたが、WorkManager の通常ジョブは
  *   Doze 中に起動されず「スリープ解除まで動かない」ため、時刻指定と同じアラーム方式に統一した。)
  * - 手動のみ / 実行予定なし: 何も登録しない。[runNow] でのみ実行。
@@ -32,6 +38,7 @@ import javax.inject.Singleton
 @Singleton
 class SyncScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val jobRepository: SyncJobRepository,
 ) {
     private val workManager: WorkManager get() = WorkManager.getInstance(context)
 
@@ -55,12 +62,61 @@ class SyncScheduler @Inject constructor(
      * 発火は [SyncAlarmReceiver] が受け、そこで即時 WorkManager 実行をエンキューする。
      * DAILY/WEEKLY/MONTHLY の次回再予約は受信側 ([SyncAlarmReceiver]) と完了後の [SyncWorker] が行う。
      */
-    fun scheduleNext(job: SyncJob) {
+    fun scheduleNext(job: SyncJob, from: Long = System.currentTimeMillis()) {
         if (!job.enabled) return
-        val next = job.schedule.nextFireTimeMillis() ?: return
+        val fire = job.schedule.nextFireTimeMillis(from) ?: return
+        // 貼り直しで基準が過去になったときは直近の未来へ丸める (取りこぼしを 1 回だけ拾う)。
+        val next = fire.coerceAtLeast(System.currentTimeMillis() + MIN_LEAD_MILLIS)
         val pi = alarmPendingIntent(job.id, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             ?: return
         val am = context.getSystemService(AlarmManager::class.java) ?: return
+        setAlarm(am, next, pi)
+    }
+
+    /**
+     * 有効な全ジョブの次回予約を貼り直す。アプリ起動 / 端末再起動 / アプリ更新後から呼ぶ。
+     *
+     * 予約は「アラームが発火したときに次を貼る」1 本の鎖で繋いでいるが、端末がアプリを
+     * 休止させると登録済みアラームごと落とされ、鎖が切れると二度と復旧しない
+     * (2026-08 に毎日同期が 9 日間まるごと走らなかった)。貼り直す機会を増やして、
+     * 少なくともアプリを開けば戻るようにする。
+     */
+    suspend fun rescheduleAll() {
+        val now = System.currentTimeMillis()
+        jobRepository.observeAll().first()
+            .filter { it.enabled }
+            .forEach { job ->
+                // INTERVAL の次回時刻は「基準 + 間隔」で決まるため、起動のたびに now を基準に
+                // すると周期が毎回リセットされ、間隔の長いジョブが永久に走らなくなる。
+                // 前回実行を基準にする (未実行なら now)。
+                val base = if (job.schedule.isSimpleInterval) (job.lastRunAt ?: now) else now
+                scheduleNext(job, base)
+            }
+    }
+
+    /**
+     * 正確アラームを使えるか (Android 12 未満は常に使える)。設定画面の導線表示にも使う。
+     */
+    fun canScheduleExact(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val am = context.getSystemService(AlarmManager::class.java) ?: return false
+        return runCatching { am.canScheduleExactAlarms() }.getOrDefault(false)
+    }
+
+    /**
+     * 許可があれば正確アラーム、無ければ従来の不正確アラームで貼る。
+     *
+     * 不正確アラーム (`setAndAllowWhileIdle`) は休止させられたアプリでは大幅に遅延・間引き
+     * されるため、時刻指定の同期が定刻に走らない。ユーザーが端末の設定で
+     * 「アラームとリマインダー」を許可していれば `setExactAndAllowWhileIdle` を使う。
+     * 許可を直前に取り消されると SecurityException になるので、その場合は不正確へ落として
+     * 予約自体は必ず残す。
+     */
+    private fun setAlarm(am: AlarmManager, next: Long, pi: PendingIntent) {
+        if (canScheduleExact()) {
+            val ok = runCatching { am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi) }.isSuccess
+            if (ok) return
+        }
         runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi) }
     }
 
@@ -183,6 +239,10 @@ class SyncScheduler @Inject constructor(
 
     companion object {
         private const val TAG_PREFIX = "sync-job:"
+
+        /** 貼り直しで過去になった予約を、この分だけ未来へ寄せてから登録する。 */
+        private const val MIN_LEAD_MILLIS = 60_000L
+
         fun tagFor(jobId: String) = "$TAG_PREFIX$jobId"
     }
 }

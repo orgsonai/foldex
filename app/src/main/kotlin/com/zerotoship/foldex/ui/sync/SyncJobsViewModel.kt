@@ -128,6 +128,17 @@ class SyncJobsViewModel @Inject constructor(
         runCatching { repository.reorder(orderedIds) }
     }
 
+    /** 正確アラームを使えるか (画面のバナー表示用)。 */
+    fun canScheduleExactAlarms(): Boolean = scheduler.canScheduleExact()
+
+    /**
+     * 有効なジョブの予約を貼り直す。
+     * 正確アラームを許可した直後に呼んで、既に貼ってある不正確アラームを置き換えるため。
+     */
+    fun rescheduleAll() = viewModelScope.launch {
+        runCatching { scheduler.rescheduleAll() }
+    }
+
     fun delete(job: SyncJob) = viewModelScope.launch {
         runCatching { scheduler.cancel(job.id) }
         repository.delete(job.id)

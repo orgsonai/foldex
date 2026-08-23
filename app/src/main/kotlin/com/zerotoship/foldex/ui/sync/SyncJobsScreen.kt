@@ -7,7 +7,9 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -59,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -66,6 +69,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.SyncJob
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -111,6 +115,10 @@ fun SyncJobsScreen(
     ) { padding ->
       Column(modifier = Modifier.fillMaxSize().padding(padding)) {
         NotificationPermissionBanner()
+        SyncReliabilityBanner(
+            canScheduleExact = viewModel::canScheduleExactAlarms,
+            onExactAllowed = viewModel::rescheduleAll,
+        )
         if (state.jobs.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("同期ジョブがありません。FAB から追加してください", style = MaterialTheme.typography.bodyMedium)
@@ -305,6 +313,119 @@ private fun NotificationPermissionBanner() {
             }
         }
     }
+}
+
+/**
+ * 定期同期が端末側の省電力で止められる条件が残っているときだけ出す案内。
+ *
+ * 2026-08 に「毎日同期が 9 日間まるごと走らなかった」のは、端末がアプリを休止させて
+ * 登録済みアラームごと落としたのが原因と見ている。コード側 (予約の貼り直し・正確アラーム)
+ * だけでは防ぎ切れないので、端末側の設定への導線をここに出す。
+ * 判定は画面に戻るたびに読み直し、両方とも解消したらカードごと消える。
+ */
+@Composable
+private fun SyncReliabilityBanner(
+    canScheduleExact: () -> Boolean,
+    onExactAllowed: () -> Unit,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var exactOk by remember { mutableStateOf(canScheduleExact()) }
+    var batteryOk by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val now = canScheduleExact()
+                // 許可された直後は、既に貼ってある不正確アラームを正確アラームで貼り直す。
+                if (now && !exactOk) onExactAllowed()
+                exactOk = now
+                batteryOk = isIgnoringBatteryOptimizations(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    if (exactOk && batteryOk) return
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        val onContainer = MaterialTheme.colorScheme.onTertiaryContainer
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                stringResource(R.string.sync_reliability_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = onContainer,
+            )
+            if (!exactOk) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.sync_reliability_exact),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onContainer,
+                )
+                TextButton(onClick = { openExactAlarmSettings(context) }) {
+                    Text(stringResource(R.string.sync_reliability_exact_action))
+                }
+            }
+            if (!batteryOk) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.sync_reliability_battery),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onContainer,
+                )
+                TextButton(onClick = { openBatteryOptimizationSettings(context) }) {
+                    Text(stringResource(R.string.sync_reliability_battery_action))
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.sync_reliability_hibernation),
+                style = MaterialTheme.typography.bodySmall,
+                color = onContainer,
+            )
+            TextButton(onClick = { openAppDetailsSettings(context) }) {
+                Text(stringResource(R.string.sync_reliability_app_info))
+            }
+        }
+    }
+}
+
+/** 電池の最適化から除外されているか。読み取りだけなので特別な権限は要らない。 */
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val pm = context.getSystemService(PowerManager::class.java) ?: return true
+    return runCatching { pm.isIgnoringBatteryOptimizations(context.packageName) }.getOrDefault(true)
+}
+
+/** 「アラームとリマインダー」の許可画面 (Android 12 以上)。 */
+private fun openExactAlarmSettings(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+        .setData(Uri.fromParts("package", context.packageName, null))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
+        .onFailure { openAppDetailsSettings(context) }
+}
+
+/**
+ * 電池の最適化の一覧を開く。
+ * 直接ダイアログを出す ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS は
+ * Play で用途が制限される権限を要するため使わない (一覧から Foldex を選んでもらう)。
+ */
+private fun openBatteryOptimizationSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
+        .onFailure { openAppDetailsSettings(context) }
+}
+
+/** アプリ情報画面 (「使用されていない場合にアプリの動作を停止」はここから)。 */
+private fun openAppDetailsSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        .setData(Uri.fromParts("package", context.packageName, null))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
 }
 
 private fun hasNotificationPermission(context: Context): Boolean =

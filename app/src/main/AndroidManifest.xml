@@ -31,6 +31,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 定期同期のアラームを端末再起動後に貼り直すため (アラームは再起動で消える) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 定期同期を指定時刻ちょうどに実行するため。不正確アラームは端末がアプリを休止させると
+         大幅に遅延・間引きされ、定期同期が何日も走らないことがある。
+         ユーザーが端末の設定で許可したときだけ正確アラームを使い、無ければ従来通り
+         不正確アラームで貼る (SyncScheduler.canScheduleExact)。 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- 他アプリ起動可否の判定用クエリ宣言 (Android 11+) -->
     <queries>
@@ -109,12 +114,15 @@
             android:name="com.zerotoship.foldex.sync.scheduler.SyncAlarmReceiver"
             android:exported="false" />
 
-        <!-- 端末再起動後にアラームを貼り直す。BOOT_COMPLETED を受けるため exported=true。 -->
+        <!-- 端末再起動後とアプリ更新後にアラームを貼り直す。どちらも登録済みのアラームが
+             消えるため。BOOT_COMPLETED を受けるため exported=true
+             (MY_PACKAGE_REPLACED は自分自身にしか届かない)。 -->
         <receiver
             android:name="com.zerotoship.foldex.sync.scheduler.SyncBootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

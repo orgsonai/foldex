@@ -16,12 +16,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.zerotoship.foldex.core.model.ThemeMode
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import com.zerotoship.foldex.ui.main.MainScreen
 import com.zerotoship.foldex.ui.settings.SettingsViewModel
 import com.zerotoship.foldex.ui.theme.FoldexTheme
+import com.zerotoship.foldex.sync.scheduler.SyncScheduler
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -32,10 +36,15 @@ class MainActivity : ComponentActivity() {
     /** ACTION_SEND / ACTION_SEND_MULTIPLE で他アプリから渡されたファイル群。 */
     private val pendingShares = mutableStateOf<List<Uri>>(emptyList())
 
+    @Inject lateinit var syncScheduler: SyncScheduler
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleIntent(intent)
+        // 定期同期の予約を貼り直す。端末がアプリを休止させるとアラームごと落とされ、
+        // 「発火したら次を貼る」の鎖が切れたままになるため、アプリを開いた時点で必ず復旧させる。
+        lifecycleScope.launch { runCatching { syncScheduler.rescheduleAll() } }
         setContent {
             val browserViewModel: FileBrowserViewModel = hiltViewModel(this@MainActivity)
             val settingsViewModel: SettingsViewModel = hiltViewModel(this@MainActivity)

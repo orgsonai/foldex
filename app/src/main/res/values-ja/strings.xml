@@ -301,4 +301,12 @@
     <string name="settings_language_system">システムに従う</string>
     <string name="settings_language_ja">日本語</string>
     <string name="settings_language_en">English</string>
+    <!-- Sync reliability banner (scheduled syncs being killed by the system) -->
+    <string name="sync_reliability_title">定期同期が時間どおりに動かないことがあります</string>
+    <string name="sync_reliability_exact">正確な時刻での実行が許可されていません。同期が何時間も遅れたり、飛ばされたりします。</string>
+    <string name="sync_reliability_exact_action">許可する</string>
+    <string name="sync_reliability_battery">電池の最適化の対象になっています。バックグラウンドでアプリごと止められることがあります。</string>
+    <string name="sync_reliability_battery_action">設定を開く</string>
+    <string name="sync_reliability_hibernation">あわせて端末の設定で「使用されていない場合にアプリの動作を停止」をオフにしてください。オンのままだと、数日開かないだけでアプリごと止められ、予約したアラームも消えます。</string>
+    <string name="sync_reliability_app_info">アプリ情報</string>
 </resources>
