@@ -4,8 +4,10 @@
 package com.zerotoship.foldex.ui.viewer
 
 import android.content.Context
+import android.os.Build
 import android.view.MotionEvent
 import android.view.View
+import android.widget.Magnifier as SystemMagnifier
 import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.util.IntPair
 import io.github.rosemoe.sora.widget.CodeEditor
@@ -25,6 +27,13 @@ import io.github.rosemoe.sora.widget.component.Magnifier
  *
  * なぞっている指が画面の端に近づいたら、指を止めていても一定速度でスクロールし続ける
  * ([edgeScroller])。これが無いと「いま画面に映っている範囲」までしか選べない。
+ * 画面の左右の縁はシステムの「戻る」ジェスチャーに取られていて指を置けないので、
+ * これ以上その向きへスクロールできないときは行頭 / 行末までスナップする ([snapToLineEdge])。
+ *
+ * なぞっている間は指の上に拡大鏡を出す ([magnifier])。指で隠れて選択位置が見えないため。
+ * Sora 内蔵の拡大鏡は使わない (下の [Magnifier] 無効化のコメント参照) — あれは
+ * `PixelCopy.request(Window, ...)` を自前で回す実装で落ちていた。ここで使うのは
+ * フレームワーク標準の `android.widget.Magnifier` ([SystemMagnifier]) で、別経路。
  *
  * 通常のタップ/スクロール/ピンチ/ハンドル操作はすべて [CodeEditor] (super) にそのまま委ねる。
  */
@@ -42,6 +51,21 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
 
     /** 端から何 px 以内を「端」とみなすか。 */
     private val edgeSize = EDGE_DP * context.resources.displayMetrics.density
+
+    /**
+     * なぞっている最中に指の上へ出す拡大鏡。
+     * 既定の [SystemMagnifier] は指定した点の少し上に窓を出すので、指で隠れている部分が見える。
+     */
+    private val magnifier: SystemMagnifier? by lazy {
+        @Suppress("DEPRECATION")
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
+                runCatching { SystemMagnifier.Builder(this).build() }.getOrNull()
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
+                runCatching { SystemMagnifier(this) }.getOrNull()
+            else -> null
+        }
+    }
 
     /**
      * 指が端にある間だけ動き続けるスクロール。
@@ -64,6 +88,9 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
             val targetColumn = (column + stepColumns).coerceIn(0, text.getColumnCount(targetLine))
             runCatching { ensurePositionVisible(targetLine, targetColumn, true) }
             extendSelectionTo(lastX, lastY)
+            snapToLineEdge()
+            // 中身が流れていくので拡大鏡も更新する。
+            runCatching { magnifier?.show(lastX, lastY) }
             postDelayed(this, EDGE_INTERVAL_MS)
         }
     }
@@ -120,6 +147,9 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
                 lastX = e.x
                 lastY = e.y
                 extendSelectionTo(e.x, e.y)
+                snapToLineEdge()
+                // 指で隠れて見えないので、なぞっている間は拡大鏡を出す。
+                runCatching { magnifier?.show(e.x, e.y) }
                 // 端に入ったら、指が止まってもスクロールが続くようにループを回す。
                 // 端から出たら止める (毎回貼り直すので二重には走らない)。
                 removeCallbacks(edgeScroller)
@@ -130,6 +160,7 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragSelecting) {
                 dragSelecting = false
                 removeCallbacks(edgeScroller)
+                runCatching { magnifier?.dismiss() }
                 // Sora 側のタッチ状態 (エッジスクロール等) を正常に終了させてから、
                 super.onTouchEvent(e)
                 // 指を離した位置の選択範囲に対してコピー等のメニューを出す。
@@ -142,10 +173,36 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         return super.onTouchEvent(e)
     }
 
+    override fun onDetachedFromWindow() {
+        removeCallbacks(edgeScroller)
+        runCatching { magnifier?.dismiss() }
+        super.onDetachedFromWindow()
+    }
+
+    /**
+     * 指が左右の端にいて、**これ以上その向きへスクロールできない**ときだけ、
+     * その行の行頭 / 行末まで選択を伸ばす。
+     *
+     * 画面の左右の縁 (数十 px) はシステムの「戻る」ジェスチャーに取られていて指を置けないため、
+     * 右端の文字が選べなかった。まだスクロールできる間は [edgeScroller] のスクロールに任せる。
+     */
+    private fun snapToLineEdge() {
+        val pos = getPointPositionOnScreen(lastX, lastY)
+        val line = IntPair.getFirst(pos)
+        when {
+            lastX > width - edgeSize && offsetX >= scrollMaxX ->
+                extendSelectionTo(line, text.getColumnCount(line))
+            lastX < edgeSize && offsetX <= 0 ->
+                extendSelectionTo(line, 0)
+        }
+    }
+
     private fun extendSelectionTo(x: Float, y: Float) {
         val pos = getPointPositionOnScreen(x, y)
-        val line = IntPair.getFirst(pos)
-        val column = IntPair.getSecond(pos)
+        extendSelectionTo(IntPair.getFirst(pos), IntPair.getSecond(pos))
+    }
+
+    private fun extendSelectionTo(line: Int, column: Int) {
         // アンカーと現在位置の前後関係を整えてから範囲指定する (左へ逆ドラッグしても破綻しないように)。
         val anchorFirst = anchorLine < line || (anchorLine == line && anchorColumn <= column)
         val sl = if (anchorFirst) anchorLine else line
@@ -176,8 +233,11 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         (depth / edgeSize * MAX_STEP).toInt().coerceIn(1, MAX_STEP)
 
     private companion object {
-        /** 画面端から何 dp を「端」とみなすか。 */
-        const val EDGE_DP = 48f
+        /**
+         * 画面端から何 dp を「端」とみなすか。
+         * 画面の縁そのものはシステムのジェスチャー領域で指を置けないため、だいぶ内側から効かせる。
+         */
+        const val EDGE_DP = 96f
 
         /** 端スクロールの 1 コマの間隔 (ms)。60ms × 最大 3 行 = 秒間 50 行くらい。 */
         const val EDGE_INTERVAL_MS = 60L
