@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -33,17 +36,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -62,6 +67,7 @@ fun AppLogScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
     var confirmClear by remember { mutableStateOf(false) }
 
     // 永久ログの保存先 (.log) をユーザーに手動作成させる。
@@ -79,6 +85,15 @@ fun AppLogScreen(
             }
             viewModel.setPermanentLog(uri.toString())
             Toast.makeText(context, "永久ログの保存先を設定しました", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // 新しい行が追加されたら自動で末尾へスクロール。
+    // maxValue はレイアウトが終わるまで 0 なので、1 フレーム待ってから動かす。
+    LaunchedEffect(state.lines.size) {
+        if (state.lines.isNotEmpty()) {
+            withFrameNanos { }
+            scrollState.animateScrollTo(scrollState.maxValue)
         }
     }
 
@@ -193,19 +208,20 @@ fun AppLogScreen(
                         primary = MaterialTheme.colorScheme.primary,
                         error = MaterialTheme.colorScheme.error,
                     )
-                    // 全行を 1 つのテキストにする。行ごとに分けると、なぞり選択が行をまたげず
-                    // 「部分的にコピー」ができないため (全文コピーのボタンは残す)。
-                    // 表示は Android 標準のテキスト選択に任せる (拡大鏡と端の自動スクロールが
-                    // Compose 側では出せないため — SelectableLogText のコメント参照)。
+                    // 全行を 1 つの Text にする。行ごとに Text を分けると、なぞり選択が
+                    // 行をまたげず「部分的にコピー」ができないため (全文コピーのボタンは残す)。
                     val body = remember(shown, palette) { buildLogText(shown, palette) }
-                    val style = MaterialTheme.typography.labelSmall
-                    SelectableLogText(
-                        text = body,
-                        autoScrollKey = state.lines.size,
-                        textSizeSp = style.fontSize.value,
-                        defaultColorArgb = MaterialTheme.colorScheme.onSurface.toArgb(),
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    SelectionContainer {
+                        Text(
+                            text = body,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(scrollState)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
                 }
             }
         }
