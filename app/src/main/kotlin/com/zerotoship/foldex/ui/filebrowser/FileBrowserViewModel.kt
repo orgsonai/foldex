@@ -1100,7 +1100,11 @@ class FileBrowserViewModel @Inject constructor(
                     _state.value = _state.value.copy(isLoading = false)
                     if (currentUri != null) loadFilesSync(currentUri)
                     val undo: suspend () -> Unit = {
-                        storage.rename(to, node.uri)
+                        // SAF の `to` は「新しい表示名」を入れただけの擬似 URI で、そのままでは
+                        // 開けない。さらに SAF の名前変更は documentId 自体が変わり得るので、
+                        // 戻すときは読み直した一覧から実体の URI を取り直す。
+                        val renamed = _state.value.files.firstOrNull { it.name == newName }?.uri ?: to
+                        storage.rename(renamed, newUriForRename(renamed, oldName))
                         _state.value.currentUri?.let { loadFilesSync(it) }
                     }
                     emit(SnackbarEvent("「$oldName」→「$newName」に変更", "元に戻す", undo))

@@ -225,7 +225,12 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         // `to.documentUri` carries the new display name by convention for SAF
                         val newName = (to as? FileUri.Saf)?.documentUri
                             ?: return@withContext Result.Failure(StorageError.IoError("Invalid SAF rename target"))
-                        val doc = DocumentFile.fromSingleUri(context, Uri.parse(from.documentUri))
+                        // fromSingleUri が返す実装は renameTo() が
+                        // UnsupportedOperationException を投げるので使えない (SAF の名前変更が
+                        // 常に失敗していた原因)。ツリー由来で取り直すと DocumentsContract の
+                        // renameDocument が呼ばれる。fromTreeUri は tree URI /
+                        // tree-document URI のどちらでも実体を指せる。
+                        val doc = DocumentFile.fromTreeUri(context, Uri.parse(from.documentUri))
                             ?: return@withContext Result.Failure(StorageError.NotFound(from))
                         if (doc.renameTo(newName)) Result.Success(Unit)
                         else Result.Failure(StorageError.IoError("SAF rename failed"))
