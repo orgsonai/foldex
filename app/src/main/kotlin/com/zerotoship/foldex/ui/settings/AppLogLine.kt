@@ -218,6 +218,30 @@ internal fun ParsedLogLine.annotated(palette: LogPalette): AnnotatedString = bui
 }
 
 /**
+ * フィルタ後の全行を 1 つの [AnnotatedString] にまとめる。
+ *
+ * 行ごとに Text を並べると、行をまたいだなぞり選択ができない (LazyColumn は画面外の行を
+ * 使い回すので選択が途切れ、Column に並べても Text ごとに選択が切れる)。全体を 1 つの
+ * Text にすれば、ログの好きな範囲をなぞって部分コピーできる。
+ * 日付が変わるところには日付だけの行を挟む (行頭からは日付を落としているため)。
+ */
+internal fun buildLogText(lines: List<String>, palette: LogPalette): AnnotatedString = buildAnnotatedString {
+    var prevDate = ""
+    lines.forEachIndexed { index, raw ->
+        val parsed = parseLogLine(raw)
+        if (parsed.parsed && parsed.date != prevDate) {
+            if (index > 0) append("\n\n")
+            withStyle(SpanStyle(color = palette.muted)) { append(parsed.date) }
+            append('\n')
+            prevDate = parsed.date
+        } else if (index > 0) {
+            append('\n')
+        }
+        append(parsed.annotated(palette))
+    }
+}
+
+/**
  * パスの後ろに付く補足部分の開始位置。`— 理由` (失敗) を優先し、無ければ末尾の ` (1.2 MB)`。
  * 見つからなければ -1 (行末までパス扱い)。
  */
