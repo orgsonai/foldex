@@ -28,9 +28,9 @@ import io.github.rosemoe.sora.widget.component.Magnifier
  * なぞっている指が画面の端に近づいたら、指を止めていても一定速度でスクロールし続ける
  * ([edgeScroller])。これが無いと「いま画面に映っている範囲」までしか選べない。
  *
- * なぞっている間と、選択の掴み (ハンドル) を持って動かしている間は、指の上に拡大鏡を出す
- * ([showMagnifier])。指で隠れて選択位置が見えないため。ハンドルの操作自体は Sora が持つので、
- * こちらは表示だけ相乗りする。
+ * 選択の掴み (ハンドル) を持って動かしている間は、指の上に拡大鏡を出す ([showMagnifier])。
+ * 指で隠れて掴んだ位置が見えないため。ハンドルの操作自体は Sora が持つので、こちらは表示だけ
+ * 相乗りする。長押しからなぞっている間は出さない (触っているだけで出ると邪魔なため)。
  * Sora 内蔵の拡大鏡は使わない (下の無効化のコメント参照) — あれは
  * `PixelCopy.request(Window, ...)` を自前で回す実装で落ちていた。ここで使うのは
  * フレームワーク標準の `android.widget.Magnifier` ([SystemMagnifier]) で、別経路。
@@ -48,9 +48,6 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
     /** 直近の指の位置。指が止まっている間の端スクロールでも使うので覚えておく。 */
     private var lastX = 0f
     private var lastY = 0f
-
-    /** なぞりを始めた指の位置。どちら向きへ伸ばしているかの判定に使う。 */
-    private var anchorTouchX = 0f
 
     /**
      * 位置を求めるときに、伸ばしている向きへずらす量。
@@ -88,8 +85,6 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
             val targetColumn = (column + stepColumns).coerceIn(0, text.getColumnCount(targetLine))
             runCatching { ensurePositionVisible(targetLine, targetColumn, true) }
             extendSelectionTo(lastX, lastY)
-            // 中身が流れていくので拡大鏡も更新する。
-            showMagnifier(lastX, lastY)
             postDelayed(this, EDGE_INTERVAL_MS)
         }
     }
@@ -139,7 +134,6 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 dragSelecting = false
-                anchorTouchX = e.x
                 removeCallbacks(edgeScroller)
             }
 
@@ -147,14 +141,13 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
                 lastX = e.x
                 lastY = e.y
                 extendSelectionTo(e.x, e.y)
-                showMagnifier(e.x, e.y)
                 // 端に入ったら、指が止まってもスクロールが続くようにループを回す。
                 // 端から出たら止める (毎回貼り直すので二重には走らない)。
                 removeCallbacks(edgeScroller)
                 if (edgeStepX() != 0 || edgeStepY() != 0) postDelayed(edgeScroller, EDGE_INTERVAL_MS)
                 return true
             } else if (isHoldingHandle()) {
-                // 掴み (ハンドル) を持って動かしている間も拡大鏡を出す。
+                // 掴み (ハンドル) を持って動かしている間だけ拡大鏡を出す。
                 // 操作自体は Sora 側が処理するので、こちらは表示だけ足して super に渡す。
                 showMagnifier(e.x, e.y)
             }
@@ -223,9 +216,16 @@ class DragSelectCodeEditor(context: Context) : CodeEditor(context) {
     }
 
     private fun extendSelectionTo(x: Float, y: Float) {
+        // まず素の指の位置でアンカーとの前後関係を見る。
+        // 指の x だけで向きを決めると、行をまたいだ瞬間に逆向きへずれてしまう
+        // (下の行の左寄りにいるのは「終わり側」なのに、x が小さいので「始まり側」と誤判定する)。
+        val rawPos = getPointPositionOnScreen(x, y)
+        val rawLine = IntPair.getFirst(rawPos)
+        val rawColumn = IntPair.getSecond(rawPos)
+        val afterAnchor = anchorLine < rawLine || (anchorLine == rawLine && anchorColumn <= rawColumn)
         // 伸ばしている向きへ少しずらしてから行・桁に変換する ([selectionNudge] のコメント参照)。
         // 画面外に出た分は Sora がその行の端に丸めるので、端の文字まで届くようになる。
-        val nudged = if (x >= anchorTouchX) x + selectionNudge else x - selectionNudge
+        val nudged = if (afterAnchor) x + selectionNudge else x - selectionNudge
         val pos = getPointPositionOnScreen(nudged, y)
         val line = IntPair.getFirst(pos)
         val column = IntPair.getSecond(pos)
