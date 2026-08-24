@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -44,9 +46,13 @@ import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.imageedit.model.EditPoint
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
+import com.zerotoship.foldex.ui.imageedit.model.BoolOp
+import com.zerotoship.foldex.ui.imageedit.model.SelectionShape
+import com.zerotoship.foldex.ui.imageedit.model.SelectionSpec
 import com.zerotoship.foldex.ui.imageedit.model.Stroke
 import com.zerotoship.foldex.ui.imageedit.model.StrokeMode
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -109,6 +115,10 @@ fun EditCanvas(
                         livePoints.clear()
                         livePoints.add(down.position)
                     }
+                    if (startMode is CanvasMode.Select && !startRect.isEmpty) {
+                        livePoints.clear()
+                        livePoints.add(down.position)
+                    }
 
                     var multiTouch = false
                     do {
@@ -159,6 +169,28 @@ fun EditCanvas(
                                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                                     }
                                 }
+                                is CanvasMode.Select -> {
+                                    val pos = event.changes.firstOrNull { it.pressed }?.position
+                                    if (pos != null && livePoints.isNotEmpty()) {
+                                        if (current.shape == SelectionShape.LASSO) {
+                                            // 投げ縄は軌跡そのものが形になるので点を積む。
+                                            val last = livePoints.last()
+                                            if (abs(pos.x - last.x) + abs(pos.y - last.y) >=
+                                                MIN_POINT_DISTANCE_PX
+                                            ) {
+                                                livePoints.add(pos)
+                                            }
+                                        } else {
+                                            // 矩形と楕円は「始点と今の指」の 2 点で決まる。
+                                            if (livePoints.size < 2) {
+                                                livePoints.add(pos)
+                                            } else {
+                                                livePoints[1] = pos
+                                            }
+                                        }
+                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                    }
+                                }
                                 is CanvasMode.TextMove -> {
                                     val pan = event.calculatePan()
                                     val canvas = latestCanvas.value
@@ -195,6 +227,16 @@ fun EditCanvas(
                             )
                         }
                     }
+                    if (finished is CanvasMode.Select && !multiTouch) {
+                        val canvas = latestCanvas.value
+                        val rect = latestRect.value
+                        if (canvas != null && !rect.isEmpty) {
+                            // 動かさずに離した (タップ) と判定したら null が返り、選択解除になる。
+                            finished.onSelected(
+                                buildSelection(livePoints.toList(), rect, canvas, finished.shape),
+                            )
+                        }
+                    }
                     if (finished is CanvasMode.TextMove) finished.onDragEnd()
                     livePoints.clear()
                     grabbed = CropGrab.NONE
@@ -217,6 +259,10 @@ fun EditCanvas(
             when (mode) {
                 is CanvasMode.Crop -> drawCropOverlay(imageRect, mode.rect)
                 is CanvasMode.Brush -> drawLiveStroke(livePoints, mode.settings)
+                is CanvasMode.Select -> canvasSize?.let { size ->
+                    mode.current?.let { drawSelection(imageRect, size, it) }
+                    drawLiveSelection(imageRect, livePoints, mode.shape)
+                }
                 is CanvasMode.TextMove -> mode.bounds?.let { bounds ->
                     canvasSize?.let { drawTextFrame(imageRect, bounds, it) }
                 }
@@ -250,6 +296,19 @@ sealed interface CanvasMode {
         val onStroke: (Stroke) -> Unit,
     ) : CanvasMode {
         override val key: String get() = "brush"
+    }
+
+    /**
+     * 選択範囲をなぞって作る。確定済みの範囲は [current] として受け取り、輪郭を描く。
+     * [onSelected] に null が来たら「タップした = 選択解除」。
+     */
+    data class Select(
+        val shape: SelectionShape,
+        val current: SelectionSpec?,
+        val onSelected: (SelectionSpec?) -> Unit,
+    ) : CanvasMode {
+        // 形が変わったらジェスチャを張り替える (積み方が変わるため)。
+        override val key: String get() = "select-" + shape.name
     }
 
     data class TextMove(
@@ -321,6 +380,53 @@ private fun buildStroke(
         mode = settings.mode,
         hardness = settings.hardness,
     )
+}
+
+/**
+ * 指の軌跡を選択範囲に直す。座標は論理キャンバス座標へ換算し、画像の外へは出さない。
+ *
+ * ほとんど動かさずに離したときは **null** を返す。呼び出し側はそれを「タップ = 選択解除」
+ * として扱う (選んだ後に外を軽く叩いて解除する、という素直な操作になる)。
+ */
+private fun buildSelection(
+    screenPoints: List<Offset>,
+    imageRect: Rect,
+    canvas: EditSize,
+    shape: SelectionShape,
+): SelectionSpec? {
+    if (screenPoints.isEmpty() || imageRect.isEmpty) return null
+    val scaleX = canvas.width / imageRect.width
+    val scaleY = canvas.height / imageRect.height
+    val bounds = EditRect.ofSize(canvas.width, canvas.height)
+
+    // 画像からはみ出した分は縁で止める。外側を選べてしまうと反転したときの形が狂う。
+    fun toLogical(o: Offset) = EditPoint(
+        x = ((o.x - imageRect.left) * scaleX).coerceIn(0f, bounds.right),
+        y = ((o.y - imageRect.top) * scaleY).coerceIn(0f, bounds.bottom),
+    )
+
+    val first = screenPoints.first()
+    val last = screenPoints.last()
+    if (abs(last.x - first.x) + abs(last.y - first.y) < MIN_SELECTION_DRAG_PX) return null
+
+    return when (shape) {
+        SelectionShape.LASSO -> {
+            if (screenPoints.size < MIN_LASSO_POINTS) return null
+            SelectionSpec.Lasso(screenPoints.map(::toLogical))
+        }
+        SelectionShape.RECT, SelectionShape.ELLIPSE -> {
+            val a = toLogical(first)
+            val b = toLogical(last)
+            val rect = EditRect(a.x, a.y, b.x, b.y).normalized()
+            if (rect.isEmpty) {
+                null
+            } else if (shape == SelectionShape.RECT) {
+                SelectionSpec.Rect(rect)
+            } else {
+                SelectionSpec.Ellipse(rect)
+            }
+        }
+    }
 }
 
 private fun withAlpha(color: Int, alpha: Float): Int {
@@ -403,6 +509,98 @@ private fun DrawScope.drawTextFrame(area: Rect, bounds: EditRect, canvas: EditSi
 }
 
 /** 枠の外を暗くし、罫線と隅ハンドルを描く。 */
+/**
+ * 確定した選択範囲を示す。半透明の面 + 実線の輪郭。
+ *
+ * 動く点線 (marching ants) は使わない。1 フレームごとに位置をずらす描き直しが必要で、
+ * 大きい写真を載せたまま常時再描画すると目に見えて重くなるため。
+ */
+private fun DrawScope.drawSelection(area: Rect, canvas: EditSize, spec: SelectionSpec) {
+    val path = selectionPath(spec, area, canvas) ?: return
+    drawPath(path, color = SELECTION_FILL)
+    drawPath(path, color = SELECTION_EDGE, style = DrawStroke(width = 2f))
+}
+
+/** なぞっている最中の形。まだ確定していないので輪郭だけ (点線) にする。 */
+private fun DrawScope.drawLiveSelection(area: Rect, points: List<Offset>, shape: SelectionShape) {
+    if (points.size < 2 || area.isEmpty) return
+    val dash = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
+    when (shape) {
+        SelectionShape.LASSO -> {
+            val path = Path()
+            path.moveTo(points[0].x, points[0].y)
+            for (i in 1 until points.size) path.lineTo(points[i].x, points[i].y)
+            drawPath(path, color = SELECTION_EDGE, style = DrawStroke(width = 2f, pathEffect = dash))
+        }
+        SelectionShape.RECT, SelectionShape.ELLIPSE -> {
+            val r = Rect(
+                min(points.first().x, points.last().x),
+                min(points.first().y, points.last().y),
+                max(points.first().x, points.last().x),
+                max(points.first().y, points.last().y),
+            )
+            if (shape == SelectionShape.RECT) {
+                drawRect(
+                    color = SELECTION_EDGE,
+                    topLeft = r.topLeft,
+                    size = r.size,
+                    style = DrawStroke(width = 2f, pathEffect = dash),
+                )
+            } else {
+                drawOval(
+                    color = SELECTION_EDGE,
+                    topLeft = r.topLeft,
+                    size = r.size,
+                    style = DrawStroke(width = 2f, pathEffect = dash),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * [SelectionSpec] を画面座標の Path にする。engine 側の [SelectionPaths] と同じ組み立てを
+ * Compose の Path で行う (描画とレンダリングで形が食い違わないよう手順を揃えてある)。
+ */
+private fun selectionPath(spec: SelectionSpec, area: Rect, canvas: EditSize): Path? {
+    if (area.isEmpty) return null
+    val sx = area.width / canvas.width
+    val sy = area.height / canvas.height
+    fun mapRect(r: EditRect) = Rect(
+        area.left + r.left * sx,
+        area.top + r.top * sy,
+        area.left + r.right * sx,
+        area.top + r.bottom * sy,
+    )
+    return when (spec) {
+        is SelectionSpec.Rect -> Path().apply { addRect(mapRect(spec.rect)) }
+        is SelectionSpec.Ellipse -> Path().apply { addOval(mapRect(spec.rect)) }
+        is SelectionSpec.Lasso -> {
+            val pts = spec.points
+            if (pts.size < 2) return null
+            Path().apply {
+                fillType = PathFillType.EvenOdd
+                moveTo(area.left + pts[0].x * sx, area.top + pts[0].y * sy)
+                for (i in 1 until pts.size) {
+                    lineTo(area.left + pts[i].x * sx, area.top + pts[i].y * sy)
+                }
+                close()
+            }
+        }
+        is SelectionSpec.Combined -> {
+            var acc = Path()
+            for (part in spec.parts) {
+                val piece = selectionPath(part.spec, area, canvas) ?: continue
+                val merged = Path()
+                val op = if (part.op == BoolOp.ADD) PathOperation.Union else PathOperation.Difference
+                merged.op(acc, piece, op)
+                acc = merged
+            }
+            acc
+        }
+    }
+}
+
 private fun DrawScope.drawCropOverlay(area: Rect, crop: EditRect) {
     val l = area.left + crop.left * area.width
     val t = area.top + crop.top * area.height
@@ -560,3 +758,13 @@ private const val CHECKER_CELL_PX = 24f
 
 /** これ未満しか動いていない点は捨てる (画面 px)。 */
 private const val MIN_POINT_DISTANCE_PX = 3f
+
+/** これ未満のドラッグは「タップ」とみなして選択を解除する (画面 px)。 */
+private const val MIN_SELECTION_DRAG_PX = 12f
+
+/** 投げ縄が多角形として成立する最小の点数。 */
+private const val MIN_LASSO_POINTS = 3
+
+/** 選択範囲の面と輪郭。写真の上でも見えるよう、彩度の高い青を薄く敷く。 */
+private val SELECTION_FILL = Color(0x332196F3)
+private val SELECTION_EDGE = Color(0xFF2196F3)

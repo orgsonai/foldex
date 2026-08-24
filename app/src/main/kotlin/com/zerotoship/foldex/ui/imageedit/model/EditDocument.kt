@@ -22,6 +22,13 @@ data class EditDocument(
     /** 下 (index 0) から上へ描画する。 */
     val layers: List<Layer>,
     val activeLayerId: String,
+    /**
+     * いま選ばれている範囲。null なら「選択なし」= 操作は全面が対象。
+     *
+     * 画素ではなく範囲の**定義**を持つので、Undo 履歴にそのまま積めるし、
+     * プレビュー解像度で選んだ範囲を保存時に原寸で描き直せる。
+     */
+    val selection: SelectionSpec? = null,
 ) {
     val activeLayer: Layer? get() = layers.firstOrNull { it.id == activeLayerId }
 
@@ -31,6 +38,17 @@ data class EditDocument(
             width = (canvas.width * output.scale).roundToInt().coerceAtLeast(1),
             height = (canvas.height * output.scale).roundToInt().coerceAtLeast(1),
         )
+
+    /** 論理キャンバス全体を表す大きさ。選択範囲の反転などで使う。 */
+    val canvasSize: EditSize get() = EditSize(canvas.width, canvas.height)
+
+    /**
+     * 透明な部分を持ちうるか。JPEG で保存すると白く潰れる部分があるかの判定に使う。
+     * 実画素を見るより早く、保存ダイアログを開いた瞬間に判定できる。
+     */
+    val hasTransparentArea: Boolean
+        get() = canvas.background is Background.Transparent ||
+            layers.any { it is Layer.Fill && it.visible && it.mode == FillMode.CLEAR }
 
     fun updateLayer(id: String, block: (Layer) -> Layer): EditDocument =
         copy(layers = layers.map { if (it.id == id) block(it) else it })

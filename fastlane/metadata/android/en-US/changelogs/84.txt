@@ -1,0 +1,5 @@
+1.6.0
+- Image editor: added the selection tool (rectangle, ellipse, lasso)
+- Selections can be added to or removed from, and inverted
+- Fill a selection with a colour, or make it transparent
+- Selections follow crop, rotation and flip, and can be undone like any other edit

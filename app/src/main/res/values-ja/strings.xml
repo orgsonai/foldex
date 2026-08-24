@@ -980,4 +980,19 @@
     <string name="storage_error_io">入出力エラーが発生しました</string>
     <string name="storage_error_protocol">通信エラーが発生しました（%1$s）</string>
     <string name="storage_error_unknown">エラーが発生しました</string>
+    <!-- 選択範囲ツール (v3) -->
+    <string name="image_tool_select">選択</string>
+    <string name="image_select_rect">矩形</string>
+    <string name="image_select_ellipse">楕円</string>
+    <string name="image_select_lasso">投げ縄</string>
+    <string name="image_select_new">新規</string>
+    <string name="image_select_add">追加</string>
+    <string name="image_select_subtract">除外</string>
+    <string name="image_select_fill">塗りつぶし</string>
+    <string name="image_select_erase">透明にする</string>
+    <string name="image_select_invert">反転</string>
+    <string name="image_select_none">選択解除</string>
+    <string name="image_select_hint">写真をなぞって範囲を選びます。</string>
+    <string name="image_fill_layer_color">塗りつぶし</string>
+    <string name="image_fill_layer_clear">透明にした範囲</string>
 </resources>

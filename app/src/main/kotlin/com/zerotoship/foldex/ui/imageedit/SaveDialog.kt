@@ -60,8 +60,8 @@ fun SaveDialog(
     var useTargetSize by remember { mutableStateOf(false) }
     var targetKbText by remember { mutableStateOf("500") }
 
-    val transparentWarning = format == ImageFormat.JPEG && doc.canvas.background is
-        com.zerotoship.foldex.ui.imageedit.model.Background.Transparent
+    // 背景が透明なときだけでなく、選択範囲を「透明にする」で抜いたときも警告する (v3)。
+    val transparentWarning = format == ImageFormat.JPEG && doc.hasTransparentArea
 
     AlertDialog(
         onDismissRequest = onDismiss,

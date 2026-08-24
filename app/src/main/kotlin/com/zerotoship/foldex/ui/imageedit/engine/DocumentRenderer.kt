@@ -18,6 +18,7 @@ import com.zerotoship.foldex.ui.imageedit.model.Background
 import com.zerotoship.foldex.ui.imageedit.model.EditDocument
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
+import com.zerotoship.foldex.ui.imageedit.model.FillMode
 import com.zerotoship.foldex.ui.imageedit.model.Layer
 import com.zerotoship.foldex.ui.imageedit.model.Stroke
 import com.zerotoship.foldex.ui.imageedit.model.StrokeMode
@@ -68,6 +69,7 @@ object DocumentRenderer {
             when (layer) {
                 is Layer.Image -> drawImageLayer(canvas, paint, layer, sources, s)
                 is Layer.Drawing -> drawStrokes(canvas, layer, s, outSize)
+                is Layer.Fill -> drawFill(canvas, layer, s)
                 is Layer.Text -> drawText(canvas, layer, s)
             }
         }
@@ -134,6 +136,32 @@ object DocumentRenderer {
         canvas.restore()
 
         paint.alpha = 255
+    }
+
+    /**
+     * 選択範囲の塗りつぶし / 透明化を描く。
+     *
+     * ブラシと違って **saveLayer で囲まない**のが要点。[FillMode.CLEAR] を本体のキャンバスに
+     * 直接当てることで、下に描いた写真ごとくり抜かれる = 「透明にする」になる。
+     * 層を分けてしまうと自分の中だけが消え、写真には穴が開かない。
+     */
+    private fun drawFill(canvas: Canvas, layer: Layer.Fill, s: Float) {
+        val path = SelectionPaths.toPath(layer.area, s)
+        if (path.isEmpty) return
+        val paint = Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.FILL
+        }
+        when (layer.mode) {
+            FillMode.COLOR -> {
+                paint.color = layer.color
+                // レイヤー不透明度と色そのものの alpha を掛け合わせる。
+                paint.alpha =
+                    (Color.alpha(layer.color) * layer.alpha.coerceIn(0f, 1f)).roundToInt()
+            }
+            FillMode.CLEAR -> paint.xfermode = ERASE_MODE
+        }
+        canvas.drawPath(path, paint)
     }
 
     /**

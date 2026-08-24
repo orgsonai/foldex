@@ -18,13 +18,20 @@ import com.zerotoship.foldex.ui.imageedit.engine.ImageSource
 import com.zerotoship.foldex.ui.imageedit.model.CanvasTransforms
 import com.zerotoship.foldex.ui.imageedit.model.EditDocument
 import com.zerotoship.foldex.ui.imageedit.model.EditHistory
+import com.zerotoship.foldex.ui.imageedit.model.EditPoint
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
+import com.zerotoship.foldex.ui.imageedit.model.FillMode
 import com.zerotoship.foldex.ui.imageedit.model.ImageFormat
 import com.zerotoship.foldex.ui.imageedit.model.Layer
 import com.zerotoship.foldex.ui.imageedit.model.LayerTransform
 import com.zerotoship.foldex.ui.imageedit.model.SaveNaming
+import com.zerotoship.foldex.ui.imageedit.model.SelectionMode
+import com.zerotoship.foldex.ui.imageedit.model.SelectionSpec
 import com.zerotoship.foldex.ui.imageedit.model.Stroke
+import com.zerotoship.foldex.ui.imageedit.model.applying
+import com.zerotoship.foldex.ui.imageedit.model.invertedIn
+import com.zerotoship.foldex.ui.imageedit.model.mapPoints
 import com.zerotoship.foldex.ui.imageedit.model.TextStyleSpec
 import com.zerotoship.foldex.R
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -134,21 +141,25 @@ class ImageEditViewModel @Inject constructor(
 
     fun rotateRight() = reshape(
         transformOthers = { layer, canvas -> CanvasTransforms.rotateRight(layer, canvas, ::textSizeOf) },
+        pointMap = CanvasTransforms::rotateRightMap,
         transformImage = { it.rotatedRight() },
     )
 
     fun rotateLeft() = reshape(
         transformOthers = { layer, canvas -> CanvasTransforms.rotateLeft(layer, canvas, ::textSizeOf) },
+        pointMap = CanvasTransforms::rotateLeftMap,
         transformImage = { it.rotatedLeft() },
     )
 
     fun flipHorizontal() = reshape(
         transformOthers = { layer, canvas -> CanvasTransforms.flipHorizontal(layer, canvas, ::textSizeOf) },
+        pointMap = CanvasTransforms::flipHorizontalMap,
         transformImage = { it.copy(flipH = !it.flipH) },
     )
 
     fun flipVertical() = reshape(
         transformOthers = { layer, canvas -> CanvasTransforms.flipVertical(layer, canvas, ::textSizeOf) },
+        pointMap = CanvasTransforms::flipVerticalMap,
         transformImage = { it.copy(flipV = !it.flipV) },
     )
 
@@ -165,6 +176,9 @@ class ImageEditViewModel @Inject constructor(
                 if (other.id == layer.id) cropped
                 else CanvasTransforms.translate(other, -rect.left, -rect.top)
             },
+            selection = doc.selection?.mapPoints(
+                CanvasTransforms.translateMap(-rect.left, -rect.top),
+            ),
         ).withCanvasFitting(cropped.logicalSize)
         applyDocument(next, recordHistory = false)
     }
@@ -182,6 +196,9 @@ class ImageEditViewModel @Inject constructor(
                 if (other.id == layer.id) restored
                 else CanvasTransforms.translate(other, crop.left, crop.top)
             },
+            selection = doc.selection?.mapPoints(
+                CanvasTransforms.translateMap(crop.left, crop.top),
+            ),
         ).withCanvasFitting(restored.logicalSize)
         applyDocument(next, recordHistory = false)
     }
@@ -192,6 +209,8 @@ class ImageEditViewModel @Inject constructor(
      */
     private fun reshape(
         transformOthers: (Layer, EditSize) -> Layer,
+        /** 選択範囲を追従させる座標変換。レイヤーと同じ式を使う (CanvasTransforms が正本)。 */
+        pointMap: (EditSize) -> (EditPoint) -> EditPoint,
         transformImage: (Layer.Image) -> Layer.Image,
     ) {
         val doc = _state.value.document ?: return
@@ -203,6 +222,7 @@ class ImageEditViewModel @Inject constructor(
             layers = doc.layers.map { layer ->
                 if (layer.id == image.id) transformedImage else transformOthers(layer, canvas)
             },
+            selection = doc.selection?.mapPoints(pointMap(canvas)),
         ).withCanvasFitting(transformedImage.logicalSize)
         applyDocument(next, recordHistory = false)
     }
@@ -363,6 +383,79 @@ class ImageEditViewModel @Inject constructor(
     }
 
     private var textMoveInProgress = false
+
+    // ---- 選択範囲 (v3) ----
+
+    /**
+     * 指で描いた形を選択に反映する。**履歴には積まない。**
+     *
+     * 選択そのものは画素を変えないので、Undo で選択の変遷を延々と戻らされるのは邪魔になる。
+     * 履歴に残すのは「塗りつぶした」「透明にした」という結果の方だけ。
+     */
+    fun applySelection(mode: SelectionMode, drawn: SelectionSpec) {
+        val doc = _state.value.document ?: return
+        updateSelection(doc.selection.applying(mode, drawn))
+    }
+
+    /** 選択を反転する (選んでいなければ全面が選ばれる)。 */
+    fun invertSelection() {
+        val doc = _state.value.document ?: return
+        updateSelection(doc.selection.invertedIn(doc.canvasSize))
+    }
+
+    /** 選択を解除する。 */
+    fun clearSelection() = updateSelection(null)
+
+    /** 選択範囲を [color] で塗る。 */
+    fun fillSelection(color: Int) = addFill(FillMode.COLOR, color)
+
+    /** 選択範囲を透明にする (下の写真ごとくり抜く)。 */
+    fun eraseSelection() = addFill(FillMode.CLEAR, 0)
+
+    /**
+     * 塗り / 透明化をレイヤーとして積む。画素は書き換えないので、Undo で完全に戻せるし
+     * 保存時には原寸で描き直される。
+     */
+    private fun addFill(mode: FillMode, color: Int) {
+        val doc = _state.value.document ?: return
+        val area = doc.selection ?: return
+        if (area.isEmpty) return
+        history.record(doc)
+        val nameRes = if (mode == FillMode.CLEAR) {
+            R.string.image_fill_layer_clear
+        } else {
+            R.string.image_fill_layer_color
+        }
+        val next = doc.copy(
+            layers = doc.layers + Layer.Fill(
+                id = doc.freshLayerId("fill"),
+                name = appContext.getString(nameRes),
+                area = area,
+                color = color,
+                mode = mode,
+            ),
+        )
+        applyDocument(next, recordHistory = false)
+    }
+
+    /**
+     * 選択が変わってもプレビューの絵は変わらない (枠は Compose 側が上に描く) ので、
+     * 描き直さずに状態だけ差し替える。写真 1 枚の再レンダリングは数百 ms かかるため、
+     * なぞっている間これを走らせると選択が明らかにもたつく。
+     */
+    private fun updateSelection(next: SelectionSpec?) {
+        _state.update { st ->
+            val doc = st.document ?: return@update st
+            st.copy(document = doc.copy(selection = next))
+        }
+    }
+
+    /** まだ使われていないレイヤー ID を作る。レイヤーを消した後でも衝突しない。 */
+    private fun EditDocument.freshLayerId(prefix: String): String {
+        var n = layers.size
+        while (layers.any { it.id == "$prefix-$n" }) n++
+        return "$prefix-$n"
+    }
 
     private fun applyDocument(doc: EditDocument, recordHistory: Boolean = true) {
         _state.update {
@@ -659,10 +752,16 @@ data class ImageEditUiState(
     /** 既に置いてあるテキストレイヤー (切り替え用)。 */
     val textLayers: List<Layer.Text>
         get() = document?.layers?.filterIsInstance<Layer.Text>().orEmpty()
+
+    /** いま選ばれている範囲。null なら選択なし。 */
+    val selection: SelectionSpec? get() = document?.selection
+
+    /** 面積のある選択があるか (塗りつぶし等のボタンを出す判断に使う)。 */
+    val hasSelection: Boolean get() = selection?.isEmpty == false
 }
 
 /** ツールバーで選ぶツール。 */
-enum class EditTool { CROP, RESIZE, BRUSH, TEXT }
+enum class EditTool { CROP, RESIZE, SELECT, BRUSH, TEXT }
 
 /** 保存の指定。 */
 data class SaveRequest(

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Flip
+import androidx.compose.material.icons.filled.HighlightAlt
 import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
 import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
@@ -61,6 +62,8 @@ import com.zerotoship.foldex.ui.imageedit.engine.DocumentRenderer
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
 import com.zerotoship.foldex.ui.imageedit.model.StrokeMode
+import com.zerotoship.foldex.ui.imageedit.model.SelectionMode
+import com.zerotoship.foldex.ui.imageedit.model.SelectionShape
 import com.zerotoship.foldex.R
 
 /**
@@ -96,6 +99,14 @@ fun ImageEditScreen(
     onMoveText: (Float, Float) -> Unit,
     onMoveTextEnd: () -> Unit,
     onDeleteText: () -> Unit,
+    onApplySelection: (
+        com.zerotoship.foldex.ui.imageedit.model.SelectionMode,
+        com.zerotoship.foldex.ui.imageedit.model.SelectionSpec,
+    ) -> Unit,
+    onClearSelection: () -> Unit,
+    onInvertSelection: () -> Unit,
+    onFillSelection: (Int) -> Unit,
+    onEraseSelection: () -> Unit,
     onSave: (SaveRequest) -> Unit,
 ) {
     val doc = state.document
@@ -103,6 +114,8 @@ fun ImageEditScreen(
     var cropRect by remember { mutableStateOf(FULL_CROP) }
     var cropAspect by remember { mutableStateOf(CropAspect.FREE) }
     var brush by remember { mutableStateOf(DEFAULT_BRUSH) }
+    var selectShape by remember { mutableStateOf(SelectionShape.RECT) }
+    var selectMode by remember { mutableStateOf(SelectionMode.REPLACE) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
 
@@ -194,6 +207,18 @@ fun ImageEditScreen(
                                         }
                                     },
                                 )
+                                state.activeTool == EditTool.SELECT -> CanvasMode.Select(
+                                    shape = selectShape,
+                                    current = state.selection,
+                                    onSelected = { drawn ->
+                                        // なぞらずに離した (null) ときは解除。
+                                        if (drawn == null) {
+                                            onClearSelection()
+                                        } else {
+                                            onApplySelection(selectMode, drawn)
+                                        }
+                                    },
+                                )
                                 state.activeTool == EditTool.BRUSH ->
                                     CanvasMode.Brush(settings = brush, onStroke = onAddStroke)
                                 state.activeTool == EditTool.TEXT && state.editingText != null ->
@@ -264,6 +289,23 @@ fun ImageEditScreen(
                             state = state,
                             onSetLongEdge = onSetLongEdge,
                             onSetPercent = onSetPercent,
+                        )
+                    }
+                    EditTool.SELECT -> {
+                        HorizontalDivider()
+                        SelectionPanel(
+                            shape = selectShape,
+                            mode = selectMode,
+                            color = brush.color,
+                            hasSelection = state.hasSelection,
+                            onShapeChange = { selectShape = it },
+                            onModeChange = { selectMode = it },
+                            // 塗る色はペンと共有する (色の概念を 2 つ持たせない)。
+                            onColorChange = { brush = brush.copy(color = it) },
+                            onFill = { onFillSelection(brush.color) },
+                            onErase = onEraseSelection,
+                            onInvert = onInvertSelection,
+                            onDeselect = onClearSelection,
                         )
                     }
                     EditTool.BRUSH -> {
@@ -358,6 +400,14 @@ private fun EditToolbar(
                 active = activeTool == EditTool.RESIZE,
                 enabled = enabled,
                 onClick = { onSelectTool(EditTool.RESIZE) },
+                modifier = Modifier.weight(1f),
+            )
+            ToolButton(
+                icon = Icons.Default.HighlightAlt,
+                label = stringResource(R.string.image_tool_select),
+                active = activeTool == EditTool.SELECT,
+                enabled = enabled,
+                onClick = { onSelectTool(EditTool.SELECT) },
                 modifier = Modifier.weight(1f),
             )
             ToolButton(

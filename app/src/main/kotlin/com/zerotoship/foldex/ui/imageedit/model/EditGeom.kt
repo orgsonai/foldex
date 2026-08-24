@@ -37,6 +37,17 @@ data class EditRect(
         return if (r.isEmpty) null else r
     }
 
+    /**
+     * left > right のように上下左右が入れ替わった矩形を正しい向きに直す。
+     * 指のドラッグは始点より左・上へ動くので、範囲を作る前に必ず通す。
+     */
+    fun normalized(): EditRect = EditRect(
+        left = min(left, right),
+        top = min(top, bottom),
+        right = max(left, right),
+        bottom = max(top, bottom),
+    )
+
     /** [bounds] の内側に収まるよう平行移動 + はみ出し分を切り詰める。 */
     fun coerceIn(bounds: EditRect): EditRect {
         val w = min(width, bounds.width)

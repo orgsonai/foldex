@@ -989,4 +989,19 @@
     <string name="storage_error_io">An input/output error occurred</string>
     <string name="storage_error_protocol">A communication error occurred (%1$s)</string>
     <string name="storage_error_unknown">An error occurred</string>
+    <!-- 選択範囲ツール (v3) -->
+    <string name="image_tool_select">Select</string>
+    <string name="image_select_rect">Rectangle</string>
+    <string name="image_select_ellipse">Ellipse</string>
+    <string name="image_select_lasso">Lasso</string>
+    <string name="image_select_new">New</string>
+    <string name="image_select_add">Add</string>
+    <string name="image_select_subtract">Remove</string>
+    <string name="image_select_fill">Fill</string>
+    <string name="image_select_erase">Make transparent</string>
+    <string name="image_select_invert">Invert</string>
+    <string name="image_select_none">Deselect</string>
+    <string name="image_select_hint">Drag across the photo to select an area.</string>
+    <string name="image_fill_layer_color">Fill</string>
+    <string name="image_fill_layer_clear">Transparent area</string>
 </resources>

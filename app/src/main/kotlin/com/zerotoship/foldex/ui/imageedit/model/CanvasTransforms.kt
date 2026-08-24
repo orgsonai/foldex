@@ -17,10 +17,32 @@ package com.zerotoship.foldex.ui.imageedit.model
  */
 object CanvasTransforms {
 
+    // ---- 座標の移り方 ----
+    //
+    // 「点 (x, y) がどこへ移るか」をここ 1 箇所だけに書く。レイヤー (線・塗り) も
+    // 選択範囲もこの関数を通すので、式が 2 箇所に散らばって片方だけ直す事故が起きない。
+
+    fun translateMap(dx: Float, dy: Float): (EditPoint) -> EditPoint =
+        { EditPoint(it.x + dx, it.y + dy) }
+
+    /** 右 90 度。キャンバスの幅と高さが入れ替わる。 */
+    fun rotateRightMap(canvas: EditSize): (EditPoint) -> EditPoint =
+        { EditPoint(canvas.height - it.y, it.x) }
+
+    fun rotateLeftMap(canvas: EditSize): (EditPoint) -> EditPoint =
+        { EditPoint(it.y, canvas.width - it.x) }
+
+    fun flipHorizontalMap(canvas: EditSize): (EditPoint) -> EditPoint =
+        { EditPoint(canvas.width - it.x, it.y) }
+
+    fun flipVerticalMap(canvas: EditSize): (EditPoint) -> EditPoint =
+        { EditPoint(it.x, canvas.height - it.y) }
+
     /** 切り抜きで原点が動いた分を平行移動する。 */
     fun translate(layer: Layer, dx: Float, dy: Float): Layer = when (layer) {
         is Layer.Image -> layer
-        is Layer.Drawing -> layer.mapPoints { EditPoint(it.x + dx, it.y + dy) }
+        is Layer.Drawing -> layer.mapPoints(translateMap(dx, dy))
+        is Layer.Fill -> layer.mapArea(translateMap(dx, dy))
         is Layer.Text -> layer.movedBy(dx, dy)
     }
 
@@ -31,7 +53,8 @@ object CanvasTransforms {
     fun rotateRight(layer: Layer, canvas: EditSize, textSize: (Layer.Text) -> EditSize): Layer =
         when (layer) {
             is Layer.Image -> layer
-            is Layer.Drawing -> layer.mapPoints { EditPoint(canvas.height - it.y, it.x) }
+            is Layer.Drawing -> layer.mapPoints(rotateRightMap(canvas))
+            is Layer.Fill -> layer.mapArea(rotateRightMap(canvas))
             is Layer.Text -> layer.recentered(textSize(layer), rotationDelta = 90f) { cx, cy ->
                 (canvas.height - cy) to cx
             }
@@ -41,7 +64,8 @@ object CanvasTransforms {
     fun rotateLeft(layer: Layer, canvas: EditSize, textSize: (Layer.Text) -> EditSize): Layer =
         when (layer) {
             is Layer.Image -> layer
-            is Layer.Drawing -> layer.mapPoints { EditPoint(it.y, canvas.width - it.x) }
+            is Layer.Drawing -> layer.mapPoints(rotateLeftMap(canvas))
+            is Layer.Fill -> layer.mapArea(rotateLeftMap(canvas))
             is Layer.Text -> layer.recentered(textSize(layer), rotationDelta = -90f) { cx, cy ->
                 cy to (canvas.width - cx)
             }
@@ -56,7 +80,8 @@ object CanvasTransforms {
     fun flipHorizontal(layer: Layer, canvas: EditSize, textSize: (Layer.Text) -> EditSize): Layer =
         when (layer) {
             is Layer.Image -> layer
-            is Layer.Drawing -> layer.mapPoints { EditPoint(canvas.width - it.x, it.y) }
+            is Layer.Drawing -> layer.mapPoints(flipHorizontalMap(canvas))
+            is Layer.Fill -> layer.mapArea(flipHorizontalMap(canvas))
             is Layer.Text -> layer.recenteredMirrored(textSize(layer)) { cx, cy ->
                 (canvas.width - cx) to cy
             }
@@ -66,7 +91,8 @@ object CanvasTransforms {
     fun flipVertical(layer: Layer, canvas: EditSize, textSize: (Layer.Text) -> EditSize): Layer =
         when (layer) {
             is Layer.Image -> layer
-            is Layer.Drawing -> layer.mapPoints { EditPoint(it.x, canvas.height - it.y) }
+            is Layer.Drawing -> layer.mapPoints(flipVerticalMap(canvas))
+            is Layer.Fill -> layer.mapArea(flipVerticalMap(canvas))
             is Layer.Text -> layer.recenteredMirrored(textSize(layer)) { cx, cy ->
                 cx to (canvas.height - cy)
             }
@@ -74,6 +100,13 @@ object CanvasTransforms {
 
     private fun Layer.Drawing.mapPoints(transform: (EditPoint) -> EditPoint): Layer.Drawing =
         copy(strokes = strokes.map { stroke -> stroke.copy(points = stroke.points.map(transform)) })
+
+    /**
+     * 塗りつぶし / 透明化の範囲も線と同じように追従させる。
+     * 反転では**鏡像にしてよい** (文字と違って読めなくなる心配がないため)。
+     */
+    private fun Layer.Fill.mapArea(transform: (EditPoint) -> EditPoint): Layer.Fill =
+        copy(area = area.mapPoints(transform))
 
     /**
      * テキストは「未回転のブロックを左上に置いてから中心で回す」描き方をするので、

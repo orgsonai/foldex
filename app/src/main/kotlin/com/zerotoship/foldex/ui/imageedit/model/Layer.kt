@@ -97,6 +97,28 @@ sealed interface Layer {
     }
 
     /**
+     * 選択範囲を塗りつぶす / 透明にする (v3)。
+     *
+     * 画素を書き換えず「この範囲をこう扱う」という指示のまま積む。だから何度でも取り消せるし、
+     * プレビューで見た形がそのまま原寸で描き直される。
+     *
+     * [FillMode.CLEAR] は**このレイヤーより下を全部くり抜く**。消しゴム ([Drawing]) が
+     * 自分の線だけを消すのと違い、写真そのものに穴を開けるための操作。
+     */
+    data class Fill(
+        override val id: String,
+        override val name: String,
+        override val visible: Boolean = true,
+        override val alpha: Float = 1f,
+        override val transform: LayerTransform = LayerTransform(),
+        /** 対象の範囲 (論理キャンバス座標)。 */
+        val area: SelectionSpec,
+        /** ARGB。[FillMode.CLEAR] では使わない。 */
+        val color: Int,
+        val mode: FillMode,
+    ) : Layer
+
+    /**
      * テキスト。**確定しても文字列のまま持ち続ける**ので、保存するまで何度でも打ち直せる。
      * 画素へ焼き込まれるのは保存時の描画 1 回だけ。
      *
@@ -118,6 +140,15 @@ sealed interface Layer {
             ),
         )
     }
+}
+
+/** [Layer.Fill] の塗り方。 */
+enum class FillMode {
+    /** 指定色で塗る。 */
+    COLOR,
+
+    /** 透明にする (下のレイヤーごとくり抜く)。 */
+    CLEAR,
 }
 
 /** レイヤーを論理キャンバスへ配置する変換。画像レイヤーは v1 では常に既定値。 */

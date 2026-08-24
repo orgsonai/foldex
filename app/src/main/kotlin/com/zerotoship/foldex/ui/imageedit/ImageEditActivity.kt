@@ -110,6 +110,11 @@ class ImageEditActivity : ComponentActivity() {
                     onMoveText = viewModel::moveEditingText,
                     onMoveTextEnd = viewModel::commitTextMove,
                     onDeleteText = viewModel::deleteEditingText,
+                    onApplySelection = viewModel::applySelection,
+                    onClearSelection = viewModel::clearSelection,
+                    onInvertSelection = viewModel::invertSelection,
+                    onFillSelection = viewModel::fillSelection,
+                    onEraseSelection = viewModel::eraseSelection,
                     onSave = viewModel::save,
                 )
             }
