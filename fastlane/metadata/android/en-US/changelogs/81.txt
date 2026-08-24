@@ -1,0 +1,3 @@
+1.5.21
+- Updated the Wi-Fi lock used for long file transfers and syncs to select the appropriate mode for each Android version
+- Preserved screen-off transfer behavior on Android 13 and earlier

@@ -141,7 +141,7 @@ class SyncWorker @AssistedInject constructor(
     private fun acquireWifiLock(): WifiManager.WifiLock? = runCatching {
         val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
             ?: return@runCatching null
-        wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, WIFI_LOCK_TAG).apply {
+        wifiManager.createWifiLock(wifiLockMode(), WIFI_LOCK_TAG).apply {
             setReferenceCounted(false)
             acquire()
         }
@@ -171,6 +171,18 @@ class SyncWorker @AssistedInject constructor(
         private const val CHANNEL_ID = "foldex_sync"
         private const val FOREGROUND_NOTIFICATION_ID = 4344
         private const val WIFI_LOCK_TAG = "Foldex:SyncWifiLock"
+
+        /**
+         * Android 14+ は HIGH_PERF を内部で LOW_LATENCY に置き換えるため後継を明示する。
+         * 13 以前は画面 OFF・バックグラウンドでも有効な従来モードを保ち、同期の退行を防ぐ。
+         */
+        @Suppress("DEPRECATION")
+        private fun wifiLockMode(): Int =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
 
         const val KEY_PROGRESS_PHASE = "progress.phase"
         const val KEY_PROGRESS_TOTAL = "progress.totalActions"

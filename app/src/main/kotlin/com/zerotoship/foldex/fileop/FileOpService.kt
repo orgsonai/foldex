@@ -23,7 +23,7 @@ import com.zerotoship.foldex.R
  * 処理が止まらないようにするための前景サービス。
  *
  * - `PARTIAL_WAKE_LOCK` で CPU を起こし続ける (画面OFFでも処理継続)。
- * - `WifiLock(FULL_HIGH_PERF)` でリモート転送中の Wi-Fi スリープ/切断を防ぐ。
+ * - `WifiLock` でリモート転送中の Wi-Fi スリープ/切断を防ぐ。
  * - `dataSync` 前景通知でプロセスがバックグラウンド kill されにくくする。
  *
  * 実際のコピー処理は ViewModel 側 (`viewModelScope`) が行い、本サービスは
@@ -84,7 +84,7 @@ class FileOpService : Service() {
         wakeLock?.let { if (!it.isHeld) it.acquire(MAX_HOLD_MS) }
         if (wifiLock == null) {
             val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            wifiLock = wm?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, WIFI_TAG)
+            wifiLock = wm?.createWifiLock(wifiLockMode(), WIFI_TAG)
                 ?.apply { setReferenceCounted(false) }
         }
         wifiLock?.let { if (!it.isHeld) it.acquire() }
@@ -132,6 +132,18 @@ class FileOpService : Service() {
         private const val WAKE_TAG: String = "foldex:fileop"
         private const val WIFI_TAG: String = "foldex:fileop-wifi"
         private const val MAX_HOLD_MS: Long = 2L * 60 * 60 * 1000 // 安全弁: 最長2時間
+
+        /**
+         * Android 14+ は HIGH_PERF を内部で LOW_LATENCY に置き換えるため後継を明示する。
+         * 13 以前は画面 OFF・バックグラウンドでも有効な従来モードを保ち、転送の退行を防ぐ。
+         */
+        @Suppress("DEPRECATION")
+        private fun wifiLockMode(): Int =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
 
         /** 長時間ファイル操作の開始時に呼ぶ。前景化 + WakeLock 取得。 */
         fun start(context: Context, label: String) {
