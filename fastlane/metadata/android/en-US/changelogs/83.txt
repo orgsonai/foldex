@@ -1,0 +1,2 @@
+1.5.23
+- Shortened the "Connections" navigation label to "Connect" so it no longer wraps to two lines in English

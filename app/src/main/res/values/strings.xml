@@ -872,7 +872,7 @@
     <!-- Main navigation, foreground operations, and logs -->
     <string name="tab_home">Home</string>
     <string name="tab_files">Files</string>
-    <string name="tab_connections">Connections</string>
+    <string name="tab_connections">Connect</string>
     <string name="tab_server">Servers</string>
     <string name="tab_sync">Sync</string>
     <string name="tab_settings">Settings</string>
