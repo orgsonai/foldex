@@ -1,0 +1,4 @@
+1.5.17
+- Fixed some screens not updating immediately after changing the app language
+- Safely skip operation-completion notifications when notification permission is not granted
+- Strengthened the full lint check before release

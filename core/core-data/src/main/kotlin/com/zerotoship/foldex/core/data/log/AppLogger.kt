@@ -5,6 +5,7 @@ package com.zerotoship.foldex.core.data.log
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -57,7 +58,7 @@ class AppLogger @Inject constructor(
             settingsRepository.settings
                 .map { it.permanentLogUri }
                 .collect { raw ->
-                    permanentUri = raw?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                    permanentUri = raw?.let { runCatching { it.toUri() }.getOrNull() }
                 }
         }
     }
