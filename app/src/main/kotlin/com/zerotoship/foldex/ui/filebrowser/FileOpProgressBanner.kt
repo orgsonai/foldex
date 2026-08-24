@@ -59,7 +59,12 @@ fun FileOpProgressBanner(
             // フォルダ全体のファイル数が分かるときは件数を「○○ / ○○ ファイル」で出す
             // (フォルダコピー/切り取り貼り付け)。分からない操作は従来どおり項目数を出す。
             val countText = if (progress.filesTotal > 0) {
-                pluralStringResource(R.plurals.operation_files_progress, progress.filesTotal, progress.filesTransferred, progress.filesTotal)
+                pluralStringResource(
+                    R.plurals.operation_files_progress,
+                    progress.filesTotal.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    progress.filesTransferred,
+                    progress.filesTotal,
+                )
             } else {
                 "${progress.currentIndex} / ${progress.totalCount}"
             }

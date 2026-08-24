@@ -1,0 +1,6 @@
+1.5.16
+- Greatly expanded English localization across file operations, connections, servers, sync, viewers, image editing, notifications, and errors
+- Fixed renaming inside folders added through SAF
+- Fixed scheduled sync potentially stopping after several days
+- Added range selection and copying to the execution log
+- Adjusted text-selection handles to remain reachable at screen edges
