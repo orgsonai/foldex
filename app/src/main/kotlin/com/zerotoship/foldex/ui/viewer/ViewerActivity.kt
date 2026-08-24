@@ -38,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -452,7 +453,7 @@ private fun ViewerScreen(
         provided ?: if (allowParentScan) collectImagesFromParent(file) else listOf(initialImageId)
     }
     var imageIndex by remember(imagePaths) {
-        mutableStateOf(imagePaths.indexOf(initialImageId).coerceAtLeast(0))
+        mutableIntStateOf(imagePaths.indexOf(initialImageId).coerceAtLeast(0))
     }
     // 現在表示中の対象を識別子 (ローカル絶対パス or content:// URI) で持つ。
     // 画像以外は file をそのまま指す。

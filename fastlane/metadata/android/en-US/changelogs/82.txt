@@ -1,0 +1,3 @@
+1.5.22
+- Removed unreachable compatibility paths for Android versions below the app's minimum requirement
+- Reduced unnecessary allocations when updating the current image position in the viewer

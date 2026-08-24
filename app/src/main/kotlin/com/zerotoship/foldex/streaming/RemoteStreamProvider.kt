@@ -9,7 +9,6 @@ import android.content.Context
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
-import android.os.Build
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.HandlerThread
@@ -28,10 +27,6 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.InputStream
 
@@ -48,7 +43,6 @@ import java.io.InputStream
  *   (SMB2 READ at offset / SFTP RemoteFile(offset) / FTP REST / WebDAV Range) に対応している。
  * - 連続読み取り (sequential read) を高速化するため、前回 onRead 終了位置のストリームを
  *   保持しておき、次回 onRead が連続位置なら同じストリームを使い回す (seek が起きたら閉じて再オープン)。
- * - Android 8.0 未満 (minSdk 26 想定なので発生しないが念のため) は createPipe にフォールバック。
  *
  * URI 形式:
  * ```
@@ -99,16 +93,10 @@ class RemoteStreamProvider : ContentProvider() {
         val router = router(ctx)
         val fileUri = FileUri.Remote(protocol, connectionId, path)
 
-        // Android O+ では ProxyFileDescriptor で seek 対応 PFD を返す。
-        // 26 未満は到達しない (minSdk 26)。
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val sm = ctx.getSystemService(Context.STORAGE_SERVICE) as StorageManager
-            val handler = obtainHandler()
-            val callback = RemoteProxyCallback(router, fileUri, totalSize)
-            return sm.openProxyFileDescriptor(ParcelFileDescriptor.MODE_READ_ONLY, callback, handler)
-        }
-        // 互換フォールバック (createPipe; seek 非対応)。
-        return openPipeFallback(router, fileUri)
+        val sm = ctx.getSystemService(Context.STORAGE_SERVICE) as StorageManager
+        val handler = obtainHandler()
+        val callback = RemoteProxyCallback(router, fileUri, totalSize)
+        return sm.openProxyFileDescriptor(ParcelFileDescriptor.MODE_READ_ONLY, callback, handler)
     }
 
     override fun query(
@@ -151,30 +139,10 @@ class RemoteStreamProvider : ContentProvider() {
         return callbackHandler!!
     }
 
-    /** Pipe 経路 (createPipe + バックグラウンドコピー)。seek 非対応の互換フォールバック。 */
-    private fun openPipeFallback(router: StorageProviderRouter, fileUri: FileUri): ParcelFileDescriptor {
-        val pipe = ParcelFileDescriptor.createPipe()
-        val readSide = pipe[0]
-        val writeSide = pipe[1]
-        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        scope.launch {
-            ParcelFileDescriptor.AutoCloseOutputStream(writeSide).use { out ->
-                runCatching {
-                    when (val r = router.openInput(fileUri)) {
-                        is Result.Success -> r.value.use { it.copyTo(out, bufferSize = 64 * 1024) }
-                        is Result.Failure -> Unit
-                    }
-                }
-            }
-        }
-        return readSide
-    }
-
     /**
      * onRead(offset, size, data) ごとにストリームから読み取って data に詰める Callback。
      * 連続位置のときは前回のストリームを使い回し、seek (位置不一致) のときだけ開き直す。
      */
-    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
     private class RemoteProxyCallback(
         private val router: StorageProviderRouter,
         private val fileUri: FileUri,
