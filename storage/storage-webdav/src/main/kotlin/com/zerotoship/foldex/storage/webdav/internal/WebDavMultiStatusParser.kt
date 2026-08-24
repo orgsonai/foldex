@@ -76,7 +76,7 @@ internal object WebDavMultiStatusParser {
             val decodedPath = runCatching { URI(raw).rawPath }.getOrNull() ?: raw
             return Entry(
                 rawHref = raw,
-                decodedPath = java.net.URLDecoder.decode(decodedPath, Charsets.UTF_8),
+                decodedPath = java.net.URLDecoder.decode(decodedPath, Charsets.UTF_8.name()),
                 isCollection = isCollection,
                 contentLength = if (isCollection) -1L else (contentLength ?: 0L),
                 lastModifiedEpochMillis = lastModified,

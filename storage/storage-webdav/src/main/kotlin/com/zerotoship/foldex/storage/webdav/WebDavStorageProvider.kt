@@ -325,7 +325,7 @@ class WebDavStorageProvider @Inject internal constructor(
 
     private fun decodedPathOfBaseUrl(url: HttpUrl): String {
         val raw = url.encodedPath
-        val decoded = java.net.URLDecoder.decode(raw, Charsets.UTF_8)
+        val decoded = java.net.URLDecoder.decode(raw, Charsets.UTF_8.name())
         return decoded.trimEnd('/')
     }
 

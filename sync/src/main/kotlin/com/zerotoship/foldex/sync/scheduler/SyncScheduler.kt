@@ -7,8 +7,8 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
+import androidx.core.net.toUri
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
@@ -223,7 +223,7 @@ class SyncScheduler @Inject constructor(
     private fun alarmPendingIntent(jobId: String, flags: Int): PendingIntent? {
         val intent = Intent(context, SyncAlarmReceiver::class.java).apply {
             action = SyncAlarmReceiver.ACTION_FIRE
-            data = Uri.parse("foldex://sync-alarm/$jobId")
+            data = "foldex://sync-alarm/$jobId".toUri()
             putExtra(SyncAlarmReceiver.EXTRA_JOB_ID, jobId)
         }
         return PendingIntent.getBroadcast(context, jobId.hashCode(), intent, flags)

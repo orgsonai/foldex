@@ -1,2 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <!-- SyncWorker は WorkManager の SystemForegroundService 経由で前景化する。
+             Android 14 以降は、要求する dataSync 型がサービス宣言にないとクラッシュする。 -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+    </application>
+</manifest>

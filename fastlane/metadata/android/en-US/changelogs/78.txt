@@ -1,0 +1,4 @@
+1.5.18
+- Fixed a potential WebDAV path-loading failure on Android 8 through 12
+- Moved the sync foreground-service declaration into its implementation module for standalone validation
+- Resolved lint errors across all modules
