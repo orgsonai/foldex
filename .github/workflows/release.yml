@@ -59,8 +59,10 @@ jobs:
           EOF
           echo "keystore.properties written"
 
-      - name: Build release APK
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+      - name: Validate and build release APK
+        # lintRelease を同じ Gradle 起動で先に通し、lintVital だけでは
+        # 拾えない Compose/リソースの問題を公開前に防ぐ。
+        run: ./gradlew :app:lintRelease :app:assembleRelease --no-daemon --stacktrace
 
       - name: Print APK info
         run: ls -lh app/build/outputs/apk/release/

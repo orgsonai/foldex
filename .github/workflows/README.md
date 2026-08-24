@@ -6,8 +6,8 @@
 
 | トリガー | 動作 |
 |---|---|
-| タグ push (`v*`) | `assembleRelease` → APK 生成 → GitHub Release に APK 添付 + 自動リリースノート |
-| 手動 (`workflow_dispatch`) | 指定タグをチェックアウトして APK 生成 (Release は作らない、Artifact のみ) |
+| タグ push (`v*`) | `lintRelease` → `assembleRelease` → APK 生成 → GitHub Release に APK 添付 + 自動リリースノート |
+| 手動 (`workflow_dispatch`) | 指定タグをチェックアウトし、完全 Lint 後に APK 生成 (Release は作らない、Artifact のみ) |
 
 リリース判定 (prerelease):
 - タグに `-` を含む (例: `v0.9.0-P7`, `v1.0.0-rc1`) → prerelease として公開
@@ -24,7 +24,8 @@
 | `SIGNING_KEY_ALIAS` | 鍵のエイリアス |
 | `SIGNING_KEY_PASSWORD` | 鍵のパスワード |
 
-`SIGNING_KEYSTORE_BASE64` が未設定の場合、ワークフローは警告を出しつつ **debug 鍵にフォールバック**してビルドだけ通る (実用配布には不適、動作確認のみ)。
+上記シークレットが1つでも未設定の場合、ワークフローはリリースを中止する。
+配布物の debug 鍵へのフォールバックは行わない。
 
 ### 使い方
 
