@@ -120,6 +120,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -151,6 +152,7 @@ fun FileBrowserScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val connections by connectionsViewModel.connections.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbarHostState = remember { SnackbarHostState() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
@@ -220,7 +222,7 @@ fun FileBrowserScreen(
                     )
             }
             if (runCatching { context.startActivity(intent) }.isFailure) {
-                snackbarHostState.showSnackbar(context.getString(R.string.file_no_opening_app))
+                snackbarHostState.showSnackbar(resources.getString(R.string.file_no_opening_app))
             }
         }
     }
@@ -386,8 +388,8 @@ fun FileBrowserScreen(
                                         val path = viewModel.currentAbsolutePath()
                                         if (path != null) {
                                             drawerScope.launch {
-                                                clipboard.setPlainText(context.getString(R.string.clipboard_path_label), path)
-                                                snackbarHostState.showSnackbar(context.getString(R.string.path_copied, path))
+                                                clipboard.setPlainText(resources.getString(R.string.clipboard_path_label), path)
+                                                snackbarHostState.showSnackbar(resources.getString(R.string.path_copied, path))
                                             }
                                         }
                                     },
@@ -491,7 +493,8 @@ fun FileBrowserScreen(
                                     text = { Text(stringResource(R.string.usage_analyze)) },
                                     leadingIcon = { Icon(Icons.Outlined.PieChart, null) },
                                     onClick = {
-                                        val name = state.breadcrumbs.lastOrNull()?.displayName ?: context.getString(R.string.usage_title)
+                                        val name = state.breadcrumbs.lastOrNull()?.displayName
+                                            ?: resources.getString(R.string.usage_title)
                                         runCatching {
                                             context.startActivity(
                                                 com.zerotoship.foldex.ui.usage.DiskUsageActivity.intent(

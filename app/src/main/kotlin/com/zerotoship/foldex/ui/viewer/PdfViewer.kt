@@ -40,7 +40,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.components.FastScrollbar
@@ -65,7 +65,7 @@ private const val TAG = "PdfViewer"
  */
 @Composable
 fun PdfViewer(file: File, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
+    val resources = LocalResources.current
     // ParcelFileDescriptor + PdfRenderer のライフサイクル: produceState のスコープが終わる時
     // (Composable から外れる or key 変更) に awaitDispose で close する。
     // 旧実装の DisposableEffect(rendererState) は登録時の値ではなく現在値を見るため、
@@ -77,11 +77,11 @@ fun PdfViewer(file: File, modifier: Modifier = Modifier) {
             try {
                 android.util.Log.d(TAG, "Loading PDF: ${file.absolutePath}")
                 if (!file.exists()) {
-                    error = context.getString(R.string.pdf_file_not_found, file.absolutePath)
+                    error = resources.getString(R.string.pdf_file_not_found, file.absolutePath)
                     return@withContext null
                 }
                 if (!file.canRead()) {
-                    error = context.getString(R.string.pdf_file_unreadable, file.absolutePath)
+                    error = resources.getString(R.string.pdf_file_unreadable, file.absolutePath)
                     return@withContext null
                 }
                 android.util.Log.d(TAG, "File OK, size=${file.length()}, opening PFD…")
@@ -98,15 +98,15 @@ fun PdfViewer(file: File, modifier: Modifier = Modifier) {
                 }
             } catch (t: TimeoutCancellationException) {
                 android.util.Log.e(TAG, "Open timed out for ${file.absolutePath}")
-                error = context.getString(R.string.pdf_open_timeout)
+                error = resources.getString(R.string.pdf_open_timeout)
                 null
             } catch (t: Throwable) {
                 android.util.Log.e(TAG, "Failed to open PDF: ${t.javaClass.simpleName}: ${t.message}", t)
                 error = when {
                     t.message?.contains("password", ignoreCase = true) == true ->
-                        context.getString(R.string.pdf_encrypted_unsupported)
+                        resources.getString(R.string.pdf_encrypted_unsupported)
                     else ->
-                        context.getString(R.string.pdf_open_failed, t.javaClass.simpleName, t.message ?: "unknown")
+                        resources.getString(R.string.pdf_open_failed, t.javaClass.simpleName, t.message ?: "unknown")
                 }
                 null
             }

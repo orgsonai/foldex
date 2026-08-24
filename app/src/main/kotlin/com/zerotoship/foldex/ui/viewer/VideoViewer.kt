@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.zerotoship.foldex.R
@@ -50,6 +52,7 @@ import java.io.File
  *   ContentProvider 経由で pipe ストリーミング再生する (全DLを待たない)。
  *   ローカルファイルは [file] から file URI を組み立てる。
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun VideoViewer(
     file: File,
@@ -64,6 +67,7 @@ fun VideoViewer(
     onOpenExternally: (File) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val ext = remember(displayName) { displayName.substringAfterLast('.', "").lowercase() }
     val unsupportedExtension = ext == "wmv" || ext == "asf"
 
@@ -86,7 +90,8 @@ fun VideoViewer(
             setMediaItem(MediaItem.fromUri(playUri))
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    playbackError = error.message ?: context.getString(R.string.video_playback_error, error.errorCodeName)
+                    playbackError = error.message
+                        ?: resources.getString(R.string.video_playback_error, error.errorCodeName)
                 }
                 override fun onIsPlayingChanged(playing: Boolean) {
                     isPlaying = playing

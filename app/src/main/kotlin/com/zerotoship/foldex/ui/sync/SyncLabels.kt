@@ -4,6 +4,7 @@
 package com.zerotoship.foldex.ui.sync
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -15,7 +16,6 @@ import com.zerotoship.foldex.core.model.SyncJob
 import com.zerotoship.foldex.core.model.SyncSchedule
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 @Composable internal fun directionLabel(direction: SyncDirection): String = when (direction) {
     SyncDirection.TO_REMOTE -> stringResource(R.string.sync_direction_to_remote)
@@ -56,7 +56,7 @@ private fun timeLabel(minutesOfDay: Int): String =
 @Composable internal fun nextRunLabel(job: SyncJob): String? {
     if (!job.enabled) return null
     val s = job.schedule
-    val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
+    val fmt = SimpleDateFormat("MM/dd HH:mm", LocalResources.current.configuration.locales[0])
     return when {
         s.isManualOnly -> null
         s.type == ScheduleType.INTERVAL -> {
@@ -75,7 +75,10 @@ private fun timeLabel(minutesOfDay: Int): String =
  */
 @Composable internal fun lastRunLabel(job: SyncJob): String {
     val at = job.lastRunAt ?: return stringResource(R.string.sync_never_run)
-    val time = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(at))
+    val time = SimpleDateFormat(
+        "MM/dd HH:mm",
+        LocalResources.current.configuration.locales[0],
+    ).format(Date(at))
     return job.lastRunResult?.let { "$time ・ $it" } ?: time
 }
 
@@ -92,7 +95,10 @@ private fun timeLabel(minutesOfDay: Int): String =
         stringResource(R.string.sync_schedule_monthly, d, timeLabel(s.timeOfDayMinutes))
     }
     ScheduleType.DATETIME -> {
-        val fmt = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+        val fmt = SimpleDateFormat(
+            "yyyy/MM/dd HH:mm",
+            LocalResources.current.configuration.locales[0],
+        )
         stringResource(R.string.sync_schedule_datetime, if (s.dateTimeMillis > 0) fmt.format(java.util.Date(s.dateTimeMillis)) else stringResource(R.string.sync_not_set))
     }
 }

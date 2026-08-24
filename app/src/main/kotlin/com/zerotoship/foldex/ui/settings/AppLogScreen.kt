@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -67,6 +68,7 @@ fun AppLogScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val permanentLogUri by viewModel.permanentLogUri.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
@@ -86,7 +88,7 @@ fun AppLogScreen(
                 )
             }
             viewModel.setPermanentLog(uri.toString())
-            Toast.makeText(context, context.getString(R.string.log_permanent_set), Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, resources.getString(R.string.log_permanent_set), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -116,8 +118,8 @@ fun AppLogScreen(
                         val text = state.filteredLines.joinToString("\n")
                         if (text.isNotEmpty()) {
                             scope.launch {
-                                clipboard.setPlainText(context.getString(R.string.log_clipboard_label), text)
-                                Toast.makeText(context, context.getString(R.string.log_copied), Toast.LENGTH_SHORT).show()
+                                clipboard.setPlainText(resources.getString(R.string.log_clipboard_label), text)
+                                Toast.makeText(context, resources.getString(R.string.log_copied), Toast.LENGTH_SHORT).show()
                             }
                         }
                     }) { Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.log_copy)) }
@@ -132,7 +134,7 @@ fun AppLogScreen(
                                 putExtra(Intent.EXTRA_STREAM, uri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            runCatching { context.startActivity(Intent.createChooser(send, context.getString(R.string.log_share))) }
+                            runCatching { context.startActivity(Intent.createChooser(send, resources.getString(R.string.log_share))) }
                         }
                     }) { Icon(Icons.Default.Share, contentDescription = stringResource(R.string.log_share)) }
                     IconButton(onClick = { confirmClear = true }) {
@@ -164,7 +166,7 @@ fun AppLogScreen(
                 if (permanentLogUri != null) {
                     TextButton(onClick = {
                         viewModel.setPermanentLog(null)
-                        Toast.makeText(context, context.getString(R.string.log_permanent_disabled), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, resources.getString(R.string.log_permanent_disabled), Toast.LENGTH_SHORT).show()
                     }) { Text(stringResource(R.string.action_disable)) }
                 }
             }

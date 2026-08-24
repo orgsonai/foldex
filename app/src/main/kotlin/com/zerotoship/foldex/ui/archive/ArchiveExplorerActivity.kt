@@ -46,6 +46,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -158,6 +159,7 @@ private fun ArchiveExplorerScreen(
     onOpenExtracted: (File, String) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
@@ -189,10 +191,10 @@ private fun ArchiveExplorerScreen(
                 onSuccess = { file -> onOpenExtracted(file, entry.name) },
                 onFailure = { t ->
                     if (t is ArchiveExplorer.WrongPassword) {
-                        passwordError = if (password == null) null else context.getString(R.string.archive_wrong_password)
+                        passwordError = if (password == null) null else resources.getString(R.string.archive_wrong_password)
                         passwordPromptFor = entry
                     } else {
-                        snackbar.showSnackbar(context.getString(R.string.archive_extract_failed))
+                        snackbar.showSnackbar(resources.getString(R.string.archive_extract_failed))
                     }
                 },
             )

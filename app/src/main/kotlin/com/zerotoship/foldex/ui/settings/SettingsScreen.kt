@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -79,6 +80,7 @@ fun SettingsScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val cacheBytes by viewModel.cacheBytes.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val versionName = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -473,7 +475,7 @@ fun SettingsScreen(
                     viewModel.clearCache { freed ->
                         scope.launch {
                             snackbar.showSnackbar(
-                                context.getString(R.string.settings_freed, formatBytes(freed)),
+                                resources.getString(R.string.settings_freed, formatBytes(freed)),
                             )
                         }
                     }

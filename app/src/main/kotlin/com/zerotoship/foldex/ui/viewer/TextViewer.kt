@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -132,7 +133,7 @@ fun TextViewer(
     onSaveRemote: (suspend (File) -> Boolean)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
+    val resources = LocalResources.current
     // 「無制限」(= 編集モードでサイズ制限なし)。読み込み上限 MAX_BYTES もこの時だけ外す。
     val unlimited = editableLimitKb >= UNLIMITED_EDITABLE_LIMIT_KB
 
@@ -144,7 +145,7 @@ fun TextViewer(
                 val bytes = file.readBytes()
                 val charset = TextDecoding.detect(bytes)
                 TextLoad.Loaded(String(bytes, charset), charset, len)
-            }.getOrElse { TextLoad.Failed(it.message ?: context.getString(R.string.text_load_failed)) }
+            }.getOrElse { TextLoad.Failed(it.message ?: resources.getString(R.string.text_load_failed)) }
         }
     }
 
@@ -186,6 +187,7 @@ private fun SoraEditor(
     modifier: Modifier,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // テーマ色を Compose 側から取って Sora の ColorScheme に流し込む。
@@ -437,7 +439,7 @@ private fun SoraEditor(
                 if (text.isNotEmpty()) {
                     editor.pasteText(text)
                 } else {
-                    status = context.getString(R.string.clipboard_empty)
+                    status = resources.getString(R.string.clipboard_empty)
                     statusIsError = true
                 }
             },
@@ -460,10 +462,10 @@ private fun SoraEditor(
                     val remoteOk = localOk && onSaveRemote != null && onSaveRemote(file)
                     val ok = localOk && (onSaveRemote == null || remoteOk)
                     val message = when {
-                        !localOk -> context.getString(R.string.text_save_failed)
-                        onSaveRemote == null -> context.getString(R.string.text_saved)
-                        remoteOk -> context.getString(R.string.text_saved_remote)
-                        else -> context.getString(R.string.text_save_remote_failed)
+                        !localOk -> resources.getString(R.string.text_save_failed)
+                        onSaveRemote == null -> resources.getString(R.string.text_saved)
+                        remoteOk -> resources.getString(R.string.text_saved_remote)
+                        else -> resources.getString(R.string.text_save_remote_failed)
                     }
                     status = message
                     statusIsError = !ok
