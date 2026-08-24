@@ -1,0 +1,2 @@
+1.5.19
+- Fixed connection-log, sync-date, and file-modified date formats not updating immediately after changing the app language

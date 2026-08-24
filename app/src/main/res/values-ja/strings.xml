@@ -28,6 +28,7 @@
          画面をまたいで使う操作。用途を限定する語を入れないこと。
          ============================================================ -->
     <string name="action_cancel">キャンセル</string>
+    <string name="action_ok">OK</string>
     <string name="action_close">閉じる</string>
     <string name="action_delete">削除</string>
     <string name="action_copy">コピー</string>

@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -586,7 +587,8 @@ private fun DateTimePickerRow(
     LaunchedEffect(Unit) { if (state.dateTimeMillis <= 0) commit(cal) }
 
     var showDate by remember { mutableStateOf(false) }
-    val dateFmt = remember { SimpleDateFormat("yyyy/MM/dd (E)", Locale.getDefault()) }
+    val locale = LocalResources.current.configuration.locales[0]
+    val dateFmt = remember(locale) { SimpleDateFormat("yyyy/MM/dd (E)", locale) }
     OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.sync_date, dateFmt.format(cal.time)))
     }
@@ -608,7 +610,7 @@ private fun DateTimePickerRow(
                         commit(c)
                     }
                     showDate = false
-                }) { Text("OK") }
+                }) { Text(stringResource(R.string.action_ok)) }
             },
             dismissButton = { TextButton(onClick = { showDate = false }) { Text(stringResource(R.string.action_cancel)) } },
         ) { DatePicker(state = dpState) }

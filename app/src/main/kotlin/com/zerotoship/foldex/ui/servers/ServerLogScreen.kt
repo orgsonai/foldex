@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.zerotoship.foldex.R
@@ -42,7 +43,6 @@ import com.zerotoship.foldex.core.model.ServerLog
 import com.zerotoship.foldex.core.model.ServerLogEvent
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +53,8 @@ fun ServerLogScreen(
     val config by viewModel.config.collectAsStateWithLifecycle()
     val logs by viewModel.logs.collectAsStateWithLifecycle()
     var confirmClear by remember { mutableStateOf(false) }
+    val locale = LocalResources.current.configuration.locales[0]
+    val timestampFormatter = remember(locale) { SimpleDateFormat("MM-dd HH:mm:ss", locale) }
 
     Scaffold(
         topBar = {
@@ -84,7 +86,7 @@ fun ServerLogScreen(
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
                 items(logs, key = { it.id }) { log ->
-                    LogRow(log)
+                    LogRow(log, timestampFormatter)
                     HorizontalDivider()
                 }
             }
@@ -110,7 +112,7 @@ fun ServerLogScreen(
 }
 
 @Composable
-private fun LogRow(log: ServerLog) {
+private fun LogRow(log: ServerLog, timestampFormatter: SimpleDateFormat) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -120,7 +122,7 @@ private fun LogRow(log: ServerLog) {
             )
             Spacer(Modifier.weight(1f))
             Text(
-                FORMATTER.format(Date(log.timestamp)),
+                timestampFormatter.format(Date(log.timestamp)),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -159,5 +161,3 @@ private fun eventColor(event: ServerLogEvent): androidx.compose.ui.graphics.Colo
     ServerLogEvent.AUTH_SUCCESS, ServerLogEvent.SERVER_STARTED -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.onSurface
 }
-
-private val FORMATTER = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
