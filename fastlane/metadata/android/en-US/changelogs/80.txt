@@ -1,0 +1,3 @@
+1.5.20
+- Migrated Wi-Fi address detection for the built-in SFTP/FTP servers to the current Android network monitoring API
+- Preserved local Wi-Fi detection when mobile data is preferred or the Wi-Fi network has no internet access

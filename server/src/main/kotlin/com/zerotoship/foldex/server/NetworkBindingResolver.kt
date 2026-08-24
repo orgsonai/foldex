@@ -9,9 +9,11 @@ import android.net.LinkAddress
 import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,6 +28,28 @@ import javax.inject.Singleton
 class NetworkBindingResolver @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
+    private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
+    private val wifiLinkProperties = ConcurrentHashMap<Network, LinkProperties>()
+
+    /**
+     * Wi-Fi は既定回線とは限らない。モバイル回線が既定のときやインターネット接続のない
+     * ローカル Wi-Fi でもサーバーを公開できるよう、該当する全 Wi-Fi 回線を追跡する。
+     */
+    private val wifiNetworkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+            wifiLinkProperties[network] = linkProperties
+        }
+
+        override fun onLost(network: Network) {
+            wifiLinkProperties.remove(network)
+        }
+    }
+
+    init {
+        runCatching {
+            connectivityManager?.registerNetworkCallback(WIFI_NETWORK_REQUEST, wifiNetworkCallback)
+        }
+    }
 
     fun resolve(bindAddress: String): String? = when (bindAddress) {
         "wifi_only" -> currentWifiIPv4()
@@ -33,29 +57,25 @@ class NetworkBindingResolver @Inject constructor(
         else -> runCatching { InetAddress.getByName(bindAddress).hostAddress }.getOrNull()
     }
 
-    fun isWifiConnected(): Boolean = currentWifiNetwork() != null
+    fun isWifiConnected(): Boolean =
+        activeWifiLinkProperties() != null || wifiLinkProperties.isNotEmpty()
 
     /** UI 表示用。Wi-Fi の現在 IPv4。なければ null。 */
     fun currentWifiIPv4(): String? {
-        val (_, props) = currentWifiNetwork() ?: return null
-        return firstIPv4(props)
+        // コールバック登録直後は初回通知が届くまで短い空白があるため、既定回線が
+        // Wi-Fi なら同期取得で補完する。その後、既定回線以外の Wi-Fi もキャッシュから探す。
+        activeWifiLinkProperties()?.let { props ->
+            firstIPv4(props)?.let { return it }
+        }
+        return wifiLinkProperties.values.firstNotNullOfOrNull(::firstIPv4)
     }
 
-    private fun currentWifiNetwork(): Pair<Network, LinkProperties>? {
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
-        val networks = cm.allNetworks
-        for (network in networks) {
-            val caps = cm.getNetworkCapabilities(network) ?: continue
-            if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue
-            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
-            ) {
-                // Wi-Fi だが ローカルのみ など — 利用可能とみなす
-            }
-            val props = cm.getLinkProperties(network) ?: continue
-            return network to props
-        }
-        return null
+    private fun activeWifiLinkProperties(): LinkProperties? {
+        val cm = connectivityManager ?: return null
+        val network = cm.activeNetwork ?: return null
+        val capabilities = cm.getNetworkCapabilities(network) ?: return null
+        if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return null
+        return cm.getLinkProperties(network)
     }
 
     private fun firstIPv4(props: LinkProperties): String? {
@@ -64,5 +84,11 @@ class NetworkBindingResolver @Inject constructor(
             if (ip is Inet4Address) return ip.hostAddress
         }
         return null
+    }
+
+    private companion object {
+        val WIFI_NETWORK_REQUEST: NetworkRequest = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
     }
 }
