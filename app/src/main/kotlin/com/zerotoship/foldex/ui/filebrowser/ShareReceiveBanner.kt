@@ -22,6 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 
 /**
  * 他アプリから ACTION_SEND で渡されたファイルを「現在のフォルダに保存」できる旨を案内するバナー。
@@ -50,19 +53,19 @@ fun ShareReceiveBanner(
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "$count 件の共有を受信中",
+                pluralStringResource(R.plurals.share_receiving, count, count),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Text(
-                "保存先フォルダを開いて「ここに保存」",
+                stringResource(R.string.share_save_here_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = onCancel) { Text("キャンセル") }
-            Button(onClick = onSaveHere) { Text("ここに保存") }
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
+            Button(onClick = onSaveHere) { Text(stringResource(R.string.share_save_here)) }
         }
     }
 }

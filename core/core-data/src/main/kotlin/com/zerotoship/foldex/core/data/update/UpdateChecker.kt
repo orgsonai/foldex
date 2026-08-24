@@ -3,8 +3,11 @@
 
 package com.zerotoship.foldex.core.data.update
 
+import android.content.Context
 import com.zerotoship.foldex.core.common.AppVersion
+import com.zerotoship.foldex.core.data.R
 import com.zerotoship.foldex.core.data.log.AppLogger
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -50,15 +53,19 @@ sealed interface UpdateStatus {
  */
 @Singleton
 class UpdateChecker @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val logger: AppLogger,
 ) {
     suspend fun check(currentVersionName: String): UpdateStatus = withContext(Dispatchers.IO) {
         try {
-            val json = fetchLatestRelease() ?: return@withContext UpdateStatus.Failed("応答を読み取れませんでした")
+            val json = fetchLatestRelease()
+                ?: return@withContext UpdateStatus.Failed(context.getString(R.string.update_error_empty_response))
 
             // タグは release.yml が "v<versionName>" で打つ。name が空のこともあるので tag_name を優先。
             val tag = json.optString("tag_name").ifBlank { json.optString("name") }
-            if (tag.isBlank()) return@withContext UpdateStatus.Failed("最新バージョンを判別できませんでした")
+            if (tag.isBlank()) {
+                return@withContext UpdateStatus.Failed(context.getString(R.string.update_error_version_unknown))
+            }
 
             val pageUrl = json.optString("html_url").ifBlank { RELEASES_PAGE }
             val notes = json.optString("body").trim()
@@ -71,7 +78,7 @@ class UpdateChecker @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            logger.warn(TAG, "更新確認に失敗: ${e.javaClass.simpleName}", e)
+            logger.warn(TAG, "Update check failed: ${e.javaClass.simpleName}", e)
             UpdateStatus.Failed(describe(e))
         }
     }
@@ -88,9 +95,11 @@ class UpdateChecker @Inject constructor(
         try {
             return when (val code = conn.responseCode) {
                 HttpURLConnection.HTTP_OK -> JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-                HttpURLConnection.HTTP_NOT_FOUND -> throw IllegalStateException("リリースが見つかりません")
-                HttpURLConnection.HTTP_FORBIDDEN -> throw IllegalStateException("時間をおいて再試行してください (レート制限)")
-                else -> throw IllegalStateException("サーバーが $code を返しました")
+                HttpURLConnection.HTTP_NOT_FOUND ->
+                    throw IllegalStateException(context.getString(R.string.update_error_release_not_found))
+                HttpURLConnection.HTTP_FORBIDDEN ->
+                    throw IllegalStateException(context.getString(R.string.update_error_rate_limited))
+                else -> throw IllegalStateException(context.getString(R.string.update_error_server_code, code))
             }
         } finally {
             conn.disconnect()
@@ -98,8 +107,8 @@ class UpdateChecker @Inject constructor(
     }
 
     private fun describe(e: Exception): String = when (e) {
-        is java.net.UnknownHostException -> "ネットワークに接続できません"
-        is java.net.SocketTimeoutException -> "接続がタイムアウトしました"
+        is java.net.UnknownHostException -> context.getString(R.string.update_error_no_network)
+        is java.net.SocketTimeoutException -> context.getString(R.string.update_error_timeout)
         else -> e.message ?: e.javaClass.simpleName
     }
 

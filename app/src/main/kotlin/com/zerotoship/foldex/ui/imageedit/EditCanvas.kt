@@ -533,14 +533,14 @@ internal fun fitCropToRatio(
 }
 
 /** 切り抜きの比率プリセット。 */
-enum class CropAspect(val label: String, val ratio: Float?) {
-    FREE("自由", null),
-    ORIGINAL("元の比率", null),
-    SQUARE("1:1", 1f),
-    R4_3("4:3", 4f / 3f),
-    R3_4("3:4", 3f / 4f),
-    R16_9("16:9", 16f / 9f),
-    R9_16("9:16", 9f / 16f),
+enum class CropAspect(val ratio: Float?) {
+    FREE(null),
+    ORIGINAL(null),
+    SQUARE(1f),
+    R4_3(4f / 3f),
+    R3_4(3f / 4f),
+    R16_9(16f / 9f),
+    R9_16(9f / 16f),
     ;
 
     /** [ORIGINAL] はキャンバスの比率を使うので、その解決を含めた実効比率を返す。 */

@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.sync.engine
 
+import android.content.Context
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.ListOptions
@@ -10,6 +11,7 @@ import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.core.model.StorageProvider
 import com.zerotoship.foldex.sync.model.SyncEntry
+import com.zerotoship.foldex.sync.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.toList
  *   (同期先がまだ無いケース)。`false` のとき root 不在は [StorageError.NotFound] を返す。
  */
 internal class TreeWalker(
+    private val context: Context,
     private val provider: StorageProvider,
     private val root: FileUri,
     private val filter: Filter,
@@ -42,7 +45,7 @@ internal class TreeWalker(
             is Result.Success -> {
                 if (!stat.value.isDirectory) {
                     return Result.Failure(
-                        StorageError.IoError("同期ルートがディレクトリではありません: ${root.toStorageString()}"),
+                        StorageError.IoError(context.getString(R.string.sync_root_not_directory, root.toStorageString())),
                     )
                 }
             }
@@ -55,7 +58,7 @@ internal class TreeWalker(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Result.Failure(StorageError.IoError("列挙に失敗しました: ${root.toStorageString()}", e))
+            Result.Failure(StorageError.IoError(context.getString(R.string.sync_scan_failed, root.toStorageString()), e))
         }
     }
 

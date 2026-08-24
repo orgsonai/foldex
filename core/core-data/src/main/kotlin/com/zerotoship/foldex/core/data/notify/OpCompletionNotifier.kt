@@ -10,6 +10,7 @@ import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.zerotoship.foldex.core.data.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
@@ -58,8 +59,12 @@ class OpCompletionNotifier @Inject constructor(
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "操作完了のお知らせ", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "コピー・移動・解凍・同期などが終わったときに通知します"
+            NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.notification_completion_channel),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = context.getString(R.string.notification_completion_channel_description)
                 setShowBadge(true)
             },
         )

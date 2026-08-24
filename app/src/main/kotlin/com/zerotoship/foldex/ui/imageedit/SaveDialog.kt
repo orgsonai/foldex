@@ -29,9 +29,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.imageedit.model.ImageFormat
+import com.zerotoship.foldex.R
 import kotlin.math.roundToInt
 
 /**
@@ -63,7 +65,7 @@ fun SaveDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("保存") },
+        title = { Text(stringResource(R.string.action_save)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
@@ -72,15 +74,16 @@ fun SaveDialog(
                 )
                 if (state.estimatedBytes != null && !useTargetSize) {
                     Text(
-                        "現在の設定で約 ${formatBytes(state.estimatedBytes.toLong())}" +
-                            if (state.originalBytes > 0) " (元 ${formatBytes(state.originalBytes)})" else "",
+                        if (state.originalBytes > 0)
+                            stringResource(R.string.image_current_size_original, formatBytes(state.estimatedBytes.toLong()), formatBytes(state.originalBytes))
+                        else stringResource(R.string.image_current_size, formatBytes(state.estimatedBytes.toLong())),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(12.dp))
 
-                Text("形式", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.image_format), style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ImageFormat.entries.forEach { item ->
                         FilterChip(
@@ -95,7 +98,7 @@ fun SaveDialog(
                 }
                 if (transparentWarning) {
                     Text(
-                        "透明な部分は JPEG では黒く潰れます。PNG か WebP を選んでください。",
+                        stringResource(R.string.image_jpeg_transparency_warning),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -105,7 +108,7 @@ fun SaveDialog(
                     Spacer(Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = useTargetSize, onCheckedChange = { useTargetSize = it })
-                        Text("容量を指定して収める", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.image_fit_target_size), style = MaterialTheme.typography.bodyMedium)
                     }
                     if (useTargetSize) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -114,21 +117,21 @@ fun SaveDialog(
                                 onValueChange = { input ->
                                     targetKbText = input.filter { it.isDigit() }.take(6)
                                 },
-                                label = { Text("目標") },
+                                label = { Text(stringResource(R.string.image_target)) },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.width(140.dp),
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text("KB 以下", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.image_kb_or_less), style = MaterialTheme.typography.bodyMedium)
                         }
                         Text(
-                            "この容量に収まる範囲でいちばん高い画質を自動で選びます。",
+                            stringResource(R.string.image_target_size_help),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        Text("画質 ${quality.roundToInt()}", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.image_quality, quality.roundToInt()), style = MaterialTheme.typography.labelMedium)
                         Slider(
                             value = quality,
                             onValueChange = { quality = it },
@@ -144,7 +147,7 @@ fun SaveDialog(
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = !keepLocation, onCheckedChange = { keepLocation = !it })
-                        Text("位置情報を削除して保存", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.image_remove_location), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
@@ -162,11 +165,11 @@ fun SaveDialog(
                         ),
                     )
                 },
-            ) { Text("別名で保存") }
+            ) { Text(stringResource(R.string.image_save_as)) }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = onDismiss) { Text("キャンセル") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
                 TextButton(onClick = {
                     onSave(
                         buildRequest(
@@ -176,7 +179,7 @@ fun SaveDialog(
                             targetKbText = targetKbText,
                         ),
                     )
-                }) { Text("上書き保存") }
+                }) { Text(stringResource(R.string.image_overwrite_save)) }
             }
         },
     )

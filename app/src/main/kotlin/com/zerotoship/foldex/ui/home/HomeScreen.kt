@@ -86,9 +86,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.Connection
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.home.HomeFunction
 import com.zerotoship.foldex.core.model.home.HomeShortcut
@@ -161,19 +163,19 @@ fun HomeScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("HOME", fontWeight = FontWeight.SemiBold) },
+                    title = { Text(stringResource(R.string.home_title), fontWeight = FontWeight.SemiBold) },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "メニュー")
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.home_menu))
                         }
                     },
                     actions = {
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
+                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.home_menu))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("非表示タイルを表示") },
+                                text = { Text(stringResource(R.string.home_show_hidden)) },
                                 leadingIcon = { Icon(Icons.Default.Restore, null) },
                                 enabled = hidden.isNotEmpty(),
                                 onClick = { showHiddenDialog = true; menuOpen = false },
@@ -184,7 +186,7 @@ fun HomeScreen(
             },
             floatingActionButton = {
                 FloatingActionButton(onClick = { showAdd = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "ショートカットを追加")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.home_add_shortcut))
                 }
             },
         ) { inner ->
@@ -317,13 +319,13 @@ private fun RenameShortcutDialog(current: String, onDismiss: () -> Unit, onConfi
     var text by remember { mutableStateOf(current) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("表示名を変更") },
+        title = { Text(stringResource(R.string.home_change_display_name)) },
         text = {
             androidx.compose.material3.OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
                 singleLine = true,
-                label = { Text("表示名") },
+                label = { Text(stringResource(R.string.home_display_name)) },
                 modifier = Modifier.fillMaxWidth(),
             )
         },
@@ -331,9 +333,9 @@ private fun RenameShortcutDialog(current: String, onDismiss: () -> Unit, onConfi
             TextButton(
                 onClick = { if (text.isNotBlank()) onConfirm(text) },
                 enabled = text.isNotBlank() && text != current,
-            ) { Text("変更") }
+            ) { Text(stringResource(R.string.home_change)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -427,25 +429,25 @@ private fun ShortcutTile(
         ) {
             Icon(
                 Icons.Default.MoreVert,
-                contentDescription = "メニュー",
+                contentDescription = stringResource(R.string.home_menu),
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
-                text = { Text("名前を変更") },
+                text = { Text(stringResource(R.string.action_rename)) },
                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                 onClick = { onRename(); menuOpen = false },
             )
             DropdownMenuItem(
-                text = { Text("隠す") },
+                text = { Text(stringResource(R.string.home_hide)) },
                 leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
                 onClick = { onHide(); menuOpen = false },
             )
             if (canRemove) {
                 DropdownMenuItem(
-                    text = { Text("削除") },
+                    text = { Text(stringResource(R.string.action_delete)) },
                     leadingIcon = { Icon(Icons.Rounded.Delete, null) },
                     onClick = { onRemove(); menuOpen = false },
                 )
@@ -476,7 +478,7 @@ private fun homeTileStyle(sc: HomeShortcut): HomeTileStyle {
         is HomeShortcut.SafFolder ->
             HomeTileStyle(Icons.Rounded.FolderSpecial, cs.primaryContainer, cs.onPrimaryContainer, "SAF")
         is HomeShortcut.RemoteConnection ->
-            HomeTileStyle(Icons.Rounded.Cloud, cs.tertiaryContainer, cs.onTertiaryContainer, "リモート")
+            HomeTileStyle(Icons.Rounded.Cloud, cs.tertiaryContainer, cs.onTertiaryContainer, stringResource(R.string.home_remote))
         is HomeShortcut.Function -> when (sc.kind) {
             HomeFunction.INTERNAL_STORAGE ->
                 HomeTileStyle(Icons.Rounded.PhoneAndroid, cs.primaryContainer, cs.onPrimaryContainer, null)
@@ -518,7 +520,7 @@ private fun AddShortcutDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("HOME にタイルを追加") },
+        title = { Text(stringResource(R.string.home_add_tile)) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 // 種別の切替: ローカル / SAF / リモート。AlertDialog の本文幅では
@@ -531,7 +533,7 @@ private fun AddShortcutDialog(
                     FilterChip(
                         selected = mode == AddMode.LOCAL,
                         onClick = { mode = AddMode.LOCAL },
-                        label = { Text("ローカル") },
+                        label = { Text(stringResource(R.string.home_local)) },
                     )
                     FilterChip(
                         selected = mode == AddMode.SAF,
@@ -541,25 +543,24 @@ private fun AddShortcutDialog(
                     FilterChip(
                         selected = mode == AddMode.REMOTE,
                         onClick = { mode = AddMode.REMOTE },
-                        label = { Text("リモート") },
+                        label = { Text(stringResource(R.string.home_remote)) },
                     )
                 }
                 Spacer(Modifier.height(12.dp))
                 when (mode) {
                     AddMode.SAF -> {
                         Text(
-                            "Termux / SD カードなどはアプリの UID から直接読めないため、" +
-                                "SAF で許可した tree URI を経由します。",
+                            stringResource(R.string.home_saf_explanation),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(8.dp))
                         TextButton(onClick = onPickSaf, modifier = Modifier.fillMaxWidth()) {
-                            Text("SAF からフォルダを選ぶ")
+                            Text(stringResource(R.string.home_pick_saf_folder))
                         }
                         if (persistedSafTrees.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
-                            Text("許可済みの SAF tree:", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.home_granted_saf_trees), style = MaterialTheme.typography.labelMedium)
                             Spacer(Modifier.height(4.dp))
                             persistedSafTrees.forEach { tree ->
                                 TextButton(
@@ -583,20 +584,20 @@ private fun AddShortcutDialog(
                     AddMode.LOCAL -> {
                         OutlinedTextField(
                             value = label, onValueChange = { label = it },
-                            label = { Text("表示名 (空ならパス)") },
+                            label = { Text(stringResource(R.string.home_display_name_optional)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = path, onValueChange = { path = it },
-                            label = { Text("絶対パス") },
+                            label = { Text(stringResource(R.string.home_absolute_path)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
                         if (presets.isNotEmpty()) {
                             Spacer(Modifier.height(12.dp))
-                            Text("候補:", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.home_suggestions), style = MaterialTheme.typography.labelMedium)
                             Spacer(Modifier.height(4.dp))
                             presets.forEach { preset ->
                                 TextButton(
@@ -631,7 +632,7 @@ private fun AddShortcutDialog(
                     AddMode.REMOTE -> {
                         if (connections.isEmpty()) {
                             Text(
-                                "登録された接続がありません。先に「接続」タブから追加してください。",
+                                stringResource(R.string.home_no_connections),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -662,10 +663,10 @@ private fun AddShortcutDialog(
                     if (mode == AddMode.LOCAL && path.isNotBlank()) onAddLocal(label, path)
                 },
                 enabled = mode == AddMode.LOCAL && path.isNotBlank(),
-            ) { Text(if (mode == AddMode.LOCAL) "追加" else "") }
+            ) { Text(if (mode == AddMode.LOCAL) stringResource(R.string.home_add) else "") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 }
@@ -676,10 +677,10 @@ private enum class AddMode { LOCAL, SAF, REMOTE }
 private fun RemoveConfirmDialog(label: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("ショートカットを削除") },
-        text = { Text("「$label」を HOME から削除しますか?") },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("削除") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        title = { Text(stringResource(R.string.home_remove_shortcut)) },
+        text = { Text(stringResource(R.string.home_remove_shortcut_question, label)) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.action_delete)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -691,10 +692,10 @@ private fun HiddenShortcutsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("非表示タイル") },
+        title = { Text(stringResource(R.string.home_hidden_tiles)) },
         text = {
             if (hidden.isEmpty()) {
-                Text("非表示にされたタイルはありません")
+                Text(stringResource(R.string.home_no_hidden_tiles))
             } else {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     hidden.forEach { sc ->
@@ -710,14 +711,14 @@ private fun HiddenShortcutsDialog(
                             TextButton(onClick = { onRestore(sc.id) }) {
                                 Icon(Icons.Default.Visibility, null, modifier = Modifier.height(18.dp))
                                 Spacer(Modifier.height(4.dp))
-                                Text("表示する")
+                                Text(stringResource(R.string.home_show))
                             }
                         }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
     )
 }
 

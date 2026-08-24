@@ -91,12 +91,14 @@ internal fun parseLogLine(raw: String): ParsedLogLine {
     val kind = when {
         level == "ERROR" -> LogKind.ERROR
         level == "WARN" -> LogKind.WARN
-        message.startsWith("── 同期開始") -> LogKind.START
-        message.startsWith("アップロード") -> LogKind.UPLOAD
-        message.startsWith("ダウンロード") -> LogKind.DOWNLOAD
-        message.startsWith("両側更新") -> LogKind.TRANSFER
-        message.startsWith("削除(") -> LogKind.DELETE
-        message.startsWith("成功 / 転送") -> LogKind.SUMMARY_OK
+        message.startsWith("── Sync started") || message.startsWith("── 同期開始") -> LogKind.START
+        message.startsWith("Upload") || message.startsWith("アップロード") -> LogKind.UPLOAD
+        message.startsWith("Download") || message.startsWith("ダウンロード") -> LogKind.DOWNLOAD
+        message.startsWith("Changed on both sides") || message.startsWith("両側更新") -> LogKind.TRANSFER
+        message.startsWith("Delete (") || message.startsWith("削除(") -> LogKind.DELETE
+        message.startsWith("Success / Transferred") || message.startsWith("成功 / 転送") -> LogKind.SUMMARY_OK
+        message.startsWith("Some items failed / Transferred") ||
+            message.startsWith("Failed / Transferred") ||
         message.startsWith("一部失敗 / 転送") || message.startsWith("失敗 / 転送") -> LogKind.SUMMARY_NG
         else -> LogKind.INFO
     }

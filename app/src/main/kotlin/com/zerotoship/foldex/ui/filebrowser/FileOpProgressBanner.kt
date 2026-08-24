@@ -18,6 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.pluralStringResource
+import com.zerotoship.foldex.R
 import java.util.Locale
 
 /**
@@ -57,7 +59,7 @@ fun FileOpProgressBanner(
             // フォルダ全体のファイル数が分かるときは件数を「○○ / ○○ ファイル」で出す
             // (フォルダコピー/切り取り貼り付け)。分からない操作は従来どおり項目数を出す。
             val countText = if (progress.filesTotal > 0) {
-                "${progress.filesTransferred} / ${progress.filesTotal} ファイル"
+                pluralStringResource(R.plurals.operation_files_progress, progress.filesTotal, progress.filesTransferred, progress.filesTotal)
             } else {
                 "${progress.currentIndex} / ${progress.totalCount}"
             }

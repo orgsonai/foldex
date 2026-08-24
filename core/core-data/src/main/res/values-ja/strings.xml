@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_completion_channel">操作完了のお知らせ</string>
+    <string name="notification_completion_channel_description">コピー・移動・解凍・同期などが終わったときに通知します</string>
+    <string name="update_error_empty_response">応答を読み取れませんでした</string>
+    <string name="update_error_version_unknown">最新バージョンを判別できませんでした</string>
+    <string name="update_error_release_not_found">リリースが見つかりません</string>
+    <string name="update_error_rate_limited">時間をおいて再試行してください (レート制限)</string>
+    <string name="update_error_server_code">サーバーが %d を返しました</string>
+    <string name="update_error_no_network">ネットワークに接続できません</string>
+    <string name="update_error_timeout">接続がタイムアウトしました</string>
+</resources>

@@ -48,11 +48,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.ui.common.setPlainText
 import kotlinx.coroutines.launch
 
@@ -84,7 +86,7 @@ fun AppLogScreen(
                 )
             }
             viewModel.setPermanentLog(uri.toString())
-            Toast.makeText(context, "永久ログの保存先を設定しました", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.log_permanent_set), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -100,25 +102,25 @@ fun AppLogScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("実行ログ") },
+                title = { Text(stringResource(R.string.settings_logs)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.reload() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "再読み込み")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_reload))
                     }
                     IconButton(onClick = {
                         val text = state.filteredLines.joinToString("\n")
                         if (text.isNotEmpty()) {
                             scope.launch {
-                                clipboard.setPlainText("Foldex ログ", text)
-                                Toast.makeText(context, "ログをコピーしました", Toast.LENGTH_SHORT).show()
+                                clipboard.setPlainText(context.getString(R.string.log_clipboard_label), text)
+                                Toast.makeText(context, context.getString(R.string.log_copied), Toast.LENGTH_SHORT).show()
                             }
                         }
-                    }) { Icon(Icons.Default.ContentCopy, contentDescription = "ログをコピー") }
+                    }) { Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.log_copy)) }
                     IconButton(onClick = {
                         val f = viewModel.logFile()
                         if (f.exists() && f.length() > 0) {
@@ -130,11 +132,11 @@ fun AppLogScreen(
                                 putExtra(Intent.EXTRA_STREAM, uri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            runCatching { context.startActivity(Intent.createChooser(send, "ログを共有")) }
+                            runCatching { context.startActivity(Intent.createChooser(send, context.getString(R.string.log_share))) }
                         }
-                    }) { Icon(Icons.Default.Share, contentDescription = "ログを共有") }
+                    }) { Icon(Icons.Default.Share, contentDescription = stringResource(R.string.log_share)) }
                     IconButton(onClick = { confirmClear = true }) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "ログを消す")
+                        Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.log_delete))
                     }
                 },
             )
@@ -147,7 +149,7 @@ fun AppLogScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = if (permanentLogUri == null) "永久保存: オフ" else "永久保存: オン",
+                    text = stringResource(if (permanentLogUri == null) R.string.log_permanent_off else R.string.log_permanent_on),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (permanentLogUri == null) {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -157,13 +159,13 @@ fun AppLogScreen(
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = { createLogFile.launch("foldex.log") }) {
-                    Text(if (permanentLogUri == null) "保存先を設定" else "保存先を変更")
+                    Text(stringResource(if (permanentLogUri == null) R.string.log_destination_set else R.string.log_destination_change))
                 }
                 if (permanentLogUri != null) {
                     TextButton(onClick = {
                         viewModel.setPermanentLog(null)
-                        Toast.makeText(context, "永久保存を解除しました", Toast.LENGTH_SHORT).show()
-                    }) { Text("解除") }
+                        Toast.makeText(context, context.getString(R.string.log_permanent_disabled), Toast.LENGTH_SHORT).show()
+                    }) { Text(stringResource(R.string.action_disable)) }
                 }
             }
             HorizontalDivider()
@@ -174,15 +176,15 @@ fun AppLogScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 listOf(
-                    AppLogUiState.Filter.ALL to "全部",
-                    AppLogUiState.Filter.INFO to "情報",
-                    AppLogUiState.Filter.WARN to "警告以上",
-                    AppLogUiState.Filter.ERROR to "エラー",
+                    AppLogUiState.Filter.ALL to R.string.log_filter_all,
+                    AppLogUiState.Filter.INFO to R.string.log_filter_info,
+                    AppLogUiState.Filter.WARN to R.string.log_filter_warn,
+                    AppLogUiState.Filter.ERROR to R.string.log_filter_error,
                 ).forEach { (f, label) ->
                     FilterChip(
                         selected = state.filter == f,
                         onClick = { viewModel.setFilter(f) },
-                        label = { Text(label) },
+                        label = { Text(stringResource(label)) },
                     )
                 }
             }
@@ -195,7 +197,7 @@ fun AppLogScreen(
                 shown.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            "ログはまだありません",
+                            stringResource(R.string.log_none),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -230,13 +232,13 @@ fun AppLogScreen(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("ログを消去") },
-            text = { Text("保存されたログを全て削除します。") },
+            title = { Text(stringResource(R.string.log_clear_title)) },
+            text = { Text(stringResource(R.string.log_clear_body)) },
             confirmButton = {
-                TextButton(onClick = { viewModel.clear(); confirmClear = false }) { Text("消去") }
+                TextButton(onClick = { viewModel.clear(); confirmClear = false }) { Text(stringResource(R.string.action_clear)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text("キャンセル") }
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }

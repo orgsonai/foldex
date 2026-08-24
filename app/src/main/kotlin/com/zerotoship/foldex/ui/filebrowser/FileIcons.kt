@@ -37,6 +37,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -142,12 +144,12 @@ fun FileLeadingIcon(
 ) {
     if (selected) {
         // 選択モードでは「選択中」を読み上げる (背景色だけだと TalkBack に伝わらない)。
-        Icon(Icons.Default.CheckBox, contentDescription = "選択中", tint = MaterialTheme.colorScheme.primary,
+        Icon(Icons.Default.CheckBox, contentDescription = stringResource(R.string.file_selected), tint = MaterialTheme.colorScheme.primary,
             modifier = modifier.size(size))
         return
     }
     // フォルダはアイコンが唯一の手がかりなので種別を読み上げる。ファイルは name と拡張子バッジで伝わるため装飾扱い (null)。
-    val typeDescription = if (node.type == NodeType.DIRECTORY) "フォルダ" else null
+    val typeDescription = if (node.type == NodeType.DIRECTORY) stringResource(R.string.file_folder_description) else null
     // カテゴリ判定は 1 行につき 1 回だけ (アイコン・色・サムネ判定で使い回す)。
     val category = remember(node.name) { FileTypeRegistry.categorize(node.name) }
     val model = remember(node.uri, node.lastModified, category) { thumbnailModelFor(node, category) }

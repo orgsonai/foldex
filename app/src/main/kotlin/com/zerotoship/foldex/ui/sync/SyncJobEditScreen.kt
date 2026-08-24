@@ -53,6 +53,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,6 +65,7 @@ import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.ConflictPolicy
 import com.zerotoship.foldex.core.model.ScheduleType
 import com.zerotoship.foldex.core.model.SyncDirection
+import com.zerotoship.foldex.R
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -93,13 +96,13 @@ fun SyncJobEditScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(if (state.isNew) "同期ジョブを追加" else "同期ジョブを編集") },
+                title = { Text(stringResource(if (state.isNew) R.string.sync_job_add else R.string.sync_job_edit)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
-                actions = { TextButton(onClick = viewModel::save) { Text("保存") } },
+                actions = { TextButton(onClick = viewModel::save) { Text(stringResource(R.string.action_save)) } },
             )
         },
     ) { padding ->
@@ -115,24 +118,24 @@ fun SyncJobEditScreen(
             OutlinedTextField(
                 value = state.name,
                 onValueChange = { v -> viewModel.update { it.copy(name = v) } },
-                label = { Text("名前") },
-                supportingText = { Text("一覧に表示される名前 (例: カメラ写真をNASへ)") },
+                label = { Text(stringResource(R.string.sync_job_name)) },
+                supportingText = { Text(stringResource(R.string.sync_job_name_hint)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            SectionHeader("対象フォルダ")
+            SectionHeader(stringResource(R.string.sync_job_folders))
             DirectionDropdown(state.direction) { d -> viewModel.update { it.copy(direction = d) } }
             var showLocalPicker by remember { mutableStateOf(false) }
             OutlinedTextField(
                 value = state.localPath,
                 onValueChange = { v -> viewModel.update { it.copy(localPath = v) } },
-                label = { Text("ローカルのフォルダ") },
-                supportingText = { Text("端末内のフォルダの絶対パス (例: /storage/emulated/0/DCIM)") },
+                label = { Text(stringResource(R.string.sync_local_folder)) },
+                supportingText = { Text(stringResource(R.string.sync_local_folder_hint)) },
                 singleLine = true,
                 trailingIcon = {
                     IconButton(onClick = { showLocalPicker = true }) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "フォルダを選ぶ")
+                        Icon(Icons.Default.FolderOpen, contentDescription = stringResource(R.string.folder_choose))
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -154,7 +157,7 @@ fun SyncJobEditScreen(
             )
             if (connections.isEmpty()) {
                 Text(
-                    "リモートの接続が登録されていません。先に「接続を管理」で追加してください。",
+                    stringResource(R.string.sync_no_remote_connections_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -162,39 +165,39 @@ fun SyncJobEditScreen(
             OutlinedTextField(
                 value = state.remotePath,
                 onValueChange = { v -> viewModel.update { it.copy(remotePath = v) } },
-                label = { Text("リモートのフォルダ") },
-                supportingText = { Text("接続のルートからの相対パス。空欄ならルート (例: backup/photos)") },
+                label = { Text(stringResource(R.string.sync_remote_folder)) },
+                supportingText = { Text(stringResource(R.string.sync_remote_folder_hint)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            SectionHeader("スケジュール")
+            SectionHeader(stringResource(R.string.sync_schedule))
             ScheduleSection(state) { transform -> viewModel.update(transform) }
 
             ToggleRow(
-                title = "Wi-Fi のみ",
-                description = "従量制でない接続 (Wi-Fi 等) のときだけ実行する",
+                title = stringResource(R.string.sync_wifi_only),
+                description = stringResource(R.string.sync_wifi_only_desc),
                 checked = state.requiresWifi,
                 onCheckedChange = { v -> viewModel.update { it.copy(requiresWifi = v) } },
             )
             ToggleRow(
-                title = "充電中のみ",
-                description = "端末が充電中のときだけ実行する",
+                title = stringResource(R.string.sync_charging_only),
+                description = stringResource(R.string.sync_charging_only_desc),
                 checked = state.requiresCharging,
                 onCheckedChange = { v -> viewModel.update { it.copy(requiresCharging = v) } },
             )
             ToggleRow(
-                title = "バッテリー低下時は実行しない",
-                description = "バッテリー残量が少ないときは実行を延期する",
+                title = stringResource(R.string.sync_battery_not_low),
+                description = stringResource(R.string.sync_battery_not_low_desc),
                 checked = state.requiresBatteryNotLow,
                 onCheckedChange = { v -> viewModel.update { it.copy(requiresBatteryNotLow = v) } },
             )
 
-            SectionHeader("競合と削除")
+            SectionHeader(stringResource(R.string.sync_conflicts_deletion))
             ConflictPolicyDropdown(state.conflictPolicy) { p -> viewModel.update { it.copy(conflictPolicy = p) } }
             ToggleRow(
-                title = "削除も同期する",
-                description = "同期元から消えたファイルを同期先からも削除する",
+                title = stringResource(R.string.sync_deletions),
+                description = stringResource(R.string.sync_deletions_desc),
                 checked = state.deleteEnabled,
                 onCheckedChange = { v -> viewModel.update { it.copy(deleteEnabled = v) } },
             )
@@ -204,7 +207,7 @@ fun SyncJobEditScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        "同期元のファイルを消すと、次回同期で同期先のファイルも消えます。誤削除に注意してください。",
+                        stringResource(R.string.sync_deletions_warning),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(12.dp),
@@ -212,51 +215,50 @@ fun SyncJobEditScreen(
                 }
             }
 
-            SectionHeader("フィルタ (省略可)")
+            SectionHeader(stringResource(R.string.sync_filters_optional))
             OutlinedTextField(
                 value = state.includePatternsText,
                 onValueChange = { v -> viewModel.update { it.copy(includePatternsText = v) } },
-                label = { Text("含めるファイル") },
+                label = { Text(stringResource(R.string.sync_include_files)) },
                 placeholder = { Text("*.jpg\n*.png") },
-                supportingText = { Text("glob パターンを 1 行 1 つ。空欄ならすべてのファイルが対象。") },
+                supportingText = { Text(stringResource(R.string.sync_include_files_hint)) },
                 minLines = 2,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = state.excludePatternsText,
                 onValueChange = { v -> viewModel.update { it.copy(excludePatternsText = v) } },
-                label = { Text("除外するファイル") },
+                label = { Text(stringResource(R.string.sync_exclude_files)) },
                 placeholder = { Text("**/.git/**\n*.tmp") },
-                supportingText = { Text("ここに一致するファイル/フォルダは同期しません。") },
+                supportingText = { Text(stringResource(R.string.sync_exclude_files_hint)) },
                 minLines = 2,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = state.maxFileSizeMb,
                 onValueChange = { v -> viewModel.update { it.copy(maxFileSizeMb = v.filter(Char::isDigit)) } },
-                label = { Text("これより大きいファイルは同期しない (MB)") },
-                supportingText = { Text("空欄なら無制限。例: 100 と入れると 100MB 超のファイルを除外。") },
+                label = { Text(stringResource(R.string.sync_max_file_size)) },
+                supportingText = { Text(stringResource(R.string.sync_max_file_size_hint)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "glob の例: * は任意の文字列、? は任意の 1 文字、** は任意の階層。" +
-                    " 例) *.jpg = 拡張子 jpg のファイル、**/cache/** = どこかの cache フォルダ以下すべて。",
+                stringResource(R.string.sync_glob_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             HorizontalDivider()
             ToggleRow(
-                title = "有効",
-                description = "オフにすると定期実行も手動実行もしない",
+                title = stringResource(R.string.enabled),
+                description = stringResource(R.string.sync_enabled_desc),
                 checked = state.enabled,
                 onCheckedChange = { v -> viewModel.update { it.copy(enabled = v) } },
             )
             Spacer(Modifier.height(8.dp))
             Button(onClick = viewModel::save, modifier = Modifier.fillMaxWidth()) {
-                Text(if (state.isNew) "追加" else "更新")
+                Text(stringResource(if (state.isNew) R.string.action_add else R.string.action_update))
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -320,7 +322,7 @@ private fun LocalFolderPickerDialog(
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("ローカルフォルダを選ぶ") },
+        title = { Text(stringResource(R.string.sync_choose_local_folder)) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // ジャンプ用ショートカット (横スクロール)。
@@ -350,7 +352,7 @@ private fun LocalFolderPickerDialog(
                 TextButton(
                     onClick = { current.parentFile?.let { current = it } },
                     enabled = canGoUp,
-                ) { Text("⬆ 上のフォルダへ") }
+                ) { Text(stringResource(R.string.folder_up)) }
                 HorizontalDivider()
                 // サブフォルダ一覧。
                 Column(
@@ -358,7 +360,7 @@ private fun LocalFolderPickerDialog(
                 ) {
                     if (subDirs.isEmpty()) {
                         Text(
-                            "このフォルダ以下にサブフォルダはありません",
+                            stringResource(R.string.folder_no_subfolders),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 8.dp),
@@ -392,8 +394,8 @@ private fun LocalFolderPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onPick(current.absolutePath) }) { Text("このフォルダを選択") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        confirmButton = { TextButton(onClick = { onPick(current.absolutePath) }) { Text(stringResource(R.string.folder_select_this)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -408,14 +410,14 @@ private fun collectLocalFolderCandidates(context: Context): List<LocalFolderCand
     val list = mutableListOf<LocalFolderCandidate>()
     val ext = android.os.Environment.getExternalStorageDirectory()
     if (ext != null && ext.exists()) {
-        list += LocalFolderCandidate("内部ストレージ", ext.absolutePath)
+        list += LocalFolderCandidate(context.getString(R.string.internal_storage), ext.absolutePath)
         listOf(
-            "Download" to "ダウンロード",
-            "DCIM" to "DCIM (カメラ)",
-            "Pictures" to "画像",
-            "Movies" to "動画",
-            "Music" to "音楽",
-            "Documents" to "ドキュメント",
+            "Download" to context.getString(R.string.home_downloads),
+            "DCIM" to context.getString(R.string.quick_camera),
+            "Pictures" to context.getString(R.string.home_images),
+            "Movies" to context.getString(R.string.home_videos),
+            "Music" to context.getString(R.string.home_music),
+            "Documents" to context.getString(R.string.quick_documents),
         ).forEach { (dir, label) ->
             val f = java.io.File(ext, dir)
             if (f.exists()) list += LocalFolderCandidate(label, f.absolutePath)
@@ -429,7 +431,7 @@ private fun collectLocalFolderCandidates(context: Context): List<LocalFolderCand
                 if (vol.isRemovable) {
                     val dir = vol.directory
                     if (dir != null && seen.add(dir.absolutePath)) {
-                        val label = runCatching { vol.getDescription(context) }.getOrNull() ?: "SDカード"
+                        val label = runCatching { vol.getDescription(context) }.getOrNull() ?: context.getString(R.string.home_sd_card)
                         list += LocalFolderCandidate(label, dir.absolutePath)
                     }
                 }
@@ -439,7 +441,7 @@ private fun collectLocalFolderCandidates(context: Context): List<LocalFolderCand
     runCatching {
         java.io.File("/storage").listFiles()?.forEach { f ->
             if (f.isDirectory && f.name != "self" && f.name != "emulated" && seen.add(f.absolutePath)) {
-                val note = if (!f.canRead()) "全ファイルへのアクセス権限が必要" else null
+                val note = if (!f.canRead()) context.getString(R.string.home_all_files_required) else null
                 list += LocalFolderCandidate("SD: ${f.name}", f.absolutePath, note)
             }
         }
@@ -447,13 +449,14 @@ private fun collectLocalFolderCandidates(context: Context): List<LocalFolderCand
     return list
 }
 
-private fun scheduleTypeLabel(t: ScheduleType): String = when (t) {
-    ScheduleType.INTERVAL -> "間隔"
-    ScheduleType.DAILY -> "毎日"
-    ScheduleType.WEEKLY -> "毎週"
-    ScheduleType.MONTHLY -> "毎月"
-    ScheduleType.DATETIME -> "日時指定"
-}
+@Composable
+private fun scheduleTypeLabel(t: ScheduleType): String = stringResource(when (t) {
+    ScheduleType.INTERVAL -> R.string.sync_schedule_interval
+    ScheduleType.DAILY -> R.string.sync_type_daily
+    ScheduleType.WEEKLY -> R.string.sync_type_weekly
+    ScheduleType.MONTHLY -> R.string.sync_type_monthly
+    ScheduleType.DATETIME -> R.string.sync_type_datetime
+})
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -479,19 +482,19 @@ private fun ScheduleSection(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             ) {
-                listOf(0 to "手動のみ", 15 to "15分", 30 to "30分", 60 to "1時間", 180 to "3時間", 360 to "6時間", 720 to "12時間", 1440 to "1日").forEach { (m, label) ->
+                listOf(0, 15, 30, 60, 180, 360, 720, 1440).forEach { m ->
                     FilterChip(
                         selected = state.intervalMinutes == m,
                         onClick = { update { it.copy(intervalMinutes = m) } },
-                        label = { Text(label) },
+                        label = { Text(intervalLabel(m)) },
                     )
                 }
             }
             OutlinedTextField(
                 value = if (state.intervalMinutes == 0) "" else state.intervalMinutes.toString(),
                 onValueChange = { v -> update { it.copy(intervalMinutes = (v.trim().toIntOrNull() ?: 0).coerceAtLeast(0)) } },
-                label = { Text("実行間隔 (分) — 細かく指定する場合") },
-                supportingText = { Text("空欄/0 で手動のみ。Android の制約で定期実行は最短 15 分間隔です。") },
+                label = { Text(stringResource(R.string.sync_custom_interval)) },
+                supportingText = { Text(stringResource(R.string.sync_custom_interval_hint)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
@@ -499,12 +502,12 @@ private fun ScheduleSection(
         }
         ScheduleType.DAILY -> TimeOfDayRow(state.timeOfDayMinutes) { m -> update { it.copy(timeOfDayMinutes = m) } }
         ScheduleType.WEEKLY -> {
-            Text("曜日 (複数選択可)", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.sync_weekdays_multiple), style = MaterialTheme.typography.bodySmall)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             ) {
-                listOf("月", "火", "水", "木", "金", "土", "日").forEachIndexed { i, label ->
+                stringArrayResource(R.array.sync_weekday_short).forEachIndexed { i, label ->
                     val bit = 1 shl i
                     FilterChip(
                         selected = (state.daysOfWeek and bit) != 0,
@@ -528,7 +531,7 @@ private fun TimeOfDayRow(minutesOfDay: Int, onChange: (Int) -> Unit) {
     val hour = (minutesOfDay / 60).coerceIn(0, 23)
     val minute = (minutesOfDay % 60).coerceIn(0, 59)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("時刻", style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(R.string.sync_time), style = MaterialTheme.typography.bodyLarge)
         SmallDropdown((0..23).toList(), hour, { "%02d".format(it) }) { h -> onChange(h * 60 + minute) }
         Text(":")
         SmallDropdown((0..55 step 5).toList(), minute - (minute % 5), { "%02d".format(it) }) { m -> onChange(hour * 60 + m) }
@@ -538,14 +541,19 @@ private fun TimeOfDayRow(minutesOfDay: Int, onChange: (Int) -> Unit) {
 @Composable
 private fun DayOfMonthDropdown(day: Int, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("毎月", style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(R.string.sync_type_monthly), style = MaterialTheme.typography.bodyLarge)
         val options = (1..31).toList() + 0 // 0 = 月末
-        SmallDropdown(options, day, { if (it == 0) "月末" else "${it}日" }, onChange)
+        SmallDropdown(options, day, { if (it == 0) stringResource(R.string.sync_picker_month_end) else stringResource(R.string.sync_picker_month_day, it) }, onChange)
     }
 }
 
 @Composable
-private fun <T> SmallDropdown(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
+private fun <T> SmallDropdown(
+    options: List<T>,
+    selected: T,
+    label: @Composable (T) -> String,
+    onSelect: (T) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         TextButton(onClick = { expanded = true }) { Text(label(selected)) }
@@ -580,7 +588,7 @@ private fun DateTimePickerRow(
     var showDate by remember { mutableStateOf(false) }
     val dateFmt = remember { SimpleDateFormat("yyyy/MM/dd (E)", Locale.getDefault()) }
     OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) {
-        Text("日付: ${dateFmt.format(cal.time)}")
+        Text(stringResource(R.string.sync_date, dateFmt.format(cal.time)))
     }
     TimeOfDayRow(cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)) { m ->
         val c = cal.clone() as Calendar
@@ -602,7 +610,7 @@ private fun DateTimePickerRow(
                     showDate = false
                 }) { Text("OK") }
             },
-            dismissButton = { TextButton(onClick = { showDate = false }) { Text("キャンセル") } },
+            dismissButton = { TextButton(onClick = { showDate = false }) { Text(stringResource(R.string.action_cancel)) } },
         ) { DatePicker(state = dpState) }
     }
 }
@@ -637,7 +645,7 @@ private fun DropdownField(
 
 @Composable
 private fun DirectionDropdown(selected: SyncDirection, onSelected: (SyncDirection) -> Unit) {
-    DropdownField(label = "方向", valueText = directionLabel(selected), contentDescription = "方向を選ぶ") { dismiss ->
+    DropdownField(label = stringResource(R.string.sync_direction), valueText = directionLabel(selected), contentDescription = stringResource(R.string.sync_choose_direction)) { dismiss ->
         SyncDirection.entries.forEach { d ->
             DropdownMenuItem(text = { Text(directionLabel(d)) }, onClick = { onSelected(d); dismiss() })
         }
@@ -646,7 +654,7 @@ private fun DirectionDropdown(selected: SyncDirection, onSelected: (SyncDirectio
 
 @Composable
 private fun ConflictPolicyDropdown(selected: ConflictPolicy, onSelected: (ConflictPolicy) -> Unit) {
-    DropdownField(label = "競合解決", valueText = conflictPolicyLabel(selected), contentDescription = "競合解決を選ぶ") { dismiss ->
+    DropdownField(label = stringResource(R.string.sync_conflict_resolution), valueText = conflictPolicyLabel(selected), contentDescription = stringResource(R.string.sync_choose_conflict_resolution)) { dismiss ->
         ConflictPolicy.entries.forEach { p ->
             DropdownMenuItem(text = { Text(conflictPolicyLabel(p)) }, onClick = { onSelected(p); dismiss() })
         }
@@ -662,12 +670,12 @@ private fun ConnectionDropdown(
     val selected = connections.firstOrNull { it.id == selectedId }
     val valueText = when {
         selected != null -> "${selected.name} (${selected.protocol.scheme})"
-        selectedId != null -> "(不明な接続)"
-        else -> "未選択"
+        selectedId != null -> stringResource(R.string.connection_unknown)
+        else -> stringResource(R.string.not_selected)
     }
-    DropdownField(label = "リモートの接続", valueText = valueText, contentDescription = "接続を選ぶ") { dismiss ->
+    DropdownField(label = stringResource(R.string.sync_remote_connection), valueText = valueText, contentDescription = stringResource(R.string.connection_choose)) { dismiss ->
         if (connections.isEmpty()) {
-            DropdownMenuItem(text = { Text("接続がありません") }, onClick = { dismiss() }, enabled = false)
+            DropdownMenuItem(text = { Text(stringResource(R.string.connections_none)) }, onClick = { dismiss() }, enabled = false)
         } else {
             connections.forEach { c ->
                 DropdownMenuItem(

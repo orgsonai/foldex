@@ -30,6 +30,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.FileNode
 
 /**
@@ -52,13 +55,13 @@ fun ZipCompressDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("ZIP 圧縮 (${targets.size}件)") },
+        title = { Text(pluralStringResource(R.plurals.zip_compress_title, targets.size, targets.size)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = zipName,
                     onValueChange = { zipName = it },
-                    label = { Text("ZIP ファイル名") },
+                    label = { Text(stringResource(R.string.zip_file_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -67,14 +70,14 @@ fun ZipCompressDialog(
                     FilterChip(
                         selected = !encrypt,
                         onClick = { encrypt = false; password = "" },
-                        label = { Text("暗号化なし") },
+                        label = { Text(stringResource(R.string.zip_no_encryption)) },
                     )
                     Spacer(Modifier.height(0.dp))
                     Spacer(Modifier.fillMaxWidth(0f))
                     FilterChip(
                         selected = encrypt,
                         onClick = { encrypt = true },
-                        label = { Text("AES-256 暗号化") },
+                        label = { Text(stringResource(R.string.zip_aes_encryption)) },
                     )
                 }
                 if (encrypt) {
@@ -82,7 +85,7 @@ fun ZipCompressDialog(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text("パスワード") },
+                        label = { Text(stringResource(R.string.zip_password)) },
                         singleLine = true,
                         visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -90,14 +93,14 @@ fun ZipCompressDialog(
                             IconButton(onClick = { showPassword = !showPassword }) {
                                 Icon(
                                     if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (showPassword) "隠す" else "表示",
+                                    contentDescription = stringResource(if (showPassword) R.string.action_hide else R.string.action_show),
                                 )
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        "AES-256 / PKCS5。強度を取るため 12 文字以上を推奨。",
+                        stringResource(R.string.zip_password_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -108,9 +111,9 @@ fun ZipCompressDialog(
             TextButton(
                 onClick = { onConfirm(zipName.trim(), if (encrypt) password else null) },
                 enabled = zipName.isNotBlank() && (!encrypt || password.isNotEmpty()),
-            ) { Text("圧縮") }
+            ) { Text(stringResource(R.string.action_compress)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -127,14 +130,14 @@ fun ZipExtractDialog(
     var showPassword by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("ZIP 解凍") },
+        title = { Text(stringResource(R.string.zip_extract_title)) },
         text = {
             Column {
-                Text("「${request.node.name}」を現在のフォルダに展開します。")
+                Text(stringResource(R.string.zip_extract_body, request.node.name))
                 if (request.needsPassword) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        request.initialError ?: "パスワード保護された ZIP です。",
+                        request.initialError ?: stringResource(R.string.zip_password_protected),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -142,7 +145,7 @@ fun ZipExtractDialog(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text("パスワード") },
+                        label = { Text(stringResource(R.string.zip_password)) },
                         singleLine = true,
                         visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -150,7 +153,7 @@ fun ZipExtractDialog(
                             IconButton(onClick = { showPassword = !showPassword }) {
                                 Icon(
                                     if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (showPassword) "隠す" else "表示",
+                                    contentDescription = stringResource(if (showPassword) R.string.action_hide else R.string.action_show),
                                 )
                             }
                         },
@@ -163,8 +166,8 @@ fun ZipExtractDialog(
             TextButton(
                 onClick = { onConfirm(password.takeIf { it.isNotEmpty() }) },
                 enabled = !request.needsPassword || password.isNotEmpty(),
-            ) { Text("解凍") }
+            ) { Text(stringResource(R.string.action_extract)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }

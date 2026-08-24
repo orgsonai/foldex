@@ -43,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.Card
@@ -59,12 +61,13 @@ fun ServerEditScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val savedMessage = stringResource(R.string.server_saved)
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is ServerEditViewModel.ServerEditEvent.Saved -> {
-                    snackbar.showSnackbar("保存しました")
+                    snackbar.showSnackbar(savedMessage)
                     onSaved()
                 }
                 is ServerEditViewModel.ServerEditEvent.Message ->
@@ -77,14 +80,14 @@ fun ServerEditScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(if (state.isNew) "サーバーを追加" else "サーバーを編集") },
+                title = { Text(stringResource(if (state.isNew) R.string.server_add_title else R.string.server_edit_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
                 actions = {
-                    TextButton(onClick = viewModel::save) { Text("保存") }
+                    TextButton(onClick = viewModel::save) { Text(stringResource(R.string.action_save)) }
                 },
             )
         },
@@ -101,7 +104,7 @@ fun ServerEditScreen(
             OutlinedTextField(
                 value = state.name,
                 onValueChange = { v -> viewModel.update { it.copy(name = v) } },
-                label = { Text("名前") },
+                label = { Text(stringResource(R.string.server_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -112,7 +115,7 @@ fun ServerEditScreen(
             if (state.type == ServerType.FTP) {
                 ToggleRow(
                     title = "FTPS (Explicit TLS)",
-                    description = "AUTH TLS で制御・データ通信を暗号化する。自己署名証明書を自動生成します",
+                    description = stringResource(R.string.server_ftps_description),
                     checked = state.ftpsEnabled,
                     onCheckedChange = { v -> viewModel.update { it.copy(ftpsEnabled = v) } },
                 )
@@ -124,7 +127,7 @@ fun ServerEditScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
-                            "自己署名証明書を使うため、クライアント側で証明書の警告が出ます (信頼して続行してください)。",
+                            stringResource(R.string.server_ftps_certificate_warning),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.padding(12.dp),
@@ -139,12 +142,12 @@ fun ServerEditScreen(
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(
-                                "FTP は通信を平文で行います",
+                                stringResource(R.string.server_ftp_plain_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                             )
                             Text(
-                                "ID / パスワードや転送内容が同一ネットワーク内で盗聴される可能性があります。古い NAS 等との互換性のために残しています。上の FTPS を有効にすると暗号化されます。",
+                                stringResource(R.string.server_ftp_plain_body),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                             )
@@ -159,8 +162,8 @@ fun ServerEditScreen(
                     if (parsed != null) viewModel.update { it.copy(port = parsed) }
                 },
                 label = {
-                    val defaultLabel = if (state.type == ServerType.FTP) "FTP 既定: 2121" else "SFTP 既定: 2022"
-                    Text("ポート ($defaultLabel)")
+                    val defaultLabel = stringResource(R.string.server_default_port, state.type.name, state.type.defaultPort)
+                    Text(stringResource(R.string.server_port_label, defaultLabel))
                 },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -168,19 +171,19 @@ fun ServerEditScreen(
             OutlinedTextField(
                 value = state.rootPath,
                 onValueChange = { v -> viewModel.update { it.copy(rootPath = v) } },
-                label = { Text("ルートパス (例: /storage/emulated/0)") },
+                label = { Text(stringResource(R.string.server_root_path)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             ToggleRow(
-                title = "Wi-Fi 限定",
-                description = "オン: Wi-Fi 接続中のみ起動可。オフ: 全インターフェースに bind",
+                title = stringResource(R.string.server_wifi_only_title),
+                description = stringResource(R.string.server_wifi_only_description),
                 checked = state.wifiOnlyMode,
                 onCheckedChange = { v -> viewModel.update { it.copy(wifiOnlyMode = v) } },
             )
             ToggleRow(
-                title = "読み取り専用",
-                description = "クライアントからの書き込みを禁止する",
+                title = stringResource(R.string.server_read_only),
+                description = stringResource(R.string.server_read_only_description),
                 checked = state.readOnly,
                 onCheckedChange = { v -> viewModel.update { it.copy(readOnly = v) } },
             )
@@ -193,7 +196,7 @@ fun ServerEditScreen(
                 OutlinedTextField(
                     value = state.username,
                     onValueChange = { v -> viewModel.update { it.copy(username = v) } },
-                    label = { Text("ユーザー名") },
+                    label = { Text(stringResource(R.string.connection_username)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -205,7 +208,7 @@ fun ServerEditScreen(
                     value = state.password,
                     onValueChange = { v -> viewModel.update { it.copy(password = v) } },
                     label = {
-                        Text(if (state.isNew) "パスワード (必須)" else "新しいパスワード (空のまま維持)")
+                        Text(stringResource(if (state.isNew) R.string.server_password_required else R.string.server_new_password_optional))
                     },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
@@ -218,27 +221,27 @@ fun ServerEditScreen(
                 OutlinedTextField(
                     value = state.authorizedKeys,
                     onValueChange = { v -> viewModel.update { it.copy(authorizedKeys = v) } },
-                    label = { Text("authorized_keys (1行1鍵)") },
+                    label = { Text(stringResource(R.string.server_authorized_keys)) },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
             HorizontalDivider()
             ToggleRow(
-                title = "アプリ起動時に自動起動",
-                description = "アプリを開いたタイミングでこのサーバーを起動する",
+                title = stringResource(R.string.server_autostart_app),
+                description = stringResource(R.string.server_autostart_app_description),
                 checked = state.autoStartOnAppLaunch,
                 onCheckedChange = { v -> viewModel.update { it.copy(autoStartOnAppLaunch = v) } },
             )
             ToggleRow(
-                title = "端末再起動後に自動起動",
-                description = "BOOT_COMPLETED 受信時に起動する (Wi-Fi 限定の場合は接続後に手動起動が必要なことがあります)",
+                title = stringResource(R.string.server_autostart_boot),
+                description = stringResource(R.string.server_autostart_boot_description),
                 checked = state.autoStartOnBoot,
                 onCheckedChange = { v -> viewModel.update { it.copy(autoStartOnBoot = v) } },
             )
             Spacer(Modifier.height(8.dp))
             Button(onClick = viewModel::save, modifier = Modifier.fillMaxWidth()) {
-                Text(if (state.isNew) "追加" else "更新")
+                Text(stringResource(if (state.isNew) R.string.action_add else R.string.action_update))
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -273,10 +276,10 @@ private fun ServerTypeDropdown(
             onValueChange = {},
             readOnly = true,
             enabled = false,
-            label = { Text("プロトコル") },
+            label = { Text(stringResource(R.string.server_protocol)) },
             trailingIcon = {
                 IconButton(onClick = { expanded = !expanded }) {
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "プロトコルを選ぶ")
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = stringResource(R.string.server_select_protocol))
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -295,9 +298,10 @@ private fun ServerTypeDropdown(
     }
 }
 
+@Composable
 private fun serverTypeLabel(type: ServerType): String = when (type) {
-    ServerType.SFTP -> "SFTP (推奨)"
-    ServerType.FTP -> "FTP (平文)"
+    ServerType.SFTP -> stringResource(R.string.server_type_sftp)
+    ServerType.FTP -> stringResource(R.string.server_type_ftp)
 }
 
 @Composable
@@ -312,10 +316,10 @@ private fun AuthModeDropdown(
             onValueChange = {},
             readOnly = true,
             enabled = false,
-            label = { Text("認証方式") },
+            label = { Text(stringResource(R.string.connection_auth_method)) },
             trailingIcon = {
                 IconButton(onClick = { expanded = !expanded }) {
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "認証方式を選ぶ")
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = stringResource(R.string.server_select_auth))
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -334,9 +338,10 @@ private fun AuthModeDropdown(
     }
 }
 
+@Composable
 private fun authModeLabel(mode: ServerAuthMode): String = when (mode) {
-    ServerAuthMode.ANONYMOUS -> "匿名 (anonymous)"
-    ServerAuthMode.PASSWORD -> "パスワード"
-    ServerAuthMode.PUBLIC_KEY -> "公開鍵"
-    ServerAuthMode.PASSWORD_OR_PUBLIC_KEY -> "パスワード または 公開鍵"
+    ServerAuthMode.ANONYMOUS -> stringResource(R.string.server_auth_anonymous)
+    ServerAuthMode.PASSWORD -> stringResource(R.string.server_auth_password)
+    ServerAuthMode.PUBLIC_KEY -> stringResource(R.string.server_auth_public_key)
+    ServerAuthMode.PASSWORD_OR_PUBLIC_KEY -> stringResource(R.string.server_auth_password_or_key)
 }

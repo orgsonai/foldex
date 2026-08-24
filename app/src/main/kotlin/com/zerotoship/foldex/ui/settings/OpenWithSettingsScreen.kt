@@ -33,10 +33,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.data.repo.OpenWithMode
+import com.zerotoship.foldex.R
 
 // 設定画面で一覧表示する代表的な拡張子。これ以外でユーザーが上書きしたものも追加で表示する。
 private val COMMON_EXTENSIONS = listOf(
@@ -48,13 +50,13 @@ private val COMMON_EXTENSIONS = listOf(
     "doc", "docx", "xls", "xlsx", "ppt", "pptx",
 )
 
-private val OpenWithMode.label: String
-    get() = when (this) {
-        OpenWithMode.DEFAULT -> "自動 (内蔵対応なら内蔵)"
-        OpenWithMode.BUILTIN -> "内蔵ビューア"
-        OpenWithMode.ASK -> "毎回選択"
-        OpenWithMode.EXTERNAL -> "外部アプリ"
-    }
+@Composable
+private fun OpenWithMode.label(): String = stringResource(when (this) {
+    OpenWithMode.DEFAULT -> R.string.open_with_default
+    OpenWithMode.BUILTIN -> R.string.open_with_builtin
+    OpenWithMode.ASK -> R.string.open_with_ask
+    OpenWithMode.EXTERNAL -> R.string.open_with_external
+})
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,24 +74,24 @@ fun OpenWithSettingsScreen(
     Scaffold(
         topBar = {
             androidx.compose.material3.TopAppBar(
-                title = { Text("ファイルの開き方") },
+                title = { Text(stringResource(R.string.settings_file_types)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {
-                Icon(Icons.Default.Add, contentDescription = "拡張子を追加")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.open_with_add_extension))
             }
         },
     ) { padding ->
         LazyColumn(modifier = Modifier.padding(padding).fillMaxWidth()) {
             item {
                 Text(
-                    "拡張子ごとにファイルの開き方を指定できます。指定しないものは「自動」です。",
+                    stringResource(R.string.open_with_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(16.dp),
@@ -124,10 +126,10 @@ private fun ExtensionRow(ext: String, mode: OpenWithMode, onModeChange: (OpenWit
     ) {
         Text(".$ext", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Box {
-            TextButton(onClick = { expanded = true }) { Text(mode.label) }
+            TextButton(onClick = { expanded = true }) { Text(mode.label()) }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 OpenWithMode.entries.forEach { m ->
-                    DropdownMenuItem(text = { Text(m.label) }, onClick = { onModeChange(m); expanded = false })
+                    DropdownMenuItem(text = { Text(m.label()) }, onClick = { onModeChange(m); expanded = false })
                 }
             }
         }
@@ -141,20 +143,20 @@ private fun AddExtensionDialog(onConfirm: (String, OpenWithMode) -> Unit, onDism
     var expanded by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("拡張子を追加") },
+        title = { Text(stringResource(R.string.open_with_add_extension)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = ext,
                     onValueChange = { ext = it.removePrefix(".").lowercase().filter { c -> c.isLetterOrDigit() } },
-                    label = { Text("拡張子 (例: epub)") },
+                    label = { Text(stringResource(R.string.open_with_extension_hint)) },
                     singleLine = true,
                 )
                 Box {
-                    TextButton(onClick = { expanded = true }) { Text("開き方: ${mode.label}") }
+                    TextButton(onClick = { expanded = true }) { Text(stringResource(R.string.open_with_mode, mode.label())) }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         OpenWithMode.entries.forEach { m ->
-                            DropdownMenuItem(text = { Text(m.label) }, onClick = { mode = m; expanded = false })
+                            DropdownMenuItem(text = { Text(m.label()) }, onClick = { mode = m; expanded = false })
                         }
                     }
                 }
@@ -162,9 +164,9 @@ private fun AddExtensionDialog(onConfirm: (String, OpenWithMode) -> Unit, onDism
         },
         confirmButton = {
             TextButton(onClick = { if (ext.isNotEmpty()) onConfirm(ext, mode) }, enabled = ext.isNotEmpty()) {
-                Text("追加")
+                Text(stringResource(R.string.action_add))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }

@@ -29,8 +29,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.imageedit.model.StrokeMode
+import com.zerotoship.foldex.R
 import kotlin.math.roundToInt
 
 /**
@@ -50,17 +52,17 @@ fun BrushPanel(
                 FilterChip(
                     selected = settings.mode == StrokeMode.DRAW,
                     onClick = { onSettingsChange(settings.copy(mode = StrokeMode.DRAW)) },
-                    label = { Text("ペン") },
+                    label = { Text(stringResource(R.string.image_tool_pen)) },
                 )
                 Spacer(Modifier.width(6.dp))
                 FilterChip(
                     selected = settings.mode == StrokeMode.ERASE,
                     onClick = { onSettingsChange(settings.copy(mode = StrokeMode.ERASE)) },
-                    label = { Text("消しゴム") },
+                    label = { Text(stringResource(R.string.image_tool_eraser)) },
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "太さ ${settings.widthScreenPx.roundToInt()}",
+                    stringResource(R.string.image_brush_width, settings.widthScreenPx.roundToInt()),
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
@@ -86,14 +88,14 @@ fun BrushPanel(
                 }
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("濃さ", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.image_opacity), style = MaterialTheme.typography.labelSmall)
                     Slider(
                         value = settings.alpha,
                         onValueChange = { onSettingsChange(settings.copy(alpha = it)) },
                         valueRange = 0.1f..1f,
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     )
-                    Text("ぼかし", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.image_blur), style = MaterialTheme.typography.labelSmall)
                     Slider(
                         // 内部の hardness は 1 = くっきり。UI では「ぼかし」として反転して見せる。
                         value = 1f - settings.hardness,

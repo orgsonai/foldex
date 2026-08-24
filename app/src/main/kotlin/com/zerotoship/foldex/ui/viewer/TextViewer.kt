@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -76,6 +77,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.zerotoship.foldex.ui.components.FastScrollbar
+import com.zerotoship.foldex.R
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.PublishSearchResultEvent
 import io.github.rosemoe.sora.widget.CodeEditor
@@ -130,6 +132,7 @@ fun TextViewer(
     onSaveRemote: (suspend (File) -> Boolean)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     // 「無制限」(= 編集モードでサイズ制限なし)。読み込み上限 MAX_BYTES もこの時だけ外す。
     val unlimited = editableLimitKb >= UNLIMITED_EDITABLE_LIMIT_KB
 
@@ -141,7 +144,7 @@ fun TextViewer(
                 val bytes = file.readBytes()
                 val charset = TextDecoding.detect(bytes)
                 TextLoad.Loaded(String(bytes, charset), charset, len)
-            }.getOrElse { TextLoad.Failed(it.message ?: "読み込みに失敗しました") }
+            }.getOrElse { TextLoad.Failed(it.message ?: context.getString(R.string.text_load_failed)) }
         }
     }
 
@@ -153,7 +156,7 @@ fun TextViewer(
         }
         is TextLoad.TooLarge -> CenterMessage(
             modifier,
-            "ファイルが大きすぎます (${s.size / 1024}KB)。右上の「別のアプリで開く」を使ってください。",
+            stringResource(R.string.text_too_large, s.size / 1024),
         )
         is TextLoad.Failed -> CenterMessage(modifier, s.message)
         is TextLoad.Loaded ->
@@ -164,7 +167,7 @@ fun TextViewer(
                     content = s.content,
                     charset = s.charset,
                     hint = if (editable)
-                        "編集するには大きいため閲覧のみ (上限: ${editableLimitKb}KB / 設定で変更可)"
+                        stringResource(R.string.text_read_only_too_large, editableLimitKb)
                     else null,
                     modifier = modifier,
                 )
@@ -434,7 +437,7 @@ private fun SoraEditor(
                 if (text.isNotEmpty()) {
                     editor.pasteText(text)
                 } else {
-                    status = "クリップボードが空です"
+                    status = context.getString(R.string.clipboard_empty)
                     statusIsError = true
                 }
             },
@@ -457,10 +460,10 @@ private fun SoraEditor(
                     val remoteOk = localOk && onSaveRemote != null && onSaveRemote(file)
                     val ok = localOk && (onSaveRemote == null || remoteOk)
                     val message = when {
-                        !localOk -> "保存に失敗しました"
-                        onSaveRemote == null -> "保存しました"
-                        remoteOk -> "保存しました (リモートへ反映)"
-                        else -> "リモートへの保存に失敗しました (再試行してください)"
+                        !localOk -> context.getString(R.string.text_save_failed)
+                        onSaveRemote == null -> context.getString(R.string.text_saved)
+                        remoteOk -> context.getString(R.string.text_saved_remote)
+                        else -> context.getString(R.string.text_save_remote_failed)
                     }
                     status = message
                     statusIsError = !ok
@@ -487,20 +490,20 @@ private fun SoraEditor(
     draftToRestore?.let { draft ->
         AlertDialog(
             onDismissRequest = { draftToRestore = null },
-            title = { Text("未保存の編集が見つかりました") },
-            text = { Text("前回このファイルを編集中にアプリが閉じられたようです。保存前の内容を復元しますか?") },
+            title = { Text(stringResource(R.string.text_draft_found)) },
+            text = { Text(stringResource(R.string.text_draft_restore_question)) },
             confirmButton = {
                 TextButton(onClick = {
                     editor.setText(draft)
                     dirty = true
                     draftToRestore = null
-                }) { Text("復元") }
+                }) { Text(stringResource(R.string.action_restore)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     scope.launch { withContext(Dispatchers.IO) { EditorDraftStore.clear(context, file) } }
                     draftToRestore = null
-                }) { Text("破棄") }
+                }) { Text(stringResource(R.string.action_discard)) }
             },
         )
     }
@@ -545,8 +548,8 @@ private fun EditorBottomBar(
             // トーストの両方で知らせる。
             val statusText = when {
                 status != null -> status
-                saving -> "保存中…"
-                dirty -> "$charsetName ・ 未保存の変更あり"
+                saving -> stringResource(R.string.text_saving)
+                dirty -> stringResource(R.string.text_unsaved_changes, charsetName)
                 else -> charsetName
             }
             val statusColor = when {
@@ -570,14 +573,14 @@ private fun EditorBottomBar(
                 ToolbarButton(
                     onClick = onPaste,
                     icon = Icons.Default.ContentPaste,
-                    label = "貼付",
+                    label = stringResource(R.string.action_paste),
                     inactiveColor = inactive,
                     modifier = Modifier.weight(1f),
                 )
                 ToolbarButton(
                     onClick = onToggleGutter,
                     icon = Icons.Default.Numbers,
-                    label = "行番号",
+                    label = stringResource(R.string.text_line_numbers),
                     active = showLineNumbers,
                     activeColor = active,
                     inactiveColor = inactive,
@@ -586,7 +589,7 @@ private fun EditorBottomBar(
                 ToolbarButton(
                     onClick = onToggleWrap,
                     icon = Icons.AutoMirrored.Outlined.WrapText,
-                    label = "折り返し",
+                    label = stringResource(R.string.text_word_wrap),
                     active = wordWrap,
                     activeColor = active,
                     inactiveColor = inactive,
@@ -595,7 +598,7 @@ private fun EditorBottomBar(
                 ToolbarButton(
                     onClick = onUndo,
                     icon = Icons.AutoMirrored.Filled.Undo,
-                    label = "戻す",
+                    label = stringResource(R.string.action_undo),
                     enabled = canUndo,
                     inactiveColor = inactive,
                     modifier = Modifier.weight(1f),
@@ -603,7 +606,7 @@ private fun EditorBottomBar(
                 ToolbarButton(
                     onClick = onRedo,
                     icon = Icons.AutoMirrored.Filled.Redo,
-                    label = "進む",
+                    label = stringResource(R.string.action_redo),
                     enabled = canRedo,
                     inactiveColor = inactive,
                     modifier = Modifier.weight(1f),
@@ -611,7 +614,7 @@ private fun EditorBottomBar(
                 ToolbarButton(
                     onClick = onSearch,
                     icon = Icons.Default.Search,
-                    label = "検索",
+                    label = stringResource(R.string.action_search),
                     active = searchOpen,
                     activeColor = active,
                     inactiveColor = inactive,
@@ -621,7 +624,7 @@ private fun EditorBottomBar(
                     onClick = onSave,
                     icon = Icons.Default.Save,
                     // 未保存の編集があるときはラベルとアイコンを強調して「押すべき状態」を示す。
-                    label = if (dirty) "保存 *" else "保存",
+                    label = if (dirty) stringResource(R.string.text_save_dirty) else stringResource(R.string.action_save),
                     enabled = !saving,
                     active = dirty,
                     activeColor = active,
@@ -684,7 +687,7 @@ private fun SearchBar(
         TextField(
             value = query,
             onValueChange = onQueryChange,
-            placeholder = { Text("検索…") },
+            placeholder = { Text(stringResource(R.string.search_hint)) },
             singleLine = true,
             modifier = Modifier.weight(1f),
             colors = TextFieldDefaults.colors(
@@ -700,13 +703,13 @@ private fun SearchBar(
             modifier = Modifier.padding(horizontal = 8.dp),
         )
         IconButton(onClick = onPrev, enabled = matchCount > 0) {
-            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "前へ")
+            Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.search_previous))
         }
         IconButton(onClick = onNext, enabled = matchCount > 0) {
-            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "次へ")
+            Icon(Icons.Default.KeyboardArrowDown, contentDescription = stringResource(R.string.search_next))
         }
         IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, contentDescription = "検索を閉じる")
+            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.search_close))
         }
     }
 }
@@ -722,10 +725,8 @@ private fun ReadOnlyText(content: String, charset: Charset, hint: String?, modif
 
     Column(modifier.fillMaxSize()) {
         Text(
-            text = buildString {
-                append("文字コード: ${charset.name()}  ·  ${lines.size}行")
-                if (hint != null) append("  ·  ").append(hint)
-            },
+            text = stringResource(R.string.text_read_only_status, charset.name(), lines.size) +
+                if (hint != null) "  ·  $hint" else "",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),

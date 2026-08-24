@@ -20,6 +20,7 @@ import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.Permissions
 import com.zerotoship.foldex.ui.common.SharedClipboard
 import com.zerotoship.foldex.ui.filebrowser.ClipboardOperation
+import com.zerotoship.foldex.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +109,7 @@ class MediaCollectionViewModel @Inject constructor(
         val item = selectedItems().singleOrNull() ?: return
         val node = item.toLocalFileNode()
         if (node == null) {
-            _state.value = _state.value.copy(lastMessage = "実体パスが取得できないため変更できません")
+            _state.value = _state.value.copy(lastMessage = context.getString(R.string.media_no_path_rename))
             return
         }
         // item は MediaStore のレコードを消すのに、node はダイアログの表示に使う。
@@ -142,9 +143,9 @@ class MediaCollectionViewModel @Inject constructor(
             val error = withContext(Dispatchers.IO) {
                 val dest = File(old.parentFile, newName)
                 when {
-                    !old.exists() -> "元のファイルが見つかりません"
-                    dest.exists() -> "「$newName」は既にあります"
-                    !runCatching { old.renameTo(dest) }.getOrDefault(false) -> "名前を変更できませんでした"
+                    !old.exists() -> context.getString(R.string.media_source_missing)
+                    dest.exists() -> context.getString(R.string.media_name_exists, newName)
+                    !runCatching { old.renameTo(dest) }.getOrDefault(false) -> context.getString(R.string.media_rename_failed)
                     else -> {
                         // 旧パスと新パスをまとめてスキャンさせる。旧パスは実体が無いので
                         // MediaStore から落ち、新パスが登録される。delete は使わない (上の説明)。
@@ -160,7 +161,7 @@ class MediaCollectionViewModel @Inject constructor(
             reload()
             _state.value = _state.value.copy(
                 selectedUris = emptySet(),
-                lastMessage = error ?: "「$newName」に変更しました",
+                lastMessage = error ?: context.getString(R.string.media_renamed, newName),
             )
         }
     }
@@ -170,7 +171,7 @@ class MediaCollectionViewModel @Inject constructor(
     fun showProperties() {
         val node = selectedItems().singleOrNull()?.toLocalFileNode()
         if (node == null) {
-            _state.value = _state.value.copy(lastMessage = "実体パスが取得できないため表示できません")
+            _state.value = _state.value.copy(lastMessage = context.getString(R.string.media_no_path_properties))
             return
         }
         _state.value = _state.value.copy(propertiesTarget = node)
@@ -252,9 +253,9 @@ class MediaCollectionViewModel @Inject constructor(
             // 状態を再ロード (FolderCount などのために)。
             reload()
             val message = when {
-                trashed > 0 && deleted == 0 -> "${trashed}件をゴミ箱に移動しました"
-                trashed > 0 -> "${trashed + deleted}件削除しました (うち${trashed}件はゴミ箱)"
-                else -> "${deleted}件削除しました"
+                trashed > 0 && deleted == 0 -> context.getString(R.string.media_moved_to_trash, trashed)
+                trashed > 0 -> context.getString(R.string.media_deleted_with_trash, trashed + deleted, trashed)
+                else -> context.getString(R.string.media_deleted, deleted)
             }
             _state.value = _state.value.copy(selectedUris = emptySet(), lastMessage = message)
         }
@@ -280,17 +281,19 @@ class MediaCollectionViewModel @Inject constructor(
             .toList()
         if (nodes.isEmpty()) {
             _state.value = _state.value.copy(
-                lastMessage = "実体パスが取得できないため、この選択は積めません",
+                lastMessage = context.getString(R.string.media_no_path_clipboard),
             )
             return
         }
         sharedClipboard.set(
             if (asCut) ClipboardOperation.Cut(nodes) else ClipboardOperation.Copy(nodes),
         )
-        val verb = if (asCut) "切り取り" else "コピー"
         _state.value = _state.value.copy(
             selectedUris = emptySet(),
-            lastMessage = "${nodes.size} 件を${verb}しました (ファイルブラウザで貼り付け)",
+            lastMessage = context.getString(
+                if (asCut) R.string.media_cut_staged else R.string.media_copy_staged,
+                nodes.size,
+            ),
         )
     }
 
@@ -360,13 +363,13 @@ class MediaCollectionViewModel @Inject constructor(
     private fun computeFolders(items: List<MediaItem>): List<MediaFolder> {
         val byParent = LinkedHashMap<String, MutableList<MediaItem>>()
         for (it in items) {
-            val parent = it.filePath?.let { p -> File(p).parent } ?: "(その他)"
+            val parent = it.filePath?.let { p -> File(p).parent } ?: OTHER_FOLDER_PATH
             byParent.getOrPut(parent) { mutableListOf() }.add(it)
         }
         return byParent.map { (path, group) ->
             MediaFolder(
                 path = path,
-                displayName = if (path == "(その他)") path else File(path).name,
+                displayName = if (path == OTHER_FOLDER_PATH) context.getString(R.string.media_other) else File(path).name,
                 count = group.size,
                 sampleUri = group.firstOrNull()?.contentUri,
                 latestModifiedSec = group.maxOfOrNull { it.modifiedSec } ?: 0L,
@@ -380,6 +383,8 @@ class MediaCollectionViewModel @Inject constructor(
 }
 
 enum class MediaKind { IMAGE, VIDEO }
+
+internal const val OTHER_FOLDER_PATH = "__foldex_other_media__"
 
 data class MediaItem(
     val contentUri: Uri,
@@ -426,5 +431,5 @@ data class MediaCollectionState(
     /** 現在の表示対象: openedFolder が指定されていればその配下のみ、null なら全件。 */
     val visibleItems: List<MediaItem>
         get() = if (openedFolder == null) items
-                else items.filter { (it.filePath?.let { p -> File(p).parent } ?: "(その他)") == openedFolder }
+                else items.filter { (it.filePath?.let { p -> File(p).parent } ?: OTHER_FOLDER_PATH) == openedFolder }
 }

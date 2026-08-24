@@ -11,12 +11,13 @@ import android.os.Environment
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.Protocol
-import com.zerotoship.foldex.core.model.toUserMessage
+import com.zerotoship.foldex.storage.toUserMessage
 import com.zerotoship.foldex.core.data.notify.OpCompletionNotifier
 import com.zerotoship.foldex.core.data.repo.OpenWithMode
 import com.zerotoship.foldex.core.data.repo.OpenWithRepository
@@ -58,6 +59,10 @@ class FileBrowserViewModel @Inject constructor(
     private val sharedClipboard: com.zerotoship.foldex.ui.common.SharedClipboard,
     private val opNotifier: OpCompletionNotifier,
 ) : ViewModel() {
+
+    private fun text(id: Int, vararg args: Any): String = context.getString(id, *args)
+    private fun quantity(id: Int, count: Int, vararg args: Any): String =
+        context.resources.getQuantityString(id, count, *args)
 
     private val prefs = context.getSharedPreferences("foldex_browser", Context.MODE_PRIVATE)
 
@@ -104,9 +109,9 @@ class FileBrowserViewModel @Inject constructor(
             )
             hasPerm -> navigateTo(
                 FileUri.Local(Environment.getExternalStorageDirectory().absolutePath),
-                displayName = "内部ストレージ",
+                displayName = text(R.string.internal_storage),
             )
-            safRootUri != null -> navigateTo(FileUri.Saf(safRootUri), displayName = "ストレージ")
+            safRootUri != null -> navigateTo(FileUri.Saf(safRootUri), displayName = text(R.string.storage))
         }
         if (hasPerm) {
             viewModelScope.launch { _quickAccess.value = withContext(Dispatchers.IO) { computeQuickAccess() } }
@@ -161,7 +166,7 @@ class FileBrowserViewModel @Inject constructor(
 
     private fun displayNameForLocal(file: File): String {
         val root = runCatching { Environment.getExternalStorageDirectory().absolutePath }.getOrNull()
-        if (root != null && file.absolutePath == root) return "内部ストレージ"
+        if (root != null && file.absolutePath == root) return text(R.string.internal_storage)
         return file.name.ifEmpty { file.absolutePath }
     }
 
@@ -184,7 +189,7 @@ class FileBrowserViewModel @Inject constructor(
         _state.value = _state.value.copy(hasStoragePermission = true, breadcrumbs = emptyList())
         navigateTo(
             FileUri.Local(Environment.getExternalStorageDirectory().absolutePath),
-            displayName = "内部ストレージ",
+            displayName = text(R.string.internal_storage),
         )
         viewModelScope.launch { _quickAccess.value = withContext(Dispatchers.IO) { computeQuickAccess() } }
     }
@@ -196,7 +201,7 @@ class FileBrowserViewModel @Inject constructor(
         )
         prefs.edit().putString(KEY_SAF_ROOT, treeUri.toString()).apply()
         _state.value = _state.value.copy(hasSafRoot = true, breadcrumbs = emptyList())
-        navigateTo(FileUri.Saf(treeUri.toString()), displayName = "ストレージ")
+        navigateTo(FileUri.Saf(treeUri.toString()), displayName = text(R.string.storage))
     }
 
     fun openSmbConnection(connectionId: String, displayName: String, initialPath: String = "/") {
@@ -209,7 +214,7 @@ class FileBrowserViewModel @Inject constructor(
         _state.value = _state.value.copy(breadcrumbs = emptyList(), selectedUris = emptySet())
         navigateTo(
             FileUri.Local(Environment.getExternalStorageDirectory().absolutePath),
-            displayName = "内部ストレージ",
+            displayName = text(R.string.internal_storage),
         )
     }
 
@@ -459,14 +464,14 @@ class FileBrowserViewModel @Inject constructor(
                         out.outputStream().use { os -> copyWithProgress(ins, os, total, dlId) }
                     }
                     is Result.Failure -> {
-                        emit(SnackbarEvent("読み込み失敗: ${r.error.toUserMessage()}"))
+                        emit(SnackbarEvent(text(R.string.operation_load_failed, r.error.toUserMessage(context))))
                         return@withContext null
                     }
                 }
                 pendingEdits[out.absolutePath] = PendingEdit(u, out.lastModified())
                 out
             }.getOrElse {
-                emit(SnackbarEvent("読み込み失敗: ${it.message}"))
+                emit(SnackbarEvent(text(R.string.operation_load_failed, it.message.orEmpty())))
                 null
             }
         } finally {
@@ -509,9 +514,9 @@ class FileBrowserViewModel @Inject constructor(
                             pendingEdits[out.absolutePath] = PendingEdit(remote, out.lastModified())
                         }
                         out
-                    }.getOrElse { emit(SnackbarEvent("読み込み失敗: ${it.message}")); null }
+                    }.getOrElse { emit(SnackbarEvent(text(R.string.operation_load_failed, it.message.orEmpty()))); null }
                 }
-                is Result.Failure -> { emit(SnackbarEvent("読み込み失敗: ${r.error.toUserMessage()}")); null }
+                is Result.Failure -> { emit(SnackbarEvent(text(R.string.operation_load_failed, r.error.toUserMessage(context)))); null }
             }
         } finally {
             removeActiveDownload(dlId)
@@ -586,12 +591,17 @@ class FileBrowserViewModel @Inject constructor(
             if (uploaded > 0 || failed > 0) {
                 val msg = buildString {
                     if (uploaded > 0) {
-                        val tag = if (snapshot.values.any { it.sourceUri is FileUri.Saf }) "" else "リモートに"
-                        append("${uploaded} 件を${tag}保存しました")
+                        append(
+                            if (snapshot.values.any { it.sourceUri is FileUri.Saf }) {
+                                quantity(R.plurals.operation_saved_count, uploaded, uploaded)
+                            } else {
+                                quantity(R.plurals.operation_uploaded_remote, uploaded, uploaded)
+                            },
+                        )
                     }
                     if (failed > 0) {
                         if (uploaded > 0) append(" / ")
-                        append("${failed} 件は失敗")
+                        append(quantity(R.plurals.operation_failed_count, failed, failed))
                     }
                 }
                 emit(SnackbarEvent(msg))
@@ -755,8 +765,8 @@ class FileBrowserViewModel @Inject constructor(
         val clipboard = _state.value.clipboard ?: return
         val destDir = _state.value.currentUri ?: return
         val opLabel = when (clipboard) {
-            is ClipboardOperation.Copy -> "コピー中…"
-            is ClipboardOperation.Cut -> "移動中…"
+            is ClipboardOperation.Copy -> text(R.string.operation_copying)
+            is ClipboardOperation.Cut -> text(R.string.operation_moving)
         }
         val nodes = clipboard.nodes
 
@@ -767,7 +777,7 @@ class FileBrowserViewModel @Inject constructor(
             isLoading = true,
             opProgress = FileOpProgress(
                 label = opLabel,
-                currentName = "サイズを計算中…",
+                currentName = text(R.string.operation_calculating_size),
                 currentIndex = 0,
                 totalCount = nodes.size,
                 bytesTransferred = 0,
@@ -789,7 +799,7 @@ class FileBrowserViewModel @Inject constructor(
             // (例: フォルダ内の同名フォルダを外へ出そうとすると宛先 = 親フォルダになる。
             //  上書き処理で宛先を消すと、その中にいる元フォルダごと巻き添えで消滅する不具合の原因。)
             if (pathsOverlapUnsafely(node.uri, destUri)) {
-                lastError = "「${node.name}」は元の場所と重なるため移動/コピーできません"
+                lastError = text(R.string.operation_overlap, node.name)
                 continue
             }
             val nodeBytes = srcStats[index].bytes
@@ -880,7 +890,7 @@ class FileBrowserViewModel @Inject constructor(
                         val realDest = resolveChildUri(destDir, node.name)
                         val verified = realDest != null && computeTreeStat(realDest) == srcStats[index]
                         if (!verified) {
-                            lastError = "「${node.name}」はコピー後の検証に失敗しました (元データと不一致)"
+                            lastError = text(R.string.operation_verify_failed, node.name)
                             // 検証に失敗したら元は絶対に消さない。中途半端な宛先だけ掃除する。
                             if (realDest != null) storage.delete(destUri, recursive = true)
                         } else {
@@ -893,13 +903,13 @@ class FileBrowserViewModel @Inject constructor(
                                         is Result.Success ->
                                             undoActions.add { storage.moveWithin(destUri, node.uri) }
                                         is Result.Failure ->
-                                            lastError = "「${node.name}」はコピーできましたが元の削除に失敗しました: ${del.error.toUserMessage()}"
+                                            lastError = text(R.string.operation_source_delete_failed, node.name, del.error.toUserMessage(context))
                                     }
                                 }
                             }
                         }
                     }
-                    is Result.Failure -> lastError = copied.error.toUserMessage()
+                    is Result.Failure -> lastError = copied.error.toUserMessage(context)
                 }
             }
             completedBytes += nodeBytes
@@ -924,26 +934,26 @@ class FileBrowserViewModel @Inject constructor(
         loadFilesSync(destDir)
 
         if (lastError != null) {
-            emit(SnackbarEvent("エラー: $lastError"))
+            emit(SnackbarEvent(text(R.string.operation_error, lastError)))
         } else {
             val msg = when (clipboard) {
-                is ClipboardOperation.Copy -> "${nodes.size}件コピーしました (検証OK)"
-                is ClipboardOperation.Cut -> "${nodes.size}件移動しました (検証OK)"
+                is ClipboardOperation.Copy -> quantity(R.plurals.operation_copied_verified, nodes.size, nodes.size)
+                is ClipboardOperation.Cut -> quantity(R.plurals.operation_moved_verified, nodes.size, nodes.size)
             }
             val undo: suspend () -> Unit = {
                 undoActions.forEach { it() }
                 loadFilesSync(destDir)
             }
-            emit(SnackbarEvent(msg, actionLabel = "元に戻す", onAction = undo))
+            emit(SnackbarEvent(msg, actionLabel = text(R.string.action_undo), onAction = undo))
             // 設定が ON なら完了をシステム通知 (画面を離れていても気づけるように)。
             if (settingsRepo.settings.first().notifyOnFileOpComplete) {
                 val destName = (destDir as? FileUri.Local)?.let { File(it.absolutePath).name }
-                val where = if (destName.isNullOrEmpty()) "" else "「$destName」に"
+                val where = if (destName.isNullOrEmpty()) "" else text(R.string.operation_destination_name, destName)
                 val title = when (clipboard) {
-                    is ClipboardOperation.Copy -> "コピーが完了しました"
-                    is ClipboardOperation.Cut -> "移動が完了しました"
+                    is ClipboardOperation.Copy -> text(R.string.operation_copy_complete)
+                    is ClipboardOperation.Cut -> text(R.string.operation_move_complete)
                 }
-                opNotifier.notify(title, "$where${nodes.size} 件")
+                opNotifier.notify(title, quantity(R.plurals.operation_destination_count, nodes.size, where, nodes.size))
             }
         }
     }
@@ -1026,7 +1036,7 @@ class FileBrowserViewModel @Inject constructor(
 
     private fun performDelete(nodes: List<FileNode>, behavior: DeleteBehavior) {
         if (nodes.isEmpty()) return
-        val opLabel = if (behavior == DeleteBehavior.TRASH) "ゴミ箱へ移動中…" else "削除中…"
+        val opLabel = text(if (behavior == DeleteBehavior.TRASH) R.string.operation_trashing else R.string.operation_deleting)
         // 削除は逐次のバイト進捗が取れない (deleteRecursively は一括) ので、件数ベースのバナーを出す。
         // totalBytes = 0 にしてバーは不確定 (くるくる) 表示にする。
         _state.value = _state.value.copy(
@@ -1054,11 +1064,11 @@ class FileBrowserViewModel @Inject constructor(
                 val localFile = (node.uri as? FileUri.Local)?.let { File(it.absolutePath) }
                 if (behavior == DeleteBehavior.TRASH && localFile != null) {
                     if (trashRepo.moveToTrash(localFile)) trashedCount++
-                    else lastError = "「${node.name}」をゴミ箱へ移動できませんでした"
+                    else lastError = text(R.string.operation_trash_failed, node.name)
                 } else {
                     when (val r = storage.delete(node.uri, recursive = true)) {
                         is Result.Success -> deletedCount++
-                        is Result.Failure -> lastError = r.error.toUserMessage()
+                        is Result.Failure -> lastError = r.error.toUserMessage(context)
                     }
                 }
             }
@@ -1066,10 +1076,10 @@ class FileBrowserViewModel @Inject constructor(
             _state.value = _state.value.copy(isLoading = false, opProgress = null, selectedUris = emptySet())
             if (currentUri != null) loadFilesSync(currentUri)
             when {
-                lastError != null -> emit(SnackbarEvent("削除エラー: $lastError"))
-                trashedCount > 0 && deletedCount == 0 -> emit(SnackbarEvent("${trashedCount}件をゴミ箱に移動しました"))
-                trashedCount > 0 -> emit(SnackbarEvent("${trashedCount + deletedCount}件削除しました (うち${trashedCount}件はゴミ箱)"))
-                else -> emit(SnackbarEvent("${deletedCount}件削除しました"))
+                lastError != null -> emit(SnackbarEvent(text(R.string.operation_delete_error, lastError)))
+                trashedCount > 0 && deletedCount == 0 -> emit(SnackbarEvent(quantity(R.plurals.operation_trashed, trashedCount, trashedCount)))
+                trashedCount > 0 -> emit(SnackbarEvent(text(R.string.operation_deleted_with_trash, trashedCount + deletedCount, trashedCount)))
+                else -> emit(SnackbarEvent(quantity(R.plurals.operation_deleted, deletedCount, deletedCount)))
             }
         }
     }
@@ -1107,11 +1117,11 @@ class FileBrowserViewModel @Inject constructor(
                         storage.rename(renamed, newUriForRename(renamed, oldName))
                         _state.value.currentUri?.let { loadFilesSync(it) }
                     }
-                    emit(SnackbarEvent("「$oldName」→「$newName」に変更", "元に戻す", undo))
+                    emit(SnackbarEvent(text(R.string.operation_renamed, oldName, newName), text(R.string.action_undo), undo))
                 }
                 is Result.Failure -> {
                     _state.value = _state.value.copy(isLoading = false)
-                    emit(SnackbarEvent("名前変更エラー: ${r.error.toUserMessage()}"))
+                    emit(SnackbarEvent(text(R.string.operation_rename_error, r.error.toUserMessage(context))))
                 }
             }
         }
@@ -1148,11 +1158,11 @@ class FileBrowserViewModel @Inject constructor(
                         storage.delete(newUri, recursive = false)
                         loadFilesSync(currentUri)
                     }
-                    emit(SnackbarEvent("「$name」を作成しました", "元に戻す", undo))
+                    emit(SnackbarEvent(text(R.string.operation_created, name), text(R.string.action_undo), undo))
                 }
                 is Result.Failure -> {
                     _state.value = _state.value.copy(isLoading = false)
-                    emit(SnackbarEvent("フォルダ作成エラー: ${r.error.toUserMessage()}"))
+                    emit(SnackbarEvent(text(R.string.operation_folder_create_error, r.error.toUserMessage(context))))
                 }
             }
         }
@@ -1169,7 +1179,7 @@ class FileBrowserViewModel @Inject constructor(
             val existing = storage.stat(newUri)
             if (existing is Result.Success) {
                 _state.value = _state.value.copy(isLoading = false)
-                emit(SnackbarEvent("「$name」は既に存在します"))
+                emit(SnackbarEvent(text(R.string.operation_already_exists, name)))
                 return@launch
             }
             val created = when (val r = storage.openOutput(newUri, com.zerotoship.foldex.core.model.WriteMode.CREATE_NEW)) {
@@ -1178,14 +1188,14 @@ class FileBrowserViewModel @Inject constructor(
                     true
                 }
                 is Result.Failure -> {
-                    emit(SnackbarEvent("ファイル作成エラー: ${r.error.toUserMessage()}"))
+                    emit(SnackbarEvent(text(R.string.operation_file_create_error, r.error.toUserMessage(context))))
                     false
                 }
             }
             loadFilesSync(currentUri)
             _state.value = _state.value.copy(isLoading = false)
             if (created) {
-                emit(SnackbarEvent("「$name」を作成しました"))
+                emit(SnackbarEvent(text(R.string.operation_created, name)))
                 // ローカル新規ファイルは内蔵ビューアで開ける場合があるので、すぐ開く。
                 val category = FileTypeRegistry.categorize(name)
                 val localPath = (newUri as? FileUri.Local)?.absolutePath
@@ -1221,7 +1231,7 @@ class FileBrowserViewModel @Inject constructor(
             withContext(Dispatchers.Main) {
                 _state.value = _state.value.copy(pendingShares = collected)
                 if (collected.isNotEmpty()) {
-                    emit(SnackbarEvent("${collected.size} 件の共有を受信しました。保存先で「ここに保存」を押してください"))
+                    emit(SnackbarEvent(quantity(R.plurals.share_received, collected.size, collected.size)))
                 }
             }
         }
@@ -1236,7 +1246,7 @@ class FileBrowserViewModel @Inject constructor(
         val shares = _state.value.pendingShares
         if (shares.isEmpty()) return
         val destDir = _state.value.currentUri ?: run {
-            emit(SnackbarEvent("保存先フォルダを開いてからもう一度押してください"))
+            emit(SnackbarEvent(text(R.string.share_open_destination)))
             return
         }
         // SAF (Termux などの DocumentsProvider) も書き込み対応済み: openOutput(CREATE_NEW) が
@@ -1244,7 +1254,7 @@ class FileBrowserViewModel @Inject constructor(
         _state.value = _state.value.copy(
             isLoading = true,
             opProgress = FileOpProgress(
-                label = "保存中…",
+                label = text(R.string.operation_saving),
                 currentName = shares.firstOrNull()?.name ?: "",
                 currentIndex = 1,
                 totalCount = shares.size,
@@ -1304,7 +1314,7 @@ class FileBrowserViewModel @Inject constructor(
                                     }
                                 }
                                 is Result.Failure -> {
-                                    lastError = r.error.toUserMessage()
+                                    lastError = r.error.toUserMessage(context)
                                     return@runCatching false
                                 }
                             }
@@ -1324,9 +1334,9 @@ class FileBrowserViewModel @Inject constructor(
             )
             loadFilesSync(destDir)
             if (saved > 0) {
-                emit(SnackbarEvent("${saved} 件を保存しました${if (lastError != null) " (${lastError})" else ""}"))
+                emit(SnackbarEvent(if (lastError != null) text(R.string.operation_saved_with_error, saved, lastError) else quantity(R.plurals.operation_saved_count, saved, saved)))
             } else {
-                emit(SnackbarEvent("保存に失敗しました: ${lastError ?: "原因不明"}"))
+                emit(SnackbarEvent(text(R.string.operation_save_failed, lastError ?: text(R.string.error_unknown))))
             }
         }
     }
@@ -1627,7 +1637,7 @@ class FileBrowserViewModel @Inject constructor(
     fun navigateToManualPath(input: String) {
         val raw = input.trim()
         if (raw.isEmpty()) {
-            emit(SnackbarEvent("パスが空です"))
+            emit(SnackbarEvent(text(R.string.path_empty)))
             return
         }
         val target: FileUri? = when {
@@ -1635,21 +1645,21 @@ class FileBrowserViewModel @Inject constructor(
             else -> FileUri.fromStorageStringOrNull(raw)
         }
         if (target == null) {
-            emit(SnackbarEvent("パスを解釈できませんでした: $raw"))
+            emit(SnackbarEvent(text(R.string.path_invalid, raw)))
             return
         }
         // ローカルなら存在チェック (リモート/SAF はネットワーク/解決後に判定する)。
         if (target is FileUri.Local) {
             val f = File(target.absolutePath)
             if (!f.isDirectory) {
-                emit(SnackbarEvent("フォルダが見つかりません: ${target.absolutePath}"))
+                emit(SnackbarEvent(text(R.string.folder_not_found, target.absolutePath)))
                 return
             }
         }
         val name = when (target) {
             is FileUri.Local -> displayNameForLocal(File(target.absolutePath))
             is FileUri.Remote -> target.path.trimEnd('/').substringAfterLast('/').ifEmpty { target.connectionId }
-            is FileUri.Saf -> "ストレージ"
+            is FileUri.Saf -> text(R.string.storage)
         }
         _state.value = _state.value.copy(pendingPathInput = null)
         open(target, name)
@@ -1684,8 +1694,8 @@ class FileBrowserViewModel @Inject constructor(
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             }
-            runCatching { context.startActivity(Intent.createChooser(send, "共有").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) }
-                .onFailure { emit(SnackbarEvent("共有できませんでした: ${it.message}")) }
+            runCatching { context.startActivity(Intent.createChooser(send, text(R.string.share_chooser_title)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) }
+                .onFailure { emit(SnackbarEvent(text(R.string.share_failed, it.message.orEmpty()))) }
             clearSelection()
         }
     }
@@ -1696,7 +1706,7 @@ class FileBrowserViewModel @Inject constructor(
             it.type == NodeType.DIRECTORY && it.uri is FileUri.Local
         }
         if (folders.isEmpty()) {
-            emit(SnackbarEvent("HOME に追加できるのはローカルフォルダだけです"))
+            emit(SnackbarEvent(text(R.string.home_local_folders_only)))
             return
         }
         viewModelScope.launch {
@@ -1704,7 +1714,7 @@ class FileBrowserViewModel @Inject constructor(
                 val path = (n.uri as FileUri.Local).absolutePath
                 homeShortcutRepo.addLocalFolder(n.name, path)
             }
-            emit(SnackbarEvent("${folders.size} 件を HOME に追加しました"))
+            emit(SnackbarEvent(quantity(R.plurals.home_folders_added, folders.size, folders.size)))
             clearSelection()
         }
     }
@@ -1748,7 +1758,7 @@ class FileBrowserViewModel @Inject constructor(
             pendingZipCompress = emptyList(),
             isLoading = true,
             opProgress = FileOpProgress(
-                label = "圧縮中…",
+                label = text(R.string.operation_compressing),
                 currentName = targets.firstOrNull()?.name ?: finalName,
                 currentIndex = 1,
                 totalCount = targets.size,
@@ -1787,7 +1797,7 @@ class FileBrowserViewModel @Inject constructor(
                     ZipOps.compress(locals, cacheZip, password.takeUnless { it.isNullOrEmpty() }, onZip)
                     true
                 }.getOrElse { e ->
-                    emit(SnackbarEvent("圧縮失敗: ${e.message}"))
+                    emit(SnackbarEvent(text(R.string.operation_compress_failed, e.message.orEmpty())))
                     false
                 }
             }
@@ -1798,14 +1808,14 @@ class FileBrowserViewModel @Inject constructor(
             // できた zip を destDir に書き込む。
             val destUri = destUriFor(destDir, uniqueName(destDir, finalName))
             if (destUri == null) {
-                emit(SnackbarEvent("保存先を解決できません"))
+                emit(SnackbarEvent(text(R.string.operation_destination_unresolved)))
                 _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
             // zip 本体の書き込みフェーズはバーを不確定表示に切り替える。
             _state.value = _state.value.copy(
                 opProgress = _state.value.opProgress?.copy(
-                    label = "保存中…",
+                    label = text(R.string.operation_saving),
                     currentName = finalName,
                     bytesTransferred = 0,
                     totalBytes = 0,
@@ -1817,14 +1827,14 @@ class FileBrowserViewModel @Inject constructor(
                         when (val r = storage.openOutput(destUri, com.zerotoship.foldex.core.model.WriteMode.CREATE_NEW)) {
                             is Result.Success -> r.value.use { os -> ins.copyTo(os) }
                             is Result.Failure -> {
-                                emit(SnackbarEvent("保存失敗: ${r.error.toUserMessage()}"))
+                                emit(SnackbarEvent(text(R.string.operation_save_error, r.error.toUserMessage(context))))
                                 return@runCatching false
                             }
                         }
                     }
                     true
                 }.getOrElse {
-                    emit(SnackbarEvent("保存失敗: ${it.message}"))
+                    emit(SnackbarEvent(text(R.string.operation_save_error, it.message.orEmpty())))
                     false
                 }
             }
@@ -1832,7 +1842,7 @@ class FileBrowserViewModel @Inject constructor(
             loadFilesSync(destDir)
             _state.value = _state.value.copy(isLoading = false, opProgress = null)
             if (written) {
-                emit(SnackbarEvent("「$finalName」を作成しました"))
+                emit(SnackbarEvent(text(R.string.operation_created, finalName)))
                 clearSelection()
             }
         }
@@ -1842,7 +1852,7 @@ class FileBrowserViewModel @Inject constructor(
     fun requestZipExtract(node: FileNode? = null) {
         val target = node ?: _state.value.selectedNodes.singleOrNull { it.type == NodeType.FILE && ZipOps.isLikelyZip(it.name) }
         if (target == null) {
-            emit(SnackbarEvent("解凍する ZIP を 1 件だけ選んでください"))
+            emit(SnackbarEvent(text(R.string.zip_select_one)))
             return
         }
         _state.value = _state.value.copy(
@@ -1866,7 +1876,7 @@ class FileBrowserViewModel @Inject constructor(
             pendingZipExtract = null,
             isLoading = true,
             opProgress = FileOpProgress(
-                label = "解凍中…",
+                label = text(R.string.operation_extracting),
                 currentName = node.name,
                 currentIndex = 1,
                 totalCount = 1,
@@ -1945,14 +1955,14 @@ class FileBrowserViewModel @Inject constructor(
             }
             val baseDirUri = destUriFor(destDir, baseName)
             if (baseDirUri == null) {
-                emit(SnackbarEvent("展開先を解決できません"))
+                emit(SnackbarEvent(text(R.string.zip_extract_destination_unresolved)))
                 cacheOut.deleteRecursively()
                 _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
             }
             val mkRes = withContext(Dispatchers.IO) { storage.mkdir(baseDirUri, recursive = true) }
             if (mkRes is Result.Failure) {
-                emit(SnackbarEvent("展開フォルダ作成失敗: ${mkRes.error.toUserMessage()}"))
+                emit(SnackbarEvent(text(R.string.zip_extract_folder_failed, mkRes.error.toUserMessage(context))))
                 cacheOut.deleteRecursively()
                 _state.value = _state.value.copy(isLoading = false, opProgress = null)
                 return@launch
@@ -1963,7 +1973,7 @@ class FileBrowserViewModel @Inject constructor(
             val (totalFiles, totalBytesToCopy) = withContext(Dispatchers.IO) { measureTree(cacheOut) }
             _state.value = _state.value.copy(
                 opProgress = _state.value.opProgress?.copy(
-                    label = "展開中…",
+                    label = text(R.string.operation_extracting),
                     currentName = baseName,
                     bytesTransferred = 0,
                     totalBytes = totalBytesToCopy,
@@ -2017,15 +2027,15 @@ class FileBrowserViewModel @Inject constructor(
                     pendingZipExtract = req.copy(needsPassword = true, initialError = message),
                 )
             } else {
-                emit(SnackbarEvent("解凍失敗: ${message ?: "原因不明"}"))
+                emit(SnackbarEvent(text(R.string.zip_extract_failed, message ?: text(R.string.error_unknown))))
             }
             return
         }
         loadFilesSync(destDir)
         _state.value = _state.value.copy(isLoading = false, opProgress = null)
-        emit(SnackbarEvent("「$baseName/」に展開しました"))
+        emit(SnackbarEvent(text(R.string.zip_extracted, baseName)))
         if (settingsRepo.settings.first().notifyOnExtractComplete) {
-            opNotifier.notify("解凍が完了しました", "「$baseName」に展開しました")
+            opNotifier.notify(text(R.string.zip_extract_complete), text(R.string.zip_extracted_notification, baseName))
         }
         clearSelection()
     }
@@ -2113,7 +2123,7 @@ class FileBrowserViewModel @Inject constructor(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.value = _state.value.copy(isLoading = false, error = e.message ?: "エラーが発生しました")
+                _state.value = _state.value.copy(isLoading = false, error = e.message ?: text(R.string.error_generic))
             }
         }
     }
@@ -2124,7 +2134,7 @@ class FileBrowserViewModel @Inject constructor(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.value = _state.value.copy(isLoading = false, error = e.message ?: "エラーが発生しました")
+            _state.value = _state.value.copy(isLoading = false, error = e.message ?: text(R.string.error_generic))
         }
     }
 
@@ -2162,14 +2172,14 @@ class FileBrowserViewModel @Inject constructor(
         val entries = mutableListOf<QuickAccessEntry>()
         val root = runCatching { Environment.getExternalStorageDirectory() }.getOrNull()
         if (root != null && root.isDirectory) {
-            entries += QuickAccessEntry(FileUri.Local(root.absolutePath), "内部ストレージ", QuickAccessKind.INTERNAL_STORAGE)
+            entries += QuickAccessEntry(FileUri.Local(root.absolutePath), text(R.string.internal_storage), QuickAccessKind.INTERNAL_STORAGE)
             val standardDirs = listOf(
-                Triple("Download", "ダウンロード", QuickAccessKind.DOWNLOAD),
-                Triple("DCIM", "カメラ", QuickAccessKind.CAMERA),
-                Triple("Pictures", "画像", QuickAccessKind.IMAGES),
-                Triple("Movies", "動画", QuickAccessKind.VIDEO),
-                Triple("Music", "音楽", QuickAccessKind.MUSIC),
-                Triple("Documents", "ドキュメント", QuickAccessKind.DOCUMENTS),
+                Triple("Download", text(R.string.home_downloads), QuickAccessKind.DOWNLOAD),
+                Triple("DCIM", text(R.string.quick_camera), QuickAccessKind.CAMERA),
+                Triple("Pictures", text(R.string.home_images), QuickAccessKind.IMAGES),
+                Triple("Movies", text(R.string.home_videos), QuickAccessKind.VIDEO),
+                Triple("Music", text(R.string.home_music), QuickAccessKind.MUSIC),
+                Triple("Documents", text(R.string.quick_documents), QuickAccessKind.DOCUMENTS),
             )
             for ((dirName, label, kind) in standardDirs) {
                 val dir = File(root, dirName)
@@ -2190,7 +2200,7 @@ class FileBrowserViewModel @Inject constructor(
                         val dir = vol.directory
                         if (dir != null && seen.add(dir.absolutePath)) {
                             val label = runCatching { vol.getDescription(context) }.getOrNull()
-                                ?: "SDカード"
+                                ?: text(R.string.home_sd_card)
                             entries += QuickAccessEntry(
                                 FileUri.Local(dir.absolutePath), label, QuickAccessKind.SD_CARD,
                             )
@@ -2204,7 +2214,7 @@ class FileBrowserViewModel @Inject constructor(
                 if (vol.name != "emulated" && vol.name != "self" && vol.isDirectory && seen.add(vol.absolutePath)) {
                     entries += QuickAccessEntry(
                         FileUri.Local(vol.absolutePath),
-                        "SDカード (${vol.name})",
+                        text(R.string.quick_sd_named, vol.name),
                         QuickAccessKind.SD_CARD,
                     )
                 }

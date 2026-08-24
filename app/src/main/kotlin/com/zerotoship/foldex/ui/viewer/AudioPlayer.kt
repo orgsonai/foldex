@@ -34,12 +34,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.zerotoship.foldex.R
 import kotlinx.coroutines.delay
 import java.io.File
 import java.util.Locale
@@ -117,17 +119,17 @@ fun AudioPlayer(file: File, name: String, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0)) }) {
-                Icon(Icons.Default.Replay10, contentDescription = "10秒戻る")
+                Icon(Icons.Default.Replay10, contentDescription = stringResource(R.string.player_rewind_10))
             }
             IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) {
                 Icon(
                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "一時停止" else "再生",
+                    contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
                     modifier = Modifier.size(48.dp),
                 )
             }
             IconButton(onClick = { player.seekTo(player.currentPosition + 10_000) }) {
-                Icon(Icons.Default.Forward10, contentDescription = "10秒進む")
+                Icon(Icons.Default.Forward10, contentDescription = stringResource(R.string.player_forward_10))
             }
         }
     }

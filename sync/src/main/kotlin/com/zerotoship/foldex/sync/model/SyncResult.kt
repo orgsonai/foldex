@@ -3,6 +3,9 @@
 
 package com.zerotoship.foldex.sync.model
 
+import android.content.Context
+import com.zerotoship.foldex.sync.R
+
 /**
  * 1 回の同期実行の結果サマリ。SyncJob.lastRunResult に保存する短い文字列も生成する。
  */
@@ -47,22 +50,22 @@ data class SyncResult(
     val processedCount: Int get() = transferredCount + deleted + skipped + failed
 
     /** SyncJob.lastRunResult に格納する 1 行サマリ。 */
-    fun toSummaryLine(): String = buildString {
-        append(
-            when (outcome) {
-                Outcome.SUCCESS -> "成功"
-                Outcome.PARTIAL -> "一部失敗"
-                Outcome.FAILED -> "失敗"
-            },
-        )
-        append(" / 転送 ").append(transferredCount)
-        if (conflicts > 0) append(" (両側更新 ").append(conflicts).append(")")
-        if (deleted > 0) append(" 削除 ").append(deleted)
-        if (failed > 0) append(" 失敗 ").append(failed)
-        // 末尾に「スキップ数」と「処理した総数」を出して、何件を判定して何件が転送対象外
-        // (変更なし等) だったかをログから読み取れるようにする。
-        append(" / スキップ ").append(skipped)
-        append(" / 合計 ").append(processedCount).append(" 件")
+    fun toSummaryLine(context: Context): String {
+        val outcomeLabel = when (outcome) {
+            Outcome.SUCCESS -> context.getString(R.string.sync_result_success)
+            Outcome.PARTIAL -> context.getString(R.string.sync_result_partial)
+            Outcome.FAILED -> context.getString(R.string.sync_result_failed)
+        }
+        return buildString {
+            append(context.getString(R.string.sync_result_transferred, outcomeLabel, transferredCount))
+            if (conflicts > 0) append(context.getString(R.string.sync_result_conflicts, conflicts))
+            if (deleted > 0) append(context.getString(R.string.sync_result_deleted, deleted))
+            if (failed > 0) append(context.getString(R.string.sync_result_failed_count, failed))
+            // 末尾に「スキップ数」と「処理した総数」を出して、何件を判定して何件が転送対象外
+            // (変更なし等) だったかをログから読み取れるようにする。
+            append(context.getString(R.string.sync_result_skipped, skipped))
+            append(context.getString(R.string.sync_result_total, processedCount))
+        }
     }
 
     companion object {

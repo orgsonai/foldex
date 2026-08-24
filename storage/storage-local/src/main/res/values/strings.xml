@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="storage_saf_child_required">SAF CREATE_NEW requires a parent and child name</string>
+    <string name="storage_saf_mkdir_child_required">SAF mkdir requires a parent and child name</string>
+    <string name="storage_copy_failed">Copy failed: %1$s</string>
+</resources>

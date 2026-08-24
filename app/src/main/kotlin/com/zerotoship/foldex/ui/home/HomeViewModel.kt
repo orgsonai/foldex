@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.ConnectionRepository
 import com.zerotoship.foldex.core.data.repo.HomeShortcutRepository
 import com.zerotoship.foldex.core.model.Connection
@@ -58,7 +59,7 @@ class HomeViewModel @Inject constructor(
                 if (name != null && name != sc.label) sc.copy(label = name) else sc
             } else sc
         }
-        val merged = (BUILT_IN + refreshed).map { sc ->
+        val merged = (builtInShortcuts() + refreshed).map { sc ->
             val override = overrides[sc.id]
             if (override != null && override != sc.label) sc.withLabel(override) else sc
         }
@@ -75,7 +76,7 @@ class HomeViewModel @Inject constructor(
         all.filter { it.id !in hidden }
     }
         .onEach { repo.cacheShortcuts(it) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), repo.cachedShortcuts() ?: BUILT_IN)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), repo.cachedShortcuts() ?: builtInShortcuts())
 
     /** 復元 UI 用: 非表示にされている全タイル。 */
     val hiddenShortcuts: StateFlow<List<HomeShortcut>> = combine(allShortcuts, repo.hiddenIds) { all, hidden ->
@@ -185,14 +186,14 @@ class HomeViewModel @Inject constructor(
      */
     fun candidatePresets(): List<PresetPath> = buildList {
         val ext = Environment.getExternalStorageDirectory()
-        if (ext.exists()) add(PresetPath("内部ストレージ", ext.absolutePath, accessible = ext.canRead()))
-        File(ext, "Download").let { if (it.exists()) add(PresetPath("ダウンロード", it.absolutePath, it.canRead())) }
+        if (ext.exists()) add(PresetPath(context.getString(R.string.internal_storage), ext.absolutePath, accessible = ext.canRead()))
+        File(ext, "Download").let { if (it.exists()) add(PresetPath(context.getString(R.string.home_downloads), it.absolutePath, it.canRead())) }
         File(ext, "DCIM").let { if (it.exists()) add(PresetPath("DCIM", it.absolutePath, it.canRead())) }
-        File(ext, "Pictures").let { if (it.exists()) add(PresetPath("画像", it.absolutePath, it.canRead())) }
-        File(ext, "Movies").let { if (it.exists()) add(PresetPath("動画", it.absolutePath, it.canRead())) }
-        File(ext, "Music").let { if (it.exists()) add(PresetPath("音楽", it.absolutePath, it.canRead())) }
+        File(ext, "Pictures").let { if (it.exists()) add(PresetPath(context.getString(R.string.home_images), it.absolutePath, it.canRead())) }
+        File(ext, "Movies").let { if (it.exists()) add(PresetPath(context.getString(R.string.home_videos), it.absolutePath, it.canRead())) }
+        File(ext, "Music").let { if (it.exists()) add(PresetPath(context.getString(R.string.home_music), it.absolutePath, it.canRead())) }
         val termux = File("/data/data/com.termux/files/home")
-        add(PresetPath("Termux ホーム", termux.absolutePath, accessible = termux.canRead(), note = "別アプリの領域。root か Termux 側の共有設定が必要。"))
+        add(PresetPath(context.getString(R.string.home_termux_home), termux.absolutePath, accessible = termux.canRead(), note = context.getString(R.string.home_termux_note)))
         // 取り外し可能ストレージ (SD / OTG): /storage/XXXX-XXXX 形式の直接アクセス。
         // SAF より大幅に高速。MANAGE_EXTERNAL_STORAGE 権限があれば File API で読み書き可能。
         val seen = mutableSetOf<String>()
@@ -204,7 +205,7 @@ class HomeViewModel @Inject constructor(
                         val dir = vol.directory
                         if (dir != null && seen.add(dir.absolutePath)) {
                             val label = runCatching { vol.getDescription(context) }.getOrNull()
-                                ?: "SDカード"
+                                ?: context.getString(R.string.home_sd_card)
                             add(PresetPath(label, dir.absolutePath, accessible = dir.canRead()))
                         }
                     }
@@ -214,7 +215,7 @@ class HomeViewModel @Inject constructor(
         File("/storage").listFiles()?.forEach { f ->
             if (f.isDirectory && f.name != "self" && f.name != "emulated" && seen.add(f.absolutePath)) {
                 add(PresetPath("SD: ${f.name}", f.absolutePath, accessible = f.canRead(),
-                    note = if (!f.canRead()) "全ファイルへのアクセス権限が必要" else null))
+                    note = if (!f.canRead()) context.getString(R.string.home_all_files_required) else null))
             }
         }
     }
@@ -226,18 +227,18 @@ class HomeViewModel @Inject constructor(
         val note: String? = null,
     )
 
+    private fun builtInShortcuts(): List<HomeShortcut> = listOf(
+        HomeShortcut.Function(id = "builtin_files", label = context.getString(R.string.home_files), kind = HomeFunction.INTERNAL_STORAGE),
+        HomeShortcut.Function(id = "builtin_images", label = context.getString(R.string.home_images), kind = HomeFunction.ALL_IMAGES),
+        HomeShortcut.Function(id = "builtin_videos", label = context.getString(R.string.home_videos), kind = HomeFunction.ALL_VIDEOS),
+        HomeShortcut.Function(id = "builtin_trash", label = context.getString(R.string.home_trash), kind = HomeFunction.TRASH),
+        HomeShortcut.Function(id = "builtin_perms", label = context.getString(R.string.home_permissions_saf), kind = HomeFunction.PERMISSIONS),
+        HomeShortcut.Function(id = "builtin_saf", label = context.getString(R.string.home_open_with_saf), kind = HomeFunction.SAF_PICK),
+    )
+
     private companion object {
         // タブから到達できる機能 (サーバー/同期/設定) は HOME には置かない。
         // HOME はタイルのランチャー的役割で、Files / ゴミ箱 / 権限 / SAF を提供する。
-        val BUILT_IN: List<HomeShortcut> = listOf(
-            HomeShortcut.Function(id = "builtin_files", label = "ファイル", kind = HomeFunction.INTERNAL_STORAGE),
-            HomeShortcut.Function(id = "builtin_images", label = "画像", kind = HomeFunction.ALL_IMAGES),
-            HomeShortcut.Function(id = "builtin_videos", label = "動画", kind = HomeFunction.ALL_VIDEOS),
-            HomeShortcut.Function(id = "builtin_trash", label = "ゴミ箱", kind = HomeFunction.TRASH),
-            HomeShortcut.Function(id = "builtin_perms", label = "権限/SAF", kind = HomeFunction.PERMISSIONS),
-            HomeShortcut.Function(id = "builtin_saf", label = "SAFで開く", kind = HomeFunction.SAF_PICK),
-        )
-
         /** 保存された [order] に従って並び替え、未登録 id は元の順序のまま末尾に回す。 */
         fun applyOrder(items: List<HomeShortcut>, order: List<String>): List<HomeShortcut> {
             if (order.isEmpty()) return items

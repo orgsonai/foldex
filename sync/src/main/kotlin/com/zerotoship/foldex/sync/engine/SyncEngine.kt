@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.sync.engine
 
+import android.content.Context
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.SyncBackupRepository
@@ -16,6 +17,8 @@ import com.zerotoship.foldex.core.model.SyncJob
 import com.zerotoship.foldex.sync.model.SyncAction
 import com.zerotoship.foldex.sync.model.SyncProgress
 import com.zerotoship.foldex.sync.model.SyncResult
+import com.zerotoship.foldex.sync.R
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -33,6 +36,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class SyncEngine @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val jobRepository: SyncJobRepository,
     private val stateRepository: SyncStateRepository,
     private val settingsRepository: SettingsRepository,
@@ -67,7 +71,7 @@ class SyncEngine @Inject constructor(
         val tracker = ProgressTracker(onProgress)
         tracker.enterScanning()
         // 実行の境界と「どこからどこへ」をログに残す (詳細な per-file ログは Executor の onAction が出す)。
-        appLogger.info("Sync(${job.name})", "── 同期開始: ${directionLine(job)} ──")
+        appLogger.info("Sync(${job.name})", context.getString(R.string.sync_log_start, directionLine(job)))
 
         return try {
             val localRoot = FileUri.fromStorageString(job.localUri)
@@ -77,16 +81,16 @@ class SyncEngine @Inject constructor(
             val bidirectional = job.direction == SyncDirection.BIDIRECTIONAL
 
             val localTree = when (
-                val r = TreeWalker(storage, localRoot, filter, treatMissingRootAsEmpty = !toRemote || bidirectional).walk()
+                val r = TreeWalker(context, storage, localRoot, filter, treatMissingRootAsEmpty = !toRemote || bidirectional).walk()
             ) {
                 is Result.Success -> r.value
-                is Result.Failure -> return failed(job, startedAt, "ローカルの列挙に失敗: ${r.error.message}", tracker)
+                is Result.Failure -> return failed(job, startedAt, context.getString(R.string.sync_log_local_scan_failed, r.error.message), tracker)
             }
             val remoteTree = when (
-                val r = TreeWalker(storage, remoteRoot, filter, treatMissingRootAsEmpty = toRemote || bidirectional).walk()
+                val r = TreeWalker(context, storage, remoteRoot, filter, treatMissingRootAsEmpty = toRemote || bidirectional).walk()
             ) {
                 is Result.Success -> r.value
-                is Result.Failure -> return failed(job, startedAt, "リモートの列挙に失敗: ${r.error.message}", tracker)
+                is Result.Failure -> return failed(job, startedAt, context.getString(R.string.sync_log_remote_scan_failed, r.error.message), tracker)
             }
 
             val previous = stateRepository.snapshotForJob(job.id)
@@ -135,6 +139,7 @@ class SyncEngine @Inject constructor(
             // スキップは件数が多く毎回同じものが並んでノイズになるためログに出さない。
             // ログに残すのは「方向 (どこからどこへ)・転送したファイル・エラー」だけにする。
             val report = Executor(
+                context = context,
                 direction = job.direction,
                 localProvider = storage,
                 remoteProvider = storage,
@@ -169,9 +174,9 @@ class SyncEngine @Inject constructor(
                 finishedAt = finishedAt,
                 errors = report.errors,
             )
-            runCatching { jobRepository.updateLastRun(job.id, result.toSummaryLine(), finishedAt) }
+            runCatching { jobRepository.updateLastRun(job.id, result.toSummaryLine(context), finishedAt) }
             // 実行サマリを集約ログに記録。個別のエラーは Executor.onAction で既に書き出し済み。
-            appLogger.info(tag, result.toSummaryLine())
+            appLogger.info(tag, result.toSummaryLine(context))
             tracker.done()
             result
         } catch (e: CancellationException) {
@@ -183,9 +188,9 @@ class SyncEngine @Inject constructor(
 
     /** ログ用に「どこからどこへ」を方向付きで 1 行にする (例: `ローカル → リモート`)。 */
     private fun directionLine(job: SyncJob): String = when (job.direction) {
-        SyncDirection.TO_REMOTE -> "${job.localUri} → ${job.remoteUri} (アップロード)"
-        SyncDirection.TO_LOCAL -> "${job.remoteUri} → ${job.localUri} (ダウンロード)"
-        SyncDirection.BIDIRECTIONAL -> "${job.localUri} ⇄ ${job.remoteUri} (双方向)"
+        SyncDirection.TO_REMOTE -> context.getString(R.string.sync_direction_upload, job.localUri, job.remoteUri)
+        SyncDirection.TO_LOCAL -> context.getString(R.string.sync_direction_download, job.remoteUri, job.localUri)
+        SyncDirection.BIDIRECTIONAL -> context.getString(R.string.sync_log_direction_bidirectional, job.localUri, job.remoteUri)
     }
 
     private suspend fun failed(
@@ -197,7 +202,7 @@ class SyncEngine @Inject constructor(
     ): SyncResult {
         val finishedAt = System.currentTimeMillis()
         val result = SyncResult.failedToScan(job.id, startedAt, finishedAt, message)
-        runCatching { jobRepository.updateLastRun(job.id, result.toSummaryLine(), finishedAt) }
+        runCatching { jobRepository.updateLastRun(job.id, result.toSummaryLine(context), finishedAt) }
         appLogger.error("Sync(${job.name})", message, cause)
         tracker.done()
         return result

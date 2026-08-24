@@ -91,7 +91,7 @@ object ZipOps {
         val zip = if (password.isNullOrEmpty()) ZipFile(src) else ZipFile(src, password.toCharArray())
         try {
             // zip4j 2.11: isEncrypted() で要否を判定できる。
-            if (zip.isEncrypted && password.isNullOrEmpty()) throw WrongPassword("パスワード必須")
+            if (zip.isEncrypted && password.isNullOrEmpty()) throw WrongPassword(null)
             if (progress == null) {
                 zip.extractAll(destDir.absolutePath)
             } else {
@@ -119,7 +119,7 @@ object ZipOps {
     fun isLikelyZip(name: String): Boolean = name.endsWith(".zip", ignoreCase = true)
 
     /** zip4j の throws を見やすくしたラッパ。UI 側でこの型をキャッチしてパスワード再入力を促す。 */
-    class WrongPassword(message: String) : Exception(message)
+    class WrongPassword(message: String?) : Exception(message)
 
     /** [pm] が BUSY の間ポーリングして [report] を呼び、完了時に最終値を 1 回通知する。 */
     private inline fun pollUntilDone(

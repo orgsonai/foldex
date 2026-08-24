@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.server.sftp
 
+import android.content.Context
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.ServerConfigRepository
 import com.zerotoship.foldex.core.model.ServerAuthMode
@@ -11,6 +12,7 @@ import com.zerotoship.foldex.core.model.ServerLogEvent
 import com.zerotoship.foldex.core.model.ServerType
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.server.NetworkBindingResolver
+import com.zerotoship.foldex.server.R
 import com.zerotoship.foldex.server.log.ServerLogger
 import com.zerotoship.foldex.server.security.Argon2idHasher
 import com.zerotoship.foldex.server.security.HostKeyManager
@@ -35,6 +37,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import javax.inject.Inject
 import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 /**
  * 設定毎に Apache MINA SSHD の [SshServer] を起動・停止するマネージャ。
@@ -46,6 +49,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class SftpServerManager @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: ServerConfigRepository,
     private val hostKeyManager: HostKeyManager,
     private val hasher: Argon2idHasher,
@@ -72,11 +76,11 @@ class SftpServerManager @Inject constructor(
             startLocked(configId)
         } catch (t: Throwable) {
             Result.Failure(
-                StorageError.IoError("SFTP サーバーの起動中に予期しないエラー: ${t.message}", t),
+                StorageError.IoError(context.getString(R.string.server_start_unexpected, "SFTP", t.message.orEmpty()), t),
             )
         }
         if (result is Result.Failure) {
-            val msg = "SFTP サーバーを起動できませんでした: ${result.error.message}"
+            val msg = context.getString(R.string.server_start_failed, "SFTP", result.error.message)
             _startErrors.tryEmit(msg)
             // snackbar は表示が短い・画面遷移で消えるので、ログとしても残す
             // (サーバー画面 → ログから後追いできる)。
@@ -110,14 +114,14 @@ class SftpServerManager @Inject constructor(
         }
         val rootPath = resolveLocalRoot(config.rootUri)
             ?: return Result.Failure(
-                StorageError.IoError("ルートパスはローカルパスである必要があります: ${config.rootUri}"),
+                StorageError.IoError(context.getString(R.string.server_root_must_be_local, config.rootUri)),
             )
         val resolvedHost = networkResolver.resolve(config.bindAddress)
             ?: return Result.Failure(
                 StorageError.IoError(
                     when (config.bindAddress) {
-                        ServerConfig.BIND_WIFI_ONLY -> "Wi-Fi に接続されていないため起動できません"
-                        else -> "バインドアドレスを解決できませんでした: ${config.bindAddress}"
+                        ServerConfig.BIND_WIFI_ONLY -> context.getString(R.string.server_wifi_unavailable)
+                        else -> context.getString(R.string.server_bind_unresolved, config.bindAddress)
                     },
                 ),
             )
@@ -127,7 +131,7 @@ class SftpServerManager @Inject constructor(
         } catch (t: Throwable) {
             runCatching { server.stop(true) }
             return Result.Failure(
-                StorageError.IoError("ポート ${config.port} で待ち受けを開始できませんでした: ${t.message}", t),
+                StorageError.IoError(context.getString(R.string.server_listen_failed, config.port, t.message.orEmpty()), t),
             )
         }
         running[configId] = server
@@ -190,7 +194,7 @@ class SftpServerManager @Inject constructor(
         withContext(NonCancellable + Dispatchers.IO) {
             runCatching { server.close(true).await(CLOSE_TIMEOUT_MS) }
                 .onFailure { t ->
-                    appLogger.warn("Server/SFTP", "サーバーの停止処理で例外: ${t.message}", t)
+                    appLogger.warn("Server/SFTP", context.getString(R.string.server_stop_exception, t.message.orEmpty()), t)
                 }
                 .getOrDefault(false)
         }

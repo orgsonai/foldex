@@ -54,12 +54,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.imageedit.engine.DocumentRenderer
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
 import com.zerotoship.foldex.ui.imageedit.model.StrokeMode
+import com.zerotoship.foldex.R
 
 /**
  * 画像エディタの画面。
@@ -131,11 +133,9 @@ fun ImageEditScreen(
                         val size = state.outputSize
                         if (size != null) {
                             Text(
-                                buildString {
-                                    append("${size.width}×${size.height}")
-                                    state.estimatedBytes?.let { append("  ・  ${formatBytes(it.toLong())}") }
-                                    if (state.estimating) append("  ・  計算中…")
-                                },
+                                "${size.width}×${size.height}" +
+                                    state.estimatedBytes?.let { "  ·  ${formatBytes(it.toLong())}" }.orEmpty() +
+                                    if (state.estimating) "  ·  ${stringResource(R.string.image_calculating)}" else "",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -144,15 +144,15 @@ fun ImageEditScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = { if (state.dirty) showDiscardDialog = true else onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = onUndo, enabled = state.canUndo) {
-                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "元に戻す")
+                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.action_undo))
                     }
                     IconButton(onClick = onRedo, enabled = state.canRedo) {
-                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "やり直す")
+                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.action_redo))
                     }
                     TextButton(
                         onClick = {
@@ -160,7 +160,7 @@ fun ImageEditScreen(
                             showSaveDialog = true
                         },
                         enabled = doc != null && !state.saving,
-                    ) { Text("保存") }
+                    ) { Text(stringResource(R.string.action_save)) }
                 },
             )
         },
@@ -169,7 +169,7 @@ fun ImageEditScreen(
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when {
-                        state.loading -> CenterProgress("読み込み中…")
+                        state.loading -> CenterProgress(stringResource(R.string.loading))
                         state.error != null -> CenterMessage(state.error)
                         else -> EditCanvas(
                             preview = state.preview,
@@ -211,7 +211,7 @@ fun ImageEditScreen(
                         Box(
                             Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
-                        ) { CenterProgress("保存中…") }
+                        ) { CenterProgress(stringResource(R.string.text_saving)) }
                     }
                 }
 
@@ -312,19 +312,19 @@ fun ImageEditScreen(
     if (showDiscardDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDiscardDialog = false },
-            title = { Text("保存していない編集があります") },
-            text = { Text("保存せずに閉じると、編集した内容は失われます。") },
+            title = { Text(stringResource(R.string.image_unsaved_title)) },
+            text = { Text(stringResource(R.string.image_unsaved_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     showDiscardDialog = false
                     showSaveDialog = true
-                }) { Text("保存する") }
+                }) { Text(stringResource(R.string.image_save_action)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showDiscardDialog = false
                     onBack()
-                }) { Text("破棄して閉じる") }
+                }) { Text(stringResource(R.string.image_discard_close)) }
             },
         )
     }
@@ -346,7 +346,7 @@ private fun EditToolbar(
         ) {
             ToolButton(
                 icon = Icons.Default.Crop,
-                label = "切り抜き",
+                label = stringResource(R.string.image_tool_crop),
                 active = activeTool == EditTool.CROP,
                 enabled = enabled,
                 onClick = { onSelectTool(EditTool.CROP) },
@@ -354,7 +354,7 @@ private fun EditToolbar(
             )
             ToolButton(
                 icon = Icons.Default.PhotoSizeSelectLarge,
-                label = "サイズ",
+                label = stringResource(R.string.image_tool_resize),
                 active = activeTool == EditTool.RESIZE,
                 enabled = enabled,
                 onClick = { onSelectTool(EditTool.RESIZE) },
@@ -362,7 +362,7 @@ private fun EditToolbar(
             )
             ToolButton(
                 icon = Icons.Default.Brush,
-                label = "ペン",
+                label = stringResource(R.string.image_tool_pen),
                 active = activeTool == EditTool.BRUSH,
                 enabled = enabled,
                 onClick = { onSelectTool(EditTool.BRUSH) },
@@ -370,7 +370,7 @@ private fun EditToolbar(
             )
             ToolButton(
                 icon = Icons.Default.TextFields,
-                label = "文字",
+                label = stringResource(R.string.image_text),
                 active = activeTool == EditTool.TEXT,
                 enabled = enabled,
                 onClick = { onSelectTool(EditTool.TEXT) },
@@ -439,7 +439,7 @@ private fun CropPanel(
                     FilterChip(
                         selected = aspect == item,
                         onClick = { onAspectChange(item) },
-                        label = { Text(item.label) },
+                        label = { Text(cropAspectLabel(item)) },
                     )
                 }
             }
@@ -447,27 +447,38 @@ private fun CropPanel(
             // (ツールバーに 8 個並べるとラベルが読めなくなるため)。
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onRotateLeft) {
-                    Icon(Icons.Default.Rotate90DegreesCcw, contentDescription = "左に90度回転")
+                    Icon(Icons.Default.Rotate90DegreesCcw, contentDescription = stringResource(R.string.image_rotate_left))
                 }
                 IconButton(onClick = onRotateRight) {
-                    Icon(Icons.Default.Rotate90DegreesCw, contentDescription = "右に90度回転")
+                    Icon(Icons.Default.Rotate90DegreesCw, contentDescription = stringResource(R.string.image_rotate_right))
                 }
                 IconButton(onClick = onFlipHorizontal) {
-                    Icon(Icons.Default.Flip, contentDescription = "左右反転")
+                    Icon(Icons.Default.Flip, contentDescription = stringResource(R.string.image_flip_horizontal))
                 }
                 IconButton(onClick = onFlipVertical) {
                     Icon(
                         Icons.Default.Flip,
-                        contentDescription = "上下反転",
+                        contentDescription = stringResource(R.string.image_flip_vertical),
                         modifier = Modifier.rotate(90f),
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = onReset) { Text("解除") }
-                TextButton(onClick = onApply) { Text("適用") }
+                TextButton(onClick = onReset) { Text(stringResource(R.string.action_reset)) }
+                TextButton(onClick = onApply) { Text(stringResource(R.string.action_apply)) }
             }
         }
     }
+}
+
+@Composable
+private fun cropAspectLabel(aspect: CropAspect): String = when (aspect) {
+    CropAspect.FREE -> stringResource(R.string.image_crop_free)
+    CropAspect.ORIGINAL -> stringResource(R.string.image_crop_original)
+    CropAspect.SQUARE -> "1:1"
+    CropAspect.R4_3 -> "4:3"
+    CropAspect.R3_4 -> "3:4"
+    CropAspect.R16_9 -> "16:9"
+    CropAspect.R9_16 -> "9:16"
 }
 
 // ---- 共通の小物 ----

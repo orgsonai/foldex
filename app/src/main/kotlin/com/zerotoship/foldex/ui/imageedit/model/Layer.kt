@@ -140,7 +140,7 @@ data class TextStyleSpec(
     val backgroundColor: Int? = null,
 )
 
-enum class TextFont(val label: String) { SANS("ゴシック"), SERIF("明朝"), MONOSPACE("等幅") }
+enum class TextFont { SANS, SERIF, MONOSPACE }
 
 /** 縁取り。写真の上に載せた文字を読めるようにするための最小限の選択肢。 */
-enum class TextOutline(val label: String) { NONE("なし"), WHITE("白フチ"), BLACK("黒フチ") }
+enum class TextOutline { NONE, WHITE, BLACK }

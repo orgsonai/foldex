@@ -28,8 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.zerotoship.foldex.R
 
 /**
  * 解像度を変える設定行。
@@ -64,7 +66,7 @@ fun ResizePanel(
                 OutlinedTextField(
                     value = longEdgeText,
                     onValueChange = { input -> longEdgeText = input.filter { it.isDigit() }.take(5) },
-                    label = { Text("長辺 (px)") },
+                    label = { Text(stringResource(R.string.image_long_edge_px)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(140.dp),
@@ -76,17 +78,13 @@ fun ResizePanel(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        buildString {
-                            when {
-                                state.estimating -> append("サイズを計算中…")
-                                state.estimatedBytes != null -> {
-                                    append("約 ${formatBytes(state.estimatedBytes.toLong())}")
-                                    if (state.originalBytes > 0) {
-                                        append(" (元 ${formatBytes(state.originalBytes)})")
-                                    }
-                                }
-                                else -> append("元 ${formatBytes(state.originalBytes)}")
-                            }
+                        when {
+                            state.estimating -> stringResource(R.string.image_size_estimating)
+                            state.estimatedBytes != null && state.originalBytes > 0 ->
+                                stringResource(R.string.image_size_estimate_original, formatBytes(state.estimatedBytes.toLong()), formatBytes(state.originalBytes))
+                            state.estimatedBytes != null ->
+                                stringResource(R.string.image_size_estimate, formatBytes(state.estimatedBytes.toLong()))
+                            else -> stringResource(R.string.image_original_size_value, formatBytes(state.originalBytes))
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -122,7 +120,7 @@ fun ResizePanel(
                 TextButton(onClick = {
                     onSetLongEdge(canvasLongEdge)
                     longEdgeText = canvasLongEdge.toString()
-                }) { Text("元のサイズ") }
+                }) { Text(stringResource(R.string.image_original_size)) }
             }
         }
     }

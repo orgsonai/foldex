@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.sync.engine
 
+import android.content.Context
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.SyncBackupRepository
 import com.zerotoship.foldex.core.data.repo.SyncStateRepository
@@ -18,6 +19,7 @@ import com.zerotoship.foldex.sync.model.ConflictSide
 import com.zerotoship.foldex.sync.model.SyncAction
 import com.zerotoship.foldex.sync.model.SyncEntry
 import com.zerotoship.foldex.sync.model.SyncResult
+import com.zerotoship.foldex.sync.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -42,6 +44,7 @@ import java.util.concurrent.atomic.AtomicLong
  * (1 ファイルの失敗で同期全体を止めない)。[CancellationException] だけは伝播させる。
  */
 internal class Executor(
+    private val context: Context,
     private val direction: SyncDirection,
     private val localProvider: StorageProvider,
     private val remoteProvider: StorageProvider,
@@ -109,28 +112,28 @@ internal class Executor(
                                         TransferKind.UPLOAD -> {
                                             uploaded.incrementAndGet()
                                             // 転送先 (リモート) に既にあれば「更新」、無ければ「新規」。
-                                            val kind = if (currentRemote.containsKey(action.path)) "更新" else "新規"
-                                            onAction("アップロード($kind): ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
+                                            val kind = context.getString(if (currentRemote.containsKey(action.path)) R.string.sync_action_update else R.string.sync_action_new)
+                                            onAction(context.getString(R.string.sync_action_upload, kind, action.path, humanBytes(done.bytes)), ActionLevel.INFO)
                                         }
                                         TransferKind.DOWNLOAD -> {
                                             downloaded.incrementAndGet()
-                                            val kind = if (currentLocal.containsKey(action.path)) "更新" else "新規"
-                                            onAction("ダウンロード($kind): ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
+                                            val kind = context.getString(if (currentLocal.containsKey(action.path)) R.string.sync_action_update else R.string.sync_action_new)
+                                            onAction(context.getString(R.string.sync_action_download, kind, action.path, humanBytes(done.bytes)), ActionLevel.INFO)
                                         }
                                         TransferKind.CONFLICT -> {
                                             conflicts.incrementAndGet()
-                                            onAction("両側更新→転送: ${action.path} (${humanBytes(done.bytes)})", ActionLevel.INFO)
+                                            onAction(context.getString(R.string.sync_action_conflict, action.path, humanBytes(done.bytes)), ActionLevel.INFO)
                                         }
                                     }
                                 }
                                 Done.Delete -> {
                                     deleted.incrementAndGet()
                                     val side = when (action) {
-                                        is SyncAction.DeleteRemote -> "リモート"
-                                        is SyncAction.DeleteLocal -> "ローカル"
+                                        is SyncAction.DeleteRemote -> context.getString(R.string.sync_log_side_remote)
+                                        is SyncAction.DeleteLocal -> context.getString(R.string.sync_log_side_local)
                                         else -> "?"
                                     }
-                                    onAction("削除($side): ${action.path}", ActionLevel.INFO)
+                                    onAction(context.getString(R.string.sync_action_delete, side, action.path), ActionLevel.INFO)
                                 }
                             }
                         } catch (e: CancellationException) {
@@ -139,13 +142,13 @@ internal class Executor(
                             failed.incrementAndGet()
                             errors.add(SyncResult.ActionError(action.path, e.message ?: e.toString()))
                             val what = when (action) {
-                                is SyncAction.Upload -> "アップロード"
-                                is SyncAction.Download -> "ダウンロード"
-                                is SyncAction.DeleteRemote, is SyncAction.DeleteLocal -> "削除"
-                                is SyncAction.Conflict -> "両側更新の転送"
-                                is SyncAction.Skip -> "処理"
+                                is SyncAction.Upload -> context.getString(R.string.sync_action_upload_name)
+                                is SyncAction.Download -> context.getString(R.string.sync_action_download_name)
+                                is SyncAction.DeleteRemote, is SyncAction.DeleteLocal -> context.getString(R.string.sync_action_delete_name)
+                                is SyncAction.Conflict -> context.getString(R.string.sync_action_conflict_name)
+                                is SyncAction.Skip -> context.getString(R.string.sync_action_process_name)
                             }
-                            onAction("失敗($what): ${action.path} — ${e.message ?: e.toString()}", ActionLevel.ERROR)
+                            onAction(context.getString(R.string.sync_action_failure, what, action.path, e.message ?: e.toString()), ActionLevel.ERROR)
                         }
                         tracker.actionCompleted()
                     }
@@ -197,14 +200,14 @@ internal class Executor(
 
         is SyncAction.DeleteRemote -> {
             backupBeforeDelete("remote", action.path)
-            unwrap(remoteProvider.delete(childUri(remoteRoot, action.path), recursive = false))
+            unwrap(remoteProvider.delete(childUri(context, remoteRoot, action.path), recursive = false))
             stateRepo.deletePath(jobId, action.path)
             Done.Delete
         }
 
         is SyncAction.DeleteLocal -> {
             backupBeforeDelete("local", action.path)
-            unwrap(localProvider.delete(childUri(localRoot, action.path), recursive = false))
+            unwrap(localProvider.delete(childUri(context, localRoot, action.path), recursive = false))
             stateRepo.deletePath(jobId, action.path)
             Done.Delete
         }
@@ -248,7 +251,7 @@ internal class Executor(
     private suspend fun backupBeforeDelete(side: String, relPath: String) {
         val b = backup ?: return
         val (provider, root) = if (side == "local") localProvider to localRoot else remoteProvider to remoteRoot
-        val uri = childUri(root, relPath)
+        val uri = childUri(context, root, relPath)
         val size = (provider.stat(uri) as? Result.Success)?.value?.size ?: 0L
         if (b.skipOverThreshold && size > b.thresholdBytes) return
         runCatching {
@@ -265,7 +268,7 @@ internal class Executor(
             ConflictSide.REMOTE -> remoteProvider to remoteRoot
         }
         ensureParentDir(provider, rootUri, keepBoth.renamedPath)
-        unwrap(provider.rename(childUri(rootUri, path), childUri(rootUri, keepBoth.renamedPath)))
+        unwrap(provider.rename(childUri(context, rootUri, path), childUri(context, rootUri, keepBoth.renamedPath)))
     }
 
     private suspend fun transferAndRecord(
@@ -277,9 +280,9 @@ internal class Executor(
         destRoot: FileUri,
         destIsRemote: Boolean,
     ): Long {
-        val destUri = childUri(destRoot, path)
+        val destUri = childUri(context, destRoot, path)
         ensureParentDir(dest, destRoot, path)
-        val transferred = copyStream(source.openInput(childUri(sourceRoot, path)), dest, destUri)
+        val transferred = copyStream(source.openInput(childUri(context, sourceRoot, path)), dest, destUri)
 
         val destEntry = when (val s = dest.stat(destUri)) {
             is Result.Success -> SyncEntry(path, s.value.size, s.value.lastModified?.epochSeconds ?: sourceEntry.mtimeSeconds)
@@ -297,7 +300,7 @@ internal class Executor(
     private suspend fun ensureParentDir(provider: StorageProvider, rootUri: FileUri, path: String) {
         val parent = parentRelativePath(path)
         if (parent.isEmpty()) return
-        when (val r = provider.mkdir(childUri(rootUri, parent), recursive = true)) {
+        when (val r = provider.mkdir(childUri(context, rootUri, parent), recursive = true)) {
             is Result.Success -> Unit
             is Result.Failure -> if (r.error !is StorageError.AlreadyExists) unwrap(r)
         }

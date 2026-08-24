@@ -43,11 +43,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
 import com.zerotoship.foldex.core.model.NodeType
@@ -122,13 +124,15 @@ private fun DiskUsageScreen(
                 title = {
                     Column {
                         Text(
-                            if (state.title.isBlank()) "使用量" else state.title,
+                            if (state.title.isBlank()) stringResource(R.string.disk_usage_title) else state.title,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            "合計 ${humanBytes(state.totalBytes)}" +
-                                if (state.scanning) " ・ 集計中…" else "",
+                            stringResource(
+                                if (state.scanning) R.string.disk_usage_total_scanning else R.string.disk_usage_total,
+                                humanBytes(state.totalBytes),
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -136,12 +140,12 @@ private fun DiskUsageScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = { if (!viewModel.goUp()) onFinish() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
                 actions = {
                     if (state.scanning) {
-                        TextButton(onClick = { viewModel.cancelScan() }) { Text("中断") }
+                        TextButton(onClick = { viewModel.cancelScan() }) { Text(stringResource(R.string.action_stop)) }
                     }
                 },
             )
@@ -161,14 +165,14 @@ private fun DiskUsageScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(12.dp))
-                            Text("使用量を集計中…",
+                            Text(stringResource(R.string.disk_usage_scanning),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 state.entries.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("このフォルダは空です",
+                        Text(stringResource(R.string.folder_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

@@ -30,8 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.zerotoship.foldex.R
 
 /**
  * ライセンス画面 (設定 → 「ライセンス」をタップで開く)。
@@ -41,25 +43,27 @@ import androidx.compose.ui.unit.dp
  * 全文 txt を持たないもの (public domain 等) は補足テキストだけ表示する。
  */
 private data class LicenseEntry(
-    val name: String,
+    val name: String?,
+    val nameRes: Int?,
     /** SPDX ID。null なら「タップで全文」を出さず [note] のみ表示する。 */
     val spdxId: String?,
-    val note: String,
+    val noteRes: Int,
 )
 
 // 本アプリ本体。依存ライブラリはすべて Apache-2.0 (MIT 互換) / xz は public domain。
 private val OWN = LicenseEntry(
-    name = "Foldex (本アプリ本体)",
+    name = null,
+    nameRes = R.string.license_foldex_name,
     spdxId = "MIT",
-    note = "MIT License — Copyright (c) 2026 Zero to Ship",
+    noteRes = R.string.license_foldex_note,
 )
 
 private val DEPENDENCIES = listOf(
-    LicenseEntry("smbj", "Apache-2.0", "SMB クライアント — Apache License 2.0"),
-    LicenseEntry("Apache Commons Net", "Apache-2.0", "FTP クライアント — Apache License 2.0"),
-    LicenseEntry("Apache MINA SSHD", "Apache-2.0", "SFTP / SSH — Apache License 2.0"),
-    LicenseEntry("Apache FtpServer", "Apache-2.0", "FTP サーバ — Apache License 2.0"),
-    LicenseEntry("XZ for Java", null, "xz 解凍 — public domain"),
+    LicenseEntry("smbj", null, "Apache-2.0", R.string.license_smbj_note),
+    LicenseEntry("Apache Commons Net", null, "Apache-2.0", R.string.license_ftp_client_note),
+    LicenseEntry("Apache MINA SSHD", null, "Apache-2.0", R.string.license_sftp_note),
+    LicenseEntry("Apache FtpServer", null, "Apache-2.0", R.string.license_ftp_server_note),
+    LicenseEntry("XZ for Java", null, null, R.string.license_xz_note),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,10 +75,10 @@ fun LicensesScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("ライセンス") },
+                title = { Text(stringResource(R.string.settings_license)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
             )
@@ -86,11 +90,11 @@ fun LicensesScreen(onBack: () -> Unit) {
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
         ) {
-            SectionHeader("このアプリ")
+            SectionHeader(stringResource(R.string.license_this_app))
             LicenseRow(OWN, onClick = { openSpdxId = OWN.spdxId })
 
             HorizontalDivider()
-            SectionHeader("依存ライブラリ")
+            SectionHeader(stringResource(R.string.license_dependencies))
             DEPENDENCIES.forEach { entry ->
                 LicenseRow(entry, onClick = entry.spdxId?.let { id -> { openSpdxId = id } })
             }
@@ -124,9 +128,9 @@ private fun LicenseRow(entry: LicenseEntry, onClick: (() -> Unit)?) {
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        Text(entry.name, style = MaterialTheme.typography.bodyLarge)
+        Text(entry.name ?: stringResource(entry.nameRes!!), style = MaterialTheme.typography.bodyLarge)
         Text(
-            entry.note,
+            stringResource(entry.noteRes),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -149,7 +153,7 @@ private fun LicenseFullTextDialog(spdxId: String, text: String, onDismiss: () ->
             )
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("閉じる") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
         },
     )
 }
@@ -158,4 +162,4 @@ private fun LicenseFullTextDialog(spdxId: String, text: String, onDismiss: () ->
 private fun readLicenseText(context: Context, spdxId: String): String =
     runCatching {
         context.assets.open("licenses/$spdxId.txt").bufferedReader().use { it.readText() }
-    }.getOrElse { "$spdxId ライセンスの全文を読み込めませんでした。" }
+    }.getOrElse { context.getString(R.string.license_load_failed, spdxId) }

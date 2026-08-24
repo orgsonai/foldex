@@ -3,13 +3,16 @@
 
 package com.zerotoship.foldex.ui.sync
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.SyncJobRepository
 import com.zerotoship.foldex.core.model.SyncJob
 import com.zerotoship.foldex.sync.scheduler.SyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,10 +30,12 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SyncJobsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: SyncJobRepository,
     private val scheduler: SyncScheduler,
     private val settingsRepo: SettingsRepository,
 ) : ViewModel() {
+    private fun text(id: Int, vararg args: Any): String = context.getString(id, *args)
 
     data class UiState(
         val jobs: List<SyncJob> = emptyList(),
@@ -67,10 +72,10 @@ class SyncJobsViewModel @Inject constructor(
         runCatching {
             scheduler.runNow(job)
         }.onSuccess {
-            _events.trySend(Event.Message("「${job.name}」を実行キューに入れました"))
+            _events.trySend(Event.Message(text(R.string.sync_queued, job.name)))
             watchQueueTimeout(job)
         }.onFailure { e ->
-            _events.trySend(Event.Message("実行の登録に失敗: ${e.javaClass.simpleName}: ${e.message ?: ""}"))
+            _events.trySend(Event.Message(text(R.string.sync_enqueue_failed, e.javaClass.simpleName, e.message.orEmpty())))
         }
     }
 
@@ -95,7 +100,7 @@ class SyncJobsViewModel @Inject constructor(
             runCatching { scheduler.cancelRun(job.id) }
             _events.trySend(
                 Event.Message(
-                    "「${job.name}」はキューで${settings.syncQueueTimeoutMinutes}分待っても開始しなかったため解除しました",
+                    text(R.string.sync_queue_timeout, job.name, settings.syncQueueTimeoutMinutes),
                 ),
             )
         }
@@ -109,9 +114,9 @@ class SyncJobsViewModel @Inject constructor(
         runCatching {
             scheduler.cancelRun(job.id)
         }.onSuccess {
-            _events.trySend(Event.Message("「${job.name}」の実行を解除しました"))
+            _events.trySend(Event.Message(text(R.string.sync_run_cancelled, job.name)))
         }.onFailure { e ->
-            _events.trySend(Event.Message("解除に失敗: ${e.javaClass.simpleName}: ${e.message ?: ""}"))
+            _events.trySend(Event.Message(text(R.string.sync_cancel_failed, e.javaClass.simpleName, e.message.orEmpty())))
         }
     }
 
@@ -119,7 +124,7 @@ class SyncJobsViewModel @Inject constructor(
         val updated = job.copy(enabled = enabled)
         repository.upsert(updated)
         runCatching { scheduler.apply(updated) }.onFailure { e ->
-            _events.trySend(Event.Message("スケジューラ更新に失敗: ${e.javaClass.simpleName}"))
+            _events.trySend(Event.Message(text(R.string.sync_scheduler_failed, e.javaClass.simpleName)))
         }
     }
 
@@ -142,6 +147,6 @@ class SyncJobsViewModel @Inject constructor(
     fun delete(job: SyncJob) = viewModelScope.launch {
         runCatching { scheduler.cancel(job.id) }
         repository.delete(job.id)
-        _events.trySend(Event.Message("「${job.name}」を削除しました"))
+        _events.trySend(Event.Message(text(R.string.sync_job_deleted, job.name)))
     }
 }

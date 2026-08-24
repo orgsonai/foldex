@@ -3,6 +3,11 @@
 
 package com.zerotoship.foldex.ui.sync
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.ConflictPolicy
 import com.zerotoship.foldex.core.model.ScheduleType
 import com.zerotoship.foldex.core.model.SyncDirection
@@ -12,37 +17,35 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-internal fun directionLabel(direction: SyncDirection): String = when (direction) {
-    SyncDirection.TO_REMOTE -> "ローカル → リモート (アップロード)"
-    SyncDirection.TO_LOCAL -> "リモート → ローカル (ダウンロード)"
-    SyncDirection.BIDIRECTIONAL -> "ローカル ⇄ リモート (双方向)"
+@Composable internal fun directionLabel(direction: SyncDirection): String = when (direction) {
+    SyncDirection.TO_REMOTE -> stringResource(R.string.sync_direction_to_remote)
+    SyncDirection.TO_LOCAL -> stringResource(R.string.sync_direction_to_local)
+    SyncDirection.BIDIRECTIONAL -> stringResource(R.string.sync_direction_bidirectional)
 }
 
-internal fun directionShortLabel(direction: SyncDirection): String = when (direction) {
-    SyncDirection.TO_REMOTE -> "↑ アップロード"
-    SyncDirection.TO_LOCAL -> "↓ ダウンロード"
-    SyncDirection.BIDIRECTIONAL -> "⇄ 双方向"
+@Composable internal fun directionShortLabel(direction: SyncDirection): String = when (direction) {
+    SyncDirection.TO_REMOTE -> stringResource(R.string.sync_direction_to_remote_short)
+    SyncDirection.TO_LOCAL -> stringResource(R.string.sync_direction_to_local_short)
+    SyncDirection.BIDIRECTIONAL -> stringResource(R.string.sync_direction_bidirectional_short)
 }
 
-internal fun conflictPolicyLabel(policy: ConflictPolicy): String = when (policy) {
-    ConflictPolicy.NEWER_WINS -> "新しい方を採用 (推奨)"
-    ConflictPolicy.LOCAL_WINS -> "ローカル優先"
-    ConflictPolicy.REMOTE_WINS -> "リモート優先"
-    ConflictPolicy.KEEP_BOTH -> "両方残す (片方をリネーム)"
-    ConflictPolicy.SKIP -> "スキップして通知"
+@Composable internal fun conflictPolicyLabel(policy: ConflictPolicy): String = when (policy) {
+    ConflictPolicy.NEWER_WINS -> stringResource(R.string.sync_conflict_newer)
+    ConflictPolicy.LOCAL_WINS -> stringResource(R.string.sync_conflict_local)
+    ConflictPolicy.REMOTE_WINS -> stringResource(R.string.sync_conflict_remote)
+    ConflictPolicy.KEEP_BOTH -> stringResource(R.string.sync_conflict_both)
+    ConflictPolicy.SKIP -> stringResource(R.string.sync_conflict_skip)
 }
 
-internal fun intervalLabel(minutes: Int): String = when {
-    minutes <= 0 -> "手動のみ"
-    minutes < 60 -> "${minutes}分ごと"
-    minutes % 60 == 0 -> "${minutes / 60}時間ごと"
-    else -> "${minutes}分ごと"
+@Composable internal fun intervalLabel(minutes: Int): String = when {
+    minutes <= 0 -> stringResource(R.string.sync_manual_only)
+    minutes < 60 -> pluralStringResource(R.plurals.sync_every_minutes, minutes, minutes)
+    minutes % 60 == 0 -> pluralStringResource(R.plurals.sync_every_hours, minutes / 60, minutes / 60)
+    else -> pluralStringResource(R.plurals.sync_every_minutes, minutes, minutes)
 }
 
 private fun timeLabel(minutesOfDay: Int): String =
     "%02d:%02d".format((minutesOfDay / 60).coerceIn(0, 23), (minutesOfDay % 60).coerceIn(0, 59))
-
-private val WEEKDAY_LABELS = listOf("月", "火", "水", "木", "金", "土", "日")
 
 /**
  * 次回実行予定の表示文字列 (なければ null)。
@@ -50,7 +53,7 @@ private val WEEKDAY_LABELS = listOf("月", "火", "水", "木", "金", "土", "�
  * - INTERVAL: 前回実行 + 間隔の目安 (WorkManager 制御なので「目安」表記)。
  * - 手動のみ / 無効: null。
  */
-internal fun nextRunLabel(job: SyncJob): String? {
+@Composable internal fun nextRunLabel(job: SyncJob): String? {
     if (!job.enabled) return null
     val s = job.schedule
     val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
@@ -59,7 +62,7 @@ internal fun nextRunLabel(job: SyncJob): String? {
         s.type == ScheduleType.INTERVAL -> {
             val base = job.lastRunAt ?: System.currentTimeMillis()
             val next = base + s.intervalMinutes.toLong() * 60_000L
-            "${fmt.format(Date(next))} 目安"
+            stringResource(R.string.sync_estimate, fmt.format(Date(next)))
         }
         else -> s.nextFireTimeMillis()?.let { fmt.format(Date(it)) }
     }
@@ -70,25 +73,26 @@ internal fun nextRunLabel(job: SyncJob): String? {
  * - 未実行 (lastRunAt == null): "未実行"。
  * - 実行済み: 実行時刻 (MM/dd HH:mm) + 結果サマリ。時刻は [nextRunLabel] と同じ書式に揃える。
  */
-internal fun lastRunLabel(job: SyncJob): String {
-    val at = job.lastRunAt ?: return "未実行"
+@Composable internal fun lastRunLabel(job: SyncJob): String {
+    val at = job.lastRunAt ?: return stringResource(R.string.sync_never_run)
     val time = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(at))
     return job.lastRunResult?.let { "$time ・ $it" } ?: time
 }
 
-internal fun scheduleLabel(s: SyncSchedule): String = when (s.type) {
+@Composable internal fun scheduleLabel(s: SyncSchedule): String = when (s.type) {
     ScheduleType.INTERVAL -> intervalLabel(s.intervalMinutes)
-    ScheduleType.DAILY -> "毎日 ${timeLabel(s.timeOfDayMinutes)}"
+    ScheduleType.DAILY -> stringResource(R.string.sync_schedule_daily, timeLabel(s.timeOfDayMinutes))
     ScheduleType.WEEKLY -> {
-        val days = (0..6).filter { (s.daysOfWeek shr it) and 1 == 1 }.joinToString("") { WEEKDAY_LABELS[it] }
-        "毎週 ${days.ifEmpty { "?" }} ${timeLabel(s.timeOfDayMinutes)}"
+        val labels = stringArrayResource(R.array.sync_weekday_short)
+        val days = (0..6).filter { (s.daysOfWeek shr it) and 1 == 1 }.joinToString(" ") { labels[it] }
+        stringResource(R.string.sync_schedule_weekly, days.ifEmpty { "?" }, timeLabel(s.timeOfDayMinutes))
     }
     ScheduleType.MONTHLY -> {
-        val d = if (s.dayOfMonth <= 0) "月末" else "${s.dayOfMonth}日"
-        "毎月 $d ${timeLabel(s.timeOfDayMinutes)}"
+        val d = if (s.dayOfMonth <= 0) stringResource(R.string.sync_month_end) else stringResource(R.string.sync_month_day, s.dayOfMonth)
+        stringResource(R.string.sync_schedule_monthly, d, timeLabel(s.timeOfDayMinutes))
     }
     ScheduleType.DATETIME -> {
         val fmt = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
-        "日時指定 ${if (s.dateTimeMillis > 0) fmt.format(java.util.Date(s.dateTimeMillis)) else "未設定"}"
+        stringResource(R.string.sync_schedule_datetime, if (s.dateTimeMillis > 0) fmt.format(java.util.Date(s.dateTimeMillis)) else stringResource(R.string.sync_not_set))
     }
 }

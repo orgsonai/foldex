@@ -46,10 +46,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
 import com.zerotoship.foldex.core.model.ThemeMode
@@ -187,10 +189,10 @@ private fun ArchiveExplorerScreen(
                 onSuccess = { file -> onOpenExtracted(file, entry.name) },
                 onFailure = { t ->
                     if (t is ArchiveExplorer.WrongPassword) {
-                        passwordError = if (password == null) null else "パスワードが違います"
+                        passwordError = if (password == null) null else context.getString(R.string.archive_wrong_password)
                         passwordPromptFor = entry
                     } else {
-                        snackbar.showSnackbar("展開に失敗しました")
+                        snackbar.showSnackbar(context.getString(R.string.archive_extract_failed))
                     }
                 },
             )
@@ -210,7 +212,7 @@ private fun ArchiveExplorerScreen(
                         if (currentPath.isEmpty()) onBack()
                         else currentPath = currentPath.substringBeforeLast('/', missingDelimiterValue = "")
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
             )
@@ -227,7 +229,7 @@ private fun ArchiveExplorerScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        "この ZIP を読み込めませんでした。",
+                        stringResource(R.string.archive_load_failed),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -242,7 +244,7 @@ private fun ArchiveExplorerScreen(
                         if (children.isEmpty()) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text(
-                                    "(空のフォルダ)",
+                                    stringResource(R.string.folder_empty_parenthesized),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -260,7 +262,7 @@ private fun ArchiveExplorerScreen(
                                             icon = Icons.Rounded.Folder,
                                             iconTint = MaterialTheme.colorScheme.primary,
                                             name = node.name,
-                                            sub = "フォルダ",
+                                            sub = stringResource(R.string.folder),
                                             onClick = { currentPath = node.path },
                                         )
                                         is ArchiveExplorer.Node.FileItem -> ArchiveRow(
@@ -306,7 +308,7 @@ private fun Breadcrumb(currentPath: String, onNavigate: (String) -> Unit) {
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Text(
-            "ルート",
+            stringResource(R.string.archive_root),
             style = MaterialTheme.typography.labelLarge,
             color = if (segments.isEmpty()) MaterialTheme.colorScheme.onSurface
             else MaterialTheme.colorScheme.primary,
@@ -371,11 +373,11 @@ private fun ArchivePasswordDialog(
     var show by remember { mutableStateOf(false) }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("パスワード") },
+        title = { Text(stringResource(R.string.password)) },
         text = {
             Column {
                 Text(
-                    "パスワード保護された ZIP です。展開するにはパスワードを入力してください。",
+                    stringResource(R.string.archive_password_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -387,13 +389,13 @@ private fun ArchivePasswordDialog(
                 androidx.compose.material3.OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("パスワード") },
+                    label = { Text(stringResource(R.string.password)) },
                     singleLine = true,
                     visualTransformation = if (show) androidx.compose.ui.text.input.VisualTransformation.None
                     else androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     trailingIcon = {
                         androidx.compose.material3.TextButton(onClick = { show = !show }) {
-                            Text(if (show) "隠す" else "表示")
+                            Text(stringResource(if (show) R.string.password_hide else R.string.password_show))
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -404,9 +406,9 @@ private fun ArchivePasswordDialog(
             androidx.compose.material3.TextButton(
                 onClick = { onConfirm(password) },
                 enabled = password.isNotEmpty(),
-            ) { Text("開く") }
+            ) { Text(stringResource(R.string.action_open)) }
         },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 

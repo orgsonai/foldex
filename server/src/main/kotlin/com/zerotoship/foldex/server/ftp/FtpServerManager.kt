@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.server.ftp
 
+import android.content.Context
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.ServerConfigRepository
 import com.zerotoship.foldex.core.model.ServerConfig
@@ -10,6 +11,7 @@ import com.zerotoship.foldex.core.model.ServerLogEvent
 import com.zerotoship.foldex.core.model.ServerType
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.server.NetworkBindingResolver
+import com.zerotoship.foldex.server.R
 import com.zerotoship.foldex.server.log.ServerLogger
 import com.zerotoship.foldex.server.security.Argon2idHasher
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,6 +38,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import javax.inject.Inject
 import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 /**
  * 設定毎に Apache FtpServer の [FtpServer] を起動・停止するマネージャ。
@@ -47,6 +50,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class FtpServerManager @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: ServerConfigRepository,
     private val hasher: Argon2idHasher,
     private val networkResolver: NetworkBindingResolver,
@@ -72,11 +76,11 @@ class FtpServerManager @Inject constructor(
             startLocked(configId)
         } catch (t: Throwable) {
             Result.Failure(
-                StorageError.IoError("FTP サーバーの起動中に予期しないエラー: ${t.message}", t),
+                StorageError.IoError(context.getString(R.string.server_start_unexpected, "FTP", t.message.orEmpty()), t),
             )
         }
         if (result is Result.Failure) {
-            val msg = "FTP サーバーを起動できませんでした: ${result.error.message}"
+            val msg = context.getString(R.string.server_start_failed, "FTP", result.error.message)
             _startErrors.tryEmit(msg)
             runCatching {
                 logger.record(
@@ -106,14 +110,14 @@ class FtpServerManager @Inject constructor(
         }
         val rootPath = resolveLocalRoot(config.rootUri)
             ?: return Result.Failure(
-                StorageError.IoError("ルートパスはローカルパスである必要があります: ${config.rootUri}"),
+                StorageError.IoError(context.getString(R.string.server_root_must_be_local, config.rootUri)),
             )
         val resolvedHost = networkResolver.resolve(config.bindAddress)
             ?: return Result.Failure(
                 StorageError.IoError(
                     when (config.bindAddress) {
-                        ServerConfig.BIND_WIFI_ONLY -> "Wi-Fi に接続されていないため起動できません"
-                        else -> "バインドアドレスを解決できませんでした: ${config.bindAddress}"
+                        ServerConfig.BIND_WIFI_ONLY -> context.getString(R.string.server_wifi_unavailable)
+                        else -> context.getString(R.string.server_bind_unresolved, config.bindAddress)
                     },
                 ),
             )
@@ -122,7 +126,7 @@ class FtpServerManager @Inject constructor(
                 buildSslConfiguration(ftpsCertManager.loadOrGenerate(config.id))
             } catch (t: Throwable) {
                 return Result.Failure(
-                    StorageError.IoError("FTPS 証明書の準備に失敗しました: ${t.message}", t),
+                    StorageError.IoError(context.getString(R.string.server_ftps_cert_failed, t.message.orEmpty()), t),
                 )
             }
         } else {
@@ -134,7 +138,7 @@ class FtpServerManager @Inject constructor(
         } catch (t: Throwable) {
             runCatching { server.stop() }
             return Result.Failure(
-                StorageError.IoError("ポート ${config.port} で待ち受けを開始できませんでした: ${t.message}", t),
+                StorageError.IoError(context.getString(R.string.server_listen_failed, config.port, t.message.orEmpty()), t),
             )
         }
         running[configId] = server
@@ -201,7 +205,7 @@ class FtpServerManager @Inject constructor(
             if (finished == null) {
                 appLogger.warn(
                     "Server/FTP",
-                    "停止要求を出しましたが ${CLOSE_TIMEOUT_MS}ms で解放が終わりませんでした (停止扱いにします)",
+                    context.getString(R.string.server_stop_timeout, CLOSE_TIMEOUT_MS),
                 )
             }
             finished != null

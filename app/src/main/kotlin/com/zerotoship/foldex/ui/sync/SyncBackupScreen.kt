@@ -38,10 +38,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.R
 import java.text.DateFormat
 import java.util.Date
 
@@ -59,10 +61,10 @@ fun SyncBackupScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(if (state.jobName.isBlank()) "削除バックアップ" else "削除バックアップ — ${state.jobName}") },
+                title = { Text(if (state.jobName.isBlank()) stringResource(R.string.sync_backup_title) else stringResource(R.string.sync_backup_title_job, state.jobName)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
             )
@@ -72,7 +74,7 @@ fun SyncBackupScreen(
             when {
                 state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 state.generations.isEmpty() -> Text(
-                    "バックアップはありません",
+                    stringResource(R.string.sync_backup_none),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.Center),
@@ -80,9 +82,7 @@ fun SyncBackupScreen(
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     item {
                         Text(
-                            "delete 同期で削除されたファイルの世代バックアップです。" +
-                                "「復元」を押すと、書き戻されるファイルの一覧を確認してから復元するか選べます。" +
-                                "ローカル分とリモート分はまとめて書き戻し、既存ファイルがある場合は上書きするか選べます。",
+                            stringResource(R.string.sync_backup_help),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp),
@@ -119,20 +119,20 @@ fun SyncBackupScreen(
 
 @Composable
 private fun SideDetailDialog(detail: PendingDetail, onDismiss: () -> Unit) {
-    val sideLabel = if (detail.side == "local") "ローカル" else "リモート"
+    val sideLabel = stringResource(if (detail.side == "local") R.string.sync_side_local else R.string.sync_side_remote)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("$sideLabel のバックアップ詳細") },
+        title = { Text(stringResource(R.string.sync_backup_detail, sideLabel)) },
         text = {
             androidx.compose.foundation.layout.Column {
                 Text(
-                    "${formatDate(detail.createdAt)} ・ ${detail.files.size} 件",
+                    stringResource(R.string.sync_backup_date_count, formatDate(detail.createdAt), detail.files.size),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 4.dp))
                 if (detail.files.isEmpty()) {
-                    Text("ファイルがありません", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.sync_backup_no_files), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     androidx.compose.foundation.lazy.LazyColumn(
                         modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
@@ -158,7 +158,7 @@ private fun SideDetailDialog(detail: PendingDetail, onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
     )
 }
 
@@ -177,7 +177,7 @@ private fun GenerationRow(
         Column(Modifier.weight(1f)) {
             Text(formatDate(view.gen.createdAt), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "${view.gen.fileCount} 件 ・ ${formatBytes(view.gen.sizeBytes)}",
+                stringResource(R.string.sync_backup_count_size, view.gen.fileCount, formatBytes(view.gen.sizeBytes)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -189,7 +189,7 @@ private fun GenerationRow(
                 if (view.localCount > 0) {
                     AssistChip(
                         onClick = onClickLocal,
-                        label = { Text("ローカル ${view.localCount}件") },
+                        label = { Text(stringResource(R.string.sync_backup_local_count, view.localCount)) },
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         ),
@@ -198,7 +198,7 @@ private fun GenerationRow(
                 if (view.remoteCount > 0) {
                     AssistChip(
                         onClick = onClickRemote,
-                        label = { Text("リモート ${view.remoteCount}件") },
+                        label = { Text(stringResource(R.string.sync_backup_remote_count, view.remoteCount)) },
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                         ),
@@ -206,9 +206,9 @@ private fun GenerationRow(
                 }
             }
         }
-        IconButton(onClick = onRestore) { Icon(Icons.Default.Restore, contentDescription = "一括復元") }
+        IconButton(onClick = onRestore) { Icon(Icons.Default.Restore, contentDescription = stringResource(R.string.sync_backup_restore_all)) }
         IconButton(onClick = onDelete) {
-            Icon(Icons.Default.DeleteForever, contentDescription = "削除", tint = MaterialTheme.colorScheme.error)
+            Icon(Icons.Default.DeleteForever, contentDescription = stringResource(R.string.action_delete), tint = MaterialTheme.colorScheme.error)
         }
     }
 }
@@ -228,19 +228,17 @@ private fun RestoreConfirmDialog(
     val hasConflict = pending.totalConflicts > 0
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("この内容を復元しますか?") },
+        title = { Text(stringResource(R.string.sync_backup_restore_confirm)) },
         text = {
             Column {
                 Text(
-                    "${formatDate(pending.createdAt)} のバックアップ ・ 合計 ${pending.totalFiles} 件" +
-                        " (ローカル ${pending.localFiles.size} / リモート ${pending.remoteFiles.size})",
+                    stringResource(R.string.sync_backup_restore_summary, formatDate(pending.createdAt), pending.totalFiles, pending.localFiles.size, pending.remoteFiles.size),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (hasConflict) {
                     Text(
-                        "うち ${pending.totalConflicts} 件は既に同じ場所にファイルがあります。" +
-                            "「上書きで復元」を選ぶとそのファイルを置き換えます。",
+                        stringResource(R.string.sync_backup_conflicts, pending.totalConflicts),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 4.dp),
@@ -250,11 +248,11 @@ private fun RestoreConfirmDialog(
                 // 復元されるファイルの一覧 (プレビュー)。ローカル分→リモート分の順に並べる。
                 LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
                     if (pending.localFiles.isNotEmpty()) {
-                        item { RestoreSectionHeader("ローカルへ復元 (${pending.localFiles.size} 件)") }
+                        item { RestoreSectionHeader(stringResource(R.string.sync_backup_restore_local, pending.localFiles.size)) }
                         items(pending.localFiles) { f -> RestoreFileRow(f.relativePath, f.sizeBytes) }
                     }
                     if (pending.remoteFiles.isNotEmpty()) {
-                        item { RestoreSectionHeader("リモートへ復元 (${pending.remoteFiles.size} 件)") }
+                        item { RestoreSectionHeader(stringResource(R.string.sync_backup_restore_remote, pending.remoteFiles.size)) }
                         items(pending.remoteFiles) { f -> RestoreFileRow(f.relativePath, f.sizeBytes) }
                     }
                 }
@@ -262,17 +260,17 @@ private fun RestoreConfirmDialog(
         },
         confirmButton = {
             if (hasConflict) {
-                TextButton(onClick = onOverwrite) { Text("上書きで復元", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onOverwrite) { Text(stringResource(R.string.sync_backup_restore_overwrite), color = MaterialTheme.colorScheme.error) }
             } else {
-                TextButton(onClick = onRestoreSkippingExisting) { Text("復元") }
+                TextButton(onClick = onRestoreSkippingExisting) { Text(stringResource(R.string.sync_backup_restore)) }
             }
         },
         dismissButton = {
             Row {
                 if (hasConflict) {
-                    TextButton(onClick = onRestoreSkippingExisting) { Text("既存はスキップ") }
+                    TextButton(onClick = onRestoreSkippingExisting) { Text(stringResource(R.string.sync_backup_skip_existing)) }
                 }
-                TextButton(onClick = onCancel) { Text(if (hasConflict) "中止" else "キャンセル") }
+                TextButton(onClick = onCancel) { Text(stringResource(if (hasConflict) R.string.action_abort else R.string.action_cancel)) }
             }
         },
     )

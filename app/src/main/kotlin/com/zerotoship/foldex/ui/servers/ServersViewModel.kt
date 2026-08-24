@@ -3,12 +3,15 @@
 
 package com.zerotoship.foldex.ui.servers
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.ServerConfigRepository
 import com.zerotoship.foldex.core.model.ServerConfig
 import com.zerotoship.foldex.server.ServerController
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,9 +28,11 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class ServersViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: ServerConfigRepository,
     private val controller: ServerController,
 ) : ViewModel() {
+    private fun text(id: Int, vararg args: Any): String = context.getString(id, *args)
 
     val state: StateFlow<ServersUiState> = combine(
         repository.observeAll(),
@@ -50,17 +55,17 @@ class ServersViewModel @Inject constructor(
 
     fun start(config: ServerConfig) {
         controller.start(config.id)
-        _events.trySend(ServerEvent.Message("「${config.name}」を起動しています…"))
+        _events.trySend(ServerEvent.Message(text(R.string.server_starting, config.name)))
     }
 
     fun stop(config: ServerConfig) {
         controller.stop(config.id)
-        _events.trySend(ServerEvent.Message("「${config.name}」を停止しています…"))
+        _events.trySend(ServerEvent.Message(text(R.string.server_stopping, config.name)))
     }
 
     fun stopAll() {
         controller.stopAll()
-        _events.trySend(ServerEvent.Message("すべてのサーバーを停止しています…"))
+        _events.trySend(ServerEvent.Message(text(R.string.servers_stopping_all)))
     }
 
     fun delete(config: ServerConfig) {
@@ -68,9 +73,9 @@ class ServersViewModel @Inject constructor(
             try {
                 if (controller.isRunning(config.id)) controller.stop(config.id)
                 repository.delete(config.id)
-                _events.trySend(ServerEvent.Message("「${config.name}」を削除しました"))
+                _events.trySend(ServerEvent.Message(text(R.string.server_deleted, config.name)))
             } catch (t: Throwable) {
-                _events.trySend(ServerEvent.Message("削除エラー: ${t.message}"))
+                _events.trySend(ServerEvent.Message(text(R.string.connection_delete_error, t.message.orEmpty())))
             }
         }
     }

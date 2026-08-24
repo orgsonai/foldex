@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sync_notification_complete">Sync complete</string>
+    <string name="sync_notification_complete_partial">Sync complete (some items failed)</string>
+    <string name="sync_notification_result">“%1$s”: %2$s</string>
+    <string name="sync_notification_running_title">Foldex is syncing</string>
+    <string name="sync_notification_running_text">Sync is running in the background</string>
+    <string name="sync_notification_channel">Sync</string>
+    <string name="sync_notification_channel_description">Shows the progress of background sync</string>
+    <string name="sync_result_success">Success</string>
+    <string name="sync_result_partial">Some items failed</string>
+    <string name="sync_result_failed">Failed</string>
+    <string name="sync_result_transferred">%1$s / Transferred %2$d</string>
+    <string name="sync_result_conflicts"> (changed on both sides %d)</string>
+    <string name="sync_result_deleted"> Deleted %d</string>
+    <string name="sync_result_failed_count"> Failed %d</string>
+    <string name="sync_result_skipped"> / Skipped %d</string>
+    <string name="sync_result_total"> / Total %d</string>
+    <string name="sync_log_start">── Sync started: %1$s ──</string>
+    <string name="sync_log_local_scan_failed">Could not scan local files: %1$s</string>
+    <string name="sync_log_remote_scan_failed">Could not scan remote files: %1$s</string>
+    <string name="sync_direction_upload">%1$s → %2$s (upload)</string>
+    <string name="sync_direction_download">%1$s → %2$s (download)</string>
+    <string name="sync_log_direction_bidirectional">%1$s ⇄ %2$s (two-way)</string>
+    <string name="sync_action_new">new</string>
+    <string name="sync_action_update">updated</string>
+    <string name="sync_action_upload">Upload (%1$s): %2$s (%3$s)</string>
+    <string name="sync_action_download">Download (%1$s): %2$s (%3$s)</string>
+    <string name="sync_action_conflict">Changed on both sides → transferred: %1$s (%2$s)</string>
+    <string name="sync_log_side_remote">remote</string>
+    <string name="sync_log_side_local">local</string>
+    <string name="sync_action_delete">Delete (%1$s): %2$s</string>
+    <string name="sync_action_upload_name">upload</string>
+    <string name="sync_action_download_name">download</string>
+    <string name="sync_action_delete_name">delete</string>
+    <string name="sync_action_conflict_name">transfer changed on both sides</string>
+    <string name="sync_action_process_name">operation</string>
+    <string name="sync_action_failure">Failed (%1$s): %2$s — %3$s</string>
+    <string name="sync_root_not_directory">The sync root is not a directory: %1$s</string>
+    <string name="sync_scan_failed">Could not scan: %1$s</string>
+    <string name="sync_saf_unsupported">Syncing an SAF root is not supported yet: %1$s</string>
+</resources>

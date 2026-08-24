@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sync_notification_complete">同期が完了しました</string>
+    <string name="sync_notification_complete_partial">同期が完了しました (一部失敗)</string>
+    <string name="sync_notification_result">「%1$s」: %2$s</string>
+    <string name="sync_notification_running_title">Foldex 同期中</string>
+    <string name="sync_notification_running_text">バックグラウンドで同期を実行しています</string>
+    <string name="sync_notification_channel">同期</string>
+    <string name="sync_notification_channel_description">バックグラウンド同期の進行状態を表示します</string>
+    <string name="sync_result_success">成功</string>
+    <string name="sync_result_partial">一部失敗</string>
+    <string name="sync_result_failed">失敗</string>
+    <string name="sync_result_transferred">%1$s / 転送 %2$d</string>
+    <string name="sync_result_conflicts"> (両側更新 %d)</string>
+    <string name="sync_result_deleted"> 削除 %d</string>
+    <string name="sync_result_failed_count"> 失敗 %d</string>
+    <string name="sync_result_skipped"> / スキップ %d</string>
+    <string name="sync_result_total"> / 合計 %d 件</string>
+    <string name="sync_log_start">── 同期開始: %1$s ──</string>
+    <string name="sync_log_local_scan_failed">ローカルの列挙に失敗: %1$s</string>
+    <string name="sync_log_remote_scan_failed">リモートの列挙に失敗: %1$s</string>
+    <string name="sync_direction_upload">%1$s → %2$s (アップロード)</string>
+    <string name="sync_direction_download">%1$s → %2$s (ダウンロード)</string>
+    <string name="sync_log_direction_bidirectional">%1$s ⇄ %2$s (双方向)</string>
+    <string name="sync_action_new">新規</string>
+    <string name="sync_action_update">更新</string>
+    <string name="sync_action_upload">アップロード(%1$s): %2$s (%3$s)</string>
+    <string name="sync_action_download">ダウンロード(%1$s): %2$s (%3$s)</string>
+    <string name="sync_action_conflict">両側更新→転送: %1$s (%2$s)</string>
+    <string name="sync_log_side_remote">リモート</string>
+    <string name="sync_log_side_local">ローカル</string>
+    <string name="sync_action_delete">削除(%1$s): %2$s</string>
+    <string name="sync_action_upload_name">アップロード</string>
+    <string name="sync_action_download_name">ダウンロード</string>
+    <string name="sync_action_delete_name">削除</string>
+    <string name="sync_action_conflict_name">両側更新の転送</string>
+    <string name="sync_action_process_name">処理</string>
+    <string name="sync_action_failure">失敗(%1$s): %2$s — %3$s</string>
+    <string name="sync_root_not_directory">同期ルートがディレクトリではありません: %1$s</string>
+    <string name="sync_scan_failed">列挙に失敗しました: %1$s</string>
+    <string name="sync_saf_unsupported">SAF ルートの同期は未対応です: %1$s</string>
+</resources>

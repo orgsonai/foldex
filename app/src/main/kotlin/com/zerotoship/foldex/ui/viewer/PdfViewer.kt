@@ -40,8 +40,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.components.FastScrollbar
+import com.zerotoship.foldex.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -62,6 +65,7 @@ private const val TAG = "PdfViewer"
  */
 @Composable
 fun PdfViewer(file: File, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     // ParcelFileDescriptor + PdfRenderer のライフサイクル: produceState のスコープが終わる時
     // (Composable から外れる or key 変更) に awaitDispose で close する。
     // 旧実装の DisposableEffect(rendererState) は登録時の値ではなく現在値を見るため、
@@ -73,11 +77,11 @@ fun PdfViewer(file: File, modifier: Modifier = Modifier) {
             try {
                 android.util.Log.d(TAG, "Loading PDF: ${file.absolutePath}")
                 if (!file.exists()) {
-                    error = "ファイルが見つかりません: ${file.absolutePath}"
+                    error = context.getString(R.string.pdf_file_not_found, file.absolutePath)
                     return@withContext null
                 }
                 if (!file.canRead()) {
-                    error = "ファイルを読み込めません (権限なし): ${file.absolutePath}"
+                    error = context.getString(R.string.pdf_file_unreadable, file.absolutePath)
                     return@withContext null
                 }
                 android.util.Log.d(TAG, "File OK, size=${file.length()}, opening PFD…")
@@ -94,15 +98,15 @@ fun PdfViewer(file: File, modifier: Modifier = Modifier) {
                 }
             } catch (t: TimeoutCancellationException) {
                 android.util.Log.e(TAG, "Open timed out for ${file.absolutePath}")
-                error = "PDF を開くのに時間がかかりすぎました (30秒)。"
+                error = context.getString(R.string.pdf_open_timeout)
                 null
             } catch (t: Throwable) {
                 android.util.Log.e(TAG, "Failed to open PDF: ${t.javaClass.simpleName}: ${t.message}", t)
                 error = when {
                     t.message?.contains("password", ignoreCase = true) == true ->
-                        "暗号化された PDF は内蔵ビューアで開けません。別のアプリで開いてください。"
+                        context.getString(R.string.pdf_encrypted_unsupported)
                     else ->
-                        "PDF を開けませんでした: ${t.javaClass.simpleName}: ${t.message ?: "unknown"}"
+                        context.getString(R.string.pdf_open_failed, t.javaClass.simpleName, t.message ?: "unknown")
                 }
                 null
             }
@@ -158,7 +162,7 @@ private fun PdfPageList(renderer: PdfRenderer, modifier: Modifier) {
     if (pageCount == 0) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                "ページがありません",
+                stringResource(R.string.pdf_no_pages),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -277,4 +281,3 @@ private fun PdfPageItem(
         }
     }
 }
-

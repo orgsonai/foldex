@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.ui.filebrowser.QuickAccessEntry
@@ -63,7 +65,7 @@ fun AppDrawerContent(
             )
             HorizontalDivider()
 
-            DrawerSectionLabel("クイックアクセス")
+            DrawerSectionLabel(stringResource(R.string.drawer_quick_access))
             quickAccess.forEach { entry ->
                 NavigationDrawerItem(
                     icon = { Icon(quickAccessIcon(entry.kind), contentDescription = null) },
@@ -75,14 +77,14 @@ fun AppDrawerContent(
             }
             NavigationDrawerItem(
                 icon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
-                label = { Text("別のフォルダを開く…") },
+                label = { Text(stringResource(R.string.drawer_open_another)) },
                 selected = false,
                 onClick = onPickFolder,
                 modifier = Modifier.padding(horizontal = 12.dp),
             )
 
             if (favorites.isNotEmpty()) {
-                DrawerSectionLabel("お気に入り")
+                DrawerSectionLabel(stringResource(R.string.drawer_favorites))
                 favorites.forEach { (uri, key) ->
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Outlined.Star, contentDescription = null) },
@@ -101,7 +103,7 @@ fun AppDrawerContent(
             }
 
             if (connections.isNotEmpty()) {
-                DrawerSectionLabel("リモート接続")
+                DrawerSectionLabel(stringResource(R.string.drawer_remote_connections))
                 connections.forEach { connection ->
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Outlined.Storage, contentDescription = null) },

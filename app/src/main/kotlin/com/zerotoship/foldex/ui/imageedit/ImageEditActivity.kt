@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
 import com.zerotoship.foldex.core.model.ThemeMode
@@ -74,7 +75,7 @@ class ImageEditActivity : ComponentActivity() {
                             is ImageEditEvent.Saved -> {
                                 Toast.makeText(
                                     this@ImageEditActivity,
-                                    "保存しました: ${event.displayPath.substringAfterLast('/')}",
+                                    getString(R.string.image_saved_path, event.displayPath.substringAfterLast('/')),
                                     Toast.LENGTH_SHORT,
                                 ).show()
                                 setResult(Activity.RESULT_OK)

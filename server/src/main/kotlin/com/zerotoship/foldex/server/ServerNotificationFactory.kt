@@ -38,10 +38,10 @@ class ServerNotificationFactory @Inject constructor(
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "サーバー稼働中",
+            context.getString(R.string.server_notification_channel),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "SFTP / FTP サーバーの稼働状態を表示します"
+            description = context.getString(R.string.server_notification_channel_description)
             setShowBadge(false)
         }
         nm.createNotificationChannel(channel)
@@ -49,9 +49,9 @@ class ServerNotificationFactory @Inject constructor(
 
     fun build(running: List<RunningServer>, contentIntent: PendingIntent? = null): Notification {
         ensureChannel()
-        val title = "Foldex サーバー稼働中"
+        val title = context.getString(R.string.server_notification_title)
         val text = if (running.isEmpty()) {
-            "稼働中のサーバーはありません"
+            context.getString(R.string.server_notification_none)
         } else {
             running.joinToString("\n") { server ->
                 val typeLabel = when (server.type) {
@@ -64,7 +64,8 @@ class ServerNotificationFactory @Inject constructor(
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(if (running.isEmpty()) text else running.first().let {
-                "${it.host}:${it.port} ${if (running.size > 1) "他 ${running.size - 1} 件" else ""}"
+                val more = running.size - 1
+                "${it.host}:${it.port} ${if (more > 0) context.resources.getQuantityString(R.plurals.server_notification_more, more, more) else ""}"
             })
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.stat_notify_sync)
@@ -81,7 +82,7 @@ class ServerNotificationFactory @Inject constructor(
                 stopAllIntent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            builder.addAction(0, "すべて停止", pi)
+            builder.addAction(0, context.getString(R.string.server_notification_stop_all), pi)
         }
         return builder.build()
     }

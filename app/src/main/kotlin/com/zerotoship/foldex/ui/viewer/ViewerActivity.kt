@@ -43,12 +43,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
@@ -204,7 +206,7 @@ class ViewerActivity : ComponentActivity() {
                 val file by fileState
                 val failed by errorState
                 when {
-                    failed -> ExternalOpenMessage("このファイルを開けませんでした。", onBack = { finish() })
+                    failed -> ExternalOpenMessage(stringResource(R.string.viewer_external_open_failed), onBack = { finish() })
                     file == null -> ExternalOpenLoading(name)
                     else -> ViewerScreen(
                         file = file!!,
@@ -359,7 +361,7 @@ private fun ExternalOpenLoading(name: String) {
             CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
             Text(
-                "$name を読み込み中…",
+                stringResource(R.string.viewer_loading, name),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -381,7 +383,7 @@ private fun ExternalOpenMessage(text: String, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onBack) { Text("閉じる") }
+            TextButton(onClick = onBack) { Text(stringResource(R.string.action_close)) }
         }
     }
 }
@@ -492,26 +494,26 @@ private fun ViewerScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
                 actions = {
                     if (canPreview) {
                         IconButton(onClick = { previewMode = !previewMode }) {
                             if (previewMode) {
-                                Icon(Icons.Default.Edit, contentDescription = "ソースを編集")
+                                Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.viewer_edit_source))
                             } else {
-                                Icon(Icons.Default.Visibility, contentDescription = "プレビュー")
+                                Icon(Icons.Default.Visibility, contentDescription = stringResource(R.string.viewer_preview))
                             }
                         }
                     }
                     if (editableImageTarget != null && onEditImage != null) {
                         IconButton(onClick = { onEditImage(editableImageTarget, displayedName) }) {
-                            Icon(Icons.Default.Tune, contentDescription = "画像を編集")
+                            Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.viewer_edit_image))
                         }
                     }
                     IconButton(onClick = { onOpenExternallyId(displayedId) }) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "別のアプリで開く")
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.open_in_another_app))
                     }
                 },
             )
@@ -564,7 +566,7 @@ private fun ViewerScreen(
                 Category.PDF -> PdfViewer(file, Modifier.fillMaxSize())
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        "このファイルはアプリ内で表示できません。\n右上の「別のアプリで開く」を使ってください。",
+                        stringResource(R.string.viewer_unsupported_file),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

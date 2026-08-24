@@ -31,11 +31,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
 import com.zerotoship.foldex.ui.imageedit.model.Layer
 import com.zerotoship.foldex.ui.imageedit.model.TextFont
 import com.zerotoship.foldex.ui.imageedit.model.TextOutline
+import com.zerotoship.foldex.R
 import kotlin.math.roundToInt
 
 /**
@@ -58,7 +60,7 @@ fun TextPanel(
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             if (editing == null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onAdd) { Text("＋ 文字を追加") }
+                    TextButton(onClick = onAdd) { Text(stringResource(R.string.image_add_text)) }
                     if (others.isNotEmpty()) {
                         Spacer(Modifier.width(8.dp))
                         Row(
@@ -66,11 +68,15 @@ fun TextPanel(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             others.forEach { layer ->
+                                val rawPreview = layer.text.take(8)
+                                val preview = if (rawPreview.isBlank()) {
+                                    stringResource(R.string.empty_parenthesized)
+                                } else rawPreview
                                 FilterChip(
                                     selected = false,
                                     onClick = { onSelect(layer.id) },
                                     label = {
-                                        Text(layer.text.take(8).ifBlank { "(空)" }, maxLines = 1)
+                                        Text(preview, maxLines = 1)
                                     },
                                 )
                             }
@@ -83,7 +89,7 @@ fun TextPanel(
             OutlinedTextField(
                 value = editing.text,
                 onValueChange = { input -> onChange { it.copy(text = input) } },
-                label = { Text("文字") },
+                label = { Text(stringResource(R.string.image_text)) },
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 3,
             )
@@ -92,7 +98,7 @@ fun TextPanel(
             // 大きさ。論理キャンバス基準なので、画像に対する比で見せた方が分かりやすい。
             val percent = canvasSize?.let { (editing.style.sizePx / it.height * 100f).roundToInt() } ?: 0
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("大きさ $percent%", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.image_text_size, percent), style = MaterialTheme.typography.labelMedium)
                 Slider(
                     value = editing.style.sizePx,
                     onValueChange = { size -> onChange { it.copy(style = it.style.copy(sizePx = size)) } },
@@ -136,26 +142,26 @@ fun TextPanel(
                     FilterChip(
                         selected = editing.style.font == font,
                         onClick = { onChange { it.copy(style = it.style.copy(font = font)) } },
-                        label = { Text(font.label) },
+                        label = { Text(textFontLabel(font)) },
                     )
                 }
                 FilterChip(
                     selected = editing.style.bold,
                     onClick = { onChange { it.copy(style = it.style.copy(bold = !it.style.bold)) } },
-                    label = { Text("太字") },
+                    label = { Text(stringResource(R.string.image_bold)) },
                 )
                 TextOutline.entries.forEach { outline ->
                     FilterChip(
                         selected = editing.style.outline == outline,
                         onClick = { onChange { it.copy(style = it.style.copy(outline = outline)) } },
-                        label = { Text(outline.label) },
+                        label = { Text(textOutlineLabel(outline)) },
                     )
                 }
             }
             Spacer(Modifier.height(4.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("傾き ${editing.transform.rotationDeg.roundToInt()}°", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.image_rotation_degrees, editing.transform.rotationDeg.roundToInt()), style = MaterialTheme.typography.labelSmall)
                 Slider(
                     value = editing.transform.rotationDeg,
                     onValueChange = { deg ->
@@ -172,17 +178,31 @@ fun TextPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "位置は画像をドラッグして決めます",
+                    stringResource(R.string.image_text_position_help),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onDelete) { Text("削除") }
-                TextButton(onClick = { onSelect(null) }) { Text("完了") }
+                TextButton(onClick = onDelete) { Text(stringResource(R.string.action_delete)) }
+                TextButton(onClick = { onSelect(null) }) { Text(stringResource(R.string.action_done)) }
             }
         }
     }
 }
+
+@Composable
+private fun textFontLabel(font: TextFont): String = stringResource(when (font) {
+    TextFont.SANS -> R.string.image_font_sans
+    TextFont.SERIF -> R.string.image_font_serif
+    TextFont.MONOSPACE -> R.string.image_font_monospace
+})
+
+@Composable
+private fun textOutlineLabel(outline: TextOutline): String = stringResource(when (outline) {
+    TextOutline.NONE -> R.string.image_outline_none
+    TextOutline.WHITE -> R.string.image_outline_white
+    TextOutline.BLACK -> R.string.image_outline_black
+})
 
 /** 文字サイズの範囲。画像の高さの 2%〜25% に収める (小さすぎ / 大きすぎを防ぐ)。 */
 private fun textSizeRange(canvasSize: EditSize?): ClosedFloatingPointRange<Float> {

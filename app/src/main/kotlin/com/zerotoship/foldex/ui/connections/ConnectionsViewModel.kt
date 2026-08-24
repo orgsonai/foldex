@@ -3,14 +3,17 @@
 
 package com.zerotoship.foldex.ui.connections
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.ConnectionRepository
 import com.zerotoship.foldex.core.model.AuthMethod
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.core.model.Credential
 import com.zerotoship.foldex.core.model.Protocol
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,8 +27,11 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ConnectionsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: ConnectionRepository,
 ) : ViewModel() {
+
+    private fun text(id: Int, vararg args: Any): String = context.getString(id, *args)
 
     val connections: StateFlow<List<Connection>> = repository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -271,7 +277,7 @@ class ConnectionsViewModel @Inject constructor(
     fun save() {
         val draft = _editing.value ?: return
         if (draft.name.isBlank() || draft.host.isBlank()) {
-            sendEvent(ConnectionEvent.Message("名前 / ホストは必須"))
+            sendEvent(ConnectionEvent.Message(text(R.string.connection_required_name_host)))
             return
         }
         when (draft.protocol) {
@@ -370,20 +376,20 @@ class ConnectionsViewModel @Inject constructor(
 
     private fun saveSftp(draft: EditingState) {
         if (draft.username.isBlank()) {
-            sendEvent(ConnectionEvent.Message("SFTP はユーザー名が必須"))
+            sendEvent(ConnectionEvent.Message(text(R.string.connection_sftp_username_required)))
             return
         }
         if (draft.sftpAuthMode == SftpAuthMode.PUBLIC_KEY) {
             // 公開鍵モード: 編集セッション中に新規生成された場合のみ秘密鍵を更新する。
             // 既存接続を編集して鍵を変えないときは Credential = null で repo に渡し、既存の鍵を温存する。
             if (draft.isNew && draft.sftpPrivateKeyPem.isBlank()) {
-                sendEvent(ConnectionEvent.Message("「鍵を生成」を押して公開鍵を発行してください"))
+                sendEvent(ConnectionEvent.Message(text(R.string.connection_generate_key_required)))
                 return
             }
         } else {
             // パスワードモード: 初回はパスワード必須。
             if (draft.isNew && draft.password.isBlank()) {
-                sendEvent(ConnectionEvent.Message("初回はパスワードが必要"))
+                sendEvent(ConnectionEvent.Message(text(R.string.connection_initial_password_required)))
                 return
             }
         }
@@ -421,9 +427,9 @@ class ConnectionsViewModel @Inject constructor(
         try {
             repository.save(connection, credential)
             _editing.value = null
-            sendEvent(ConnectionEvent.Message(if (isNew) "接続を追加しました" else "接続を更新しました"))
+            sendEvent(ConnectionEvent.Message(text(if (isNew) R.string.connection_added else R.string.connection_updated)))
         } catch (t: Throwable) {
-            sendEvent(ConnectionEvent.Message("保存エラー: ${t.message}"))
+            sendEvent(ConnectionEvent.Message(text(R.string.connection_save_error, t.message.orEmpty())))
         }
     }
 
@@ -438,9 +444,9 @@ class ConnectionsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.delete(connection.id)
-                sendEvent(ConnectionEvent.Message("「${connection.name}」を削除しました"))
+                sendEvent(ConnectionEvent.Message(text(R.string.connection_deleted, connection.name)))
             } catch (t: Throwable) {
-                sendEvent(ConnectionEvent.Message("削除エラー: ${t.message}"))
+                sendEvent(ConnectionEvent.Message(text(R.string.connection_delete_error, t.message.orEmpty())))
             }
         }
     }

@@ -3,15 +3,18 @@
 
 package com.zerotoship.foldex.ui.servers
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.ServerConfigRepository
 import com.zerotoship.foldex.core.model.ServerAuthMode
 import com.zerotoship.foldex.core.model.ServerConfig
 import com.zerotoship.foldex.core.model.ServerType
 import com.zerotoship.foldex.server.security.Argon2idHasher
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,10 +35,12 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class ServerEditViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
     private val repository: ServerConfigRepository,
     private val hasher: Argon2idHasher,
 ) : ViewModel() {
+    private fun text(id: Int, vararg args: Any): String = context.getString(id, *args)
 
     private val targetId: String? = savedStateHandle["id"]
 
@@ -85,7 +90,7 @@ class ServerEditViewModel @Inject constructor(
         val draft = _state.value
         val error = draft.validate()
         if (error != null) {
-            _events.trySend(ServerEditEvent.Message(error))
+            _events.trySend(ServerEditEvent.Message(text(error.messageRes)))
             return
         }
         viewModelScope.launch {
@@ -104,7 +109,7 @@ class ServerEditViewModel @Inject constructor(
                 }
                 _events.trySend(ServerEditEvent.Saved)
             } catch (t: Throwable) {
-                _events.trySend(ServerEditEvent.Message("保存エラー: ${t.message}"))
+                _events.trySend(ServerEditEvent.Message(text(R.string.connection_save_error, t.message.orEmpty())))
             }
         }
     }
@@ -134,17 +139,17 @@ data class ServerEditState(
     val autoStartOnBoot: Boolean,
 ) {
 
-    fun validate(): String? {
-        if (name.isBlank()) return "名前は必須です"
-        if (rootPath.isBlank()) return "ルートパスは必須です"
-        if (!rootPath.startsWith("/")) return "ルートパスは絶対パスで入力してください"
-        if (port !in 1..65535) return "ポート番号は 1〜65535 の範囲で入力してください"
-        if (authMode.requiresUsername() && username.isBlank()) return "ユーザー名は必須です"
+    fun validate(): ValidationError? {
+        if (name.isBlank()) return ValidationError.NAME
+        if (rootPath.isBlank()) return ValidationError.ROOT
+        if (!rootPath.startsWith("/")) return ValidationError.ROOT_ABSOLUTE
+        if (port !in 1..65535) return ValidationError.PORT
+        if (authMode.requiresUsername() && username.isBlank()) return ValidationError.USERNAME
         if (isNew && authMode.requiresPassword() && password.isBlank()) {
-            return "新規作成時はパスワードが必要です"
+            return ValidationError.PASSWORD
         }
         if (authMode.requiresAuthorizedKeys() && authorizedKeys.isBlank() && isNew) {
-            return "新規作成時は authorized_keys が必要です"
+            return ValidationError.KEYS
         }
         return null
     }
@@ -207,6 +212,16 @@ data class ServerEditState(
             autoStartOnBoot = config.autoStartOnBoot,
         )
     }
+}
+
+enum class ValidationError(val messageRes: Int) {
+    NAME(R.string.server_validation_name),
+    ROOT(R.string.server_validation_root),
+    ROOT_ABSOLUTE(R.string.server_validation_root_absolute),
+    PORT(R.string.server_validation_port),
+    USERNAME(R.string.server_validation_username),
+    PASSWORD(R.string.server_validation_password),
+    KEYS(R.string.server_validation_keys),
 }
 
 private fun ServerAuthMode.requiresUsername(): Boolean =

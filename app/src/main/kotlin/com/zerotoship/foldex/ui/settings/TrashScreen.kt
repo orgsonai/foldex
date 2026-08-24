@@ -36,10 +36,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.TrashRepository
 import java.text.DateFormat
 import java.util.Date
@@ -59,15 +61,15 @@ fun TrashScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("ゴミ箱") },
+                title = { Text(stringResource(R.string.trash_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
                 actions = {
                     if (state.entries.isNotEmpty()) {
-                        TextButton(onClick = { confirmEmpty = true }) { Text("空にする") }
+                        TextButton(onClick = { confirmEmpty = true }) { Text(stringResource(R.string.trash_empty_action)) }
                     }
                 },
             )
@@ -77,7 +79,7 @@ fun TrashScreen(
             when {
                 state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 state.entries.isEmpty() -> Text(
-                    "ゴミ箱は空です",
+                    stringResource(R.string.trash_is_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.Center),
@@ -85,7 +87,7 @@ fun TrashScreen(
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     item {
                         Text(
-                            "${state.entries.size} 件 ・ 合計 ${formatBytes(state.totalBytes)}",
+                            stringResource(R.string.trash_summary, state.entries.size, formatBytes(state.totalBytes)),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp),
@@ -108,12 +110,12 @@ fun TrashScreen(
     if (confirmEmpty) {
         AlertDialog(
             onDismissRequest = { confirmEmpty = false },
-            title = { Text("ゴミ箱を空にする") },
-            text = { Text("すべてのアイテムを完全に削除します。この操作は元に戻せません。") },
+            title = { Text(stringResource(R.string.trash_empty_title)) },
+            text = { Text(stringResource(R.string.trash_empty_warning)) },
             confirmButton = {
-                TextButton(onClick = { viewModel.emptyTrash(); confirmEmpty = false }) { Text("空にする") }
+                TextButton(onClick = { viewModel.emptyTrash(); confirmEmpty = false }) { Text(stringResource(R.string.trash_empty_action)) }
             },
-            dismissButton = { TextButton(onClick = { confirmEmpty = false }) { Text("キャンセル") } },
+            dismissButton = { TextButton(onClick = { confirmEmpty = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }
@@ -134,9 +136,9 @@ private fun TrashRow(entry: TrashRepository.Entry, onRestore: () -> Unit, onDele
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        IconButton(onClick = onRestore) { Icon(Icons.Default.Restore, contentDescription = "復元") }
+        IconButton(onClick = onRestore) { Icon(Icons.Default.Restore, contentDescription = stringResource(R.string.action_restore)) }
         IconButton(onClick = onDelete) {
-            Icon(Icons.Default.DeleteForever, contentDescription = "完全に削除", tint = MaterialTheme.colorScheme.error)
+            Icon(Icons.Default.DeleteForever, contentDescription = stringResource(R.string.delete_permanently), tint = MaterialTheme.colorScheme.error)
         }
     }
 }

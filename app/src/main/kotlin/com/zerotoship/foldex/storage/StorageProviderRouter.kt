@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.storage
 
+import android.content.Context
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
@@ -17,6 +18,8 @@ import com.zerotoship.foldex.storage.local.LocalStorageProvider
 import com.zerotoship.foldex.storage.sftp.SftpStorageProvider
 import com.zerotoship.foldex.storage.smb.SmbStorageProvider
 import com.zerotoship.foldex.storage.webdav.WebDavStorageProvider
+import com.zerotoship.foldex.R
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +41,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class StorageProviderRouter @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val local: LocalStorageProvider,
     private val smbLazy: dagger.Lazy<SmbStorageProvider>,
     private val sftpLazy: dagger.Lazy<SftpStorageProvider>,
@@ -169,7 +173,7 @@ class StorageProviderRouter @Inject constructor(
             if (failure != null) return@collect
             coroutineContext.ensureActive()
             val childDest = childUri(destDir, child.name) ?: run {
-                failure = StorageError.IoError("コピー先のパスを解決できません: ${child.name}")
+                failure = StorageError.IoError(context.getString(R.string.copy_destination_unresolved, child.name))
                 return@collect
             }
             when (val r = crossCopy(child.uri, childDest, observer)) {
@@ -231,7 +235,7 @@ class StorageProviderRouter @Inject constructor(
                 Result.Success(Unit)
             }.getOrElse { t ->
                 if (t is kotlinx.coroutines.CancellationException) throw t
-                Result.Failure(StorageError.IoError("コピーに失敗しました: ${t.message}", t))
+                Result.Failure(StorageError.IoError(context.getString(R.string.copy_failed_reason, t.message), t))
             }
         }
     }

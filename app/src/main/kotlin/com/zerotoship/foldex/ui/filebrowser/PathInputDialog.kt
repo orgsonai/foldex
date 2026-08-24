@@ -26,6 +26,8 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 
 /**
  * パス手動入力ダイアログ。`/storage/emulated/0/...` のようなローカル絶対パス、
@@ -44,13 +46,13 @@ fun PathInputDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("パスを開く") },
+        title = { Text(stringResource(R.string.path_open_title)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    label = { Text("絶対パス / sftp://… 等") },
+                    label = { Text(stringResource(R.string.path_input_label)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { onConfirm(text.text) }),
@@ -58,7 +60,7 @@ fun PathInputDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "例: /storage/emulated/0/Download、sftp://abc-def/home",
+                    stringResource(R.string.path_input_example),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -66,10 +68,10 @@ fun PathInputDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(text.text) }, enabled = text.text.isNotBlank()) {
-                Text("開く")
+                Text(stringResource(R.string.action_open))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 
     LaunchedEffect(Unit) { focus.requestFocus() }

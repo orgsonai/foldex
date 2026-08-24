@@ -34,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.ServerLog
@@ -55,15 +57,15 @@ fun ServerLogScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("接続ログ - ${config?.name ?: "…"}") },
+                title = { Text(stringResource(R.string.server_log_title, config?.name ?: "…")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
                 actions = {
                     if (logs.isNotEmpty()) {
-                        TextButton(onClick = { confirmClear = true }) { Text("クリア") }
+                        TextButton(onClick = { confirmClear = true }) { Text(stringResource(R.string.action_clear)) }
                     }
                 },
             )
@@ -75,7 +77,7 @@ fun ServerLogScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "ログはまだありません",
+                    stringResource(R.string.server_log_empty),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -92,16 +94,16 @@ fun ServerLogScreen(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("ログを削除しますか?") },
-            text = { Text("このサーバーの接続ログをすべて削除します。") },
+            title = { Text(stringResource(R.string.server_log_clear_title)) },
+            text = { Text(stringResource(R.string.server_log_clear_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.clear()
                     confirmClear = false
-                }) { Text("削除") }
+                }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text("キャンセル") }
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -137,15 +139,16 @@ private fun LogRow(log: ServerLog) {
     }
 }
 
+@Composable
 private fun eventLabel(event: ServerLogEvent): String = when (event) {
-    ServerLogEvent.SERVER_STARTED -> "起動"
-    ServerLogEvent.SERVER_STOPPED -> "停止"
-    ServerLogEvent.SERVER_START_FAILED -> "起動失敗"
-    ServerLogEvent.CLIENT_CONNECTED -> "接続"
-    ServerLogEvent.CLIENT_DISCONNECTED -> "切断"
-    ServerLogEvent.AUTH_SUCCESS -> "認証成功"
-    ServerLogEvent.AUTH_FAILED -> "認証失敗"
-    ServerLogEvent.FILE_OP_FAILED -> "操作失敗"
+    ServerLogEvent.SERVER_STARTED -> stringResource(R.string.server_event_started)
+    ServerLogEvent.SERVER_STOPPED -> stringResource(R.string.server_event_stopped)
+    ServerLogEvent.SERVER_START_FAILED -> stringResource(R.string.server_event_start_failed)
+    ServerLogEvent.CLIENT_CONNECTED -> stringResource(R.string.server_event_connected)
+    ServerLogEvent.CLIENT_DISCONNECTED -> stringResource(R.string.server_event_disconnected)
+    ServerLogEvent.AUTH_SUCCESS -> stringResource(R.string.server_event_auth_success)
+    ServerLogEvent.AUTH_FAILED -> stringResource(R.string.server_event_auth_failed)
+    ServerLogEvent.FILE_OP_FAILED -> stringResource(R.string.server_event_operation_failed)
 }
 
 @Composable

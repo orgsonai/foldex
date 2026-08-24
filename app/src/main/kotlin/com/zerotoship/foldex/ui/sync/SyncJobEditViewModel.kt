@@ -3,6 +3,8 @@
 
 package com.zerotoship.foldex.ui.sync
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,6 +19,8 @@ import com.zerotoship.foldex.core.model.SyncFilter
 import com.zerotoship.foldex.core.model.SyncJob
 import com.zerotoship.foldex.core.model.SyncSchedule
 import com.zerotoship.foldex.sync.scheduler.SyncScheduler
+import com.zerotoship.foldex.R
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +36,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SyncJobEditViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
     private val jobRepository: SyncJobRepository,
     private val connectionRepository: ConnectionRepository,
@@ -68,12 +73,12 @@ class SyncJobEditViewModel @Inject constructor(
         val s = _state.value
         val error = s.validate()
         if (error != null) {
-            _events.trySend(SyncJobEditEvent.Message(error))
+            _events.trySend(SyncJobEditEvent.Message(context.getString(error)))
             return@launch
         }
         val connection = connections.value.firstOrNull { it.id == s.connectionId }
         if (connection == null) {
-            _events.trySend(SyncJobEditEvent.Message("選択した接続が見つかりません"))
+            _events.trySend(SyncJobEditEvent.Message(context.getString(R.string.sync_error_connection_missing)))
             return@launch
         }
         val job = s.toJob(connection, createdAt)
@@ -114,18 +119,19 @@ data class SyncJobEditState(
     val excludePatternsText: String,
     val maxFileSizeMb: String,
 ) {
-    fun validate(): String? = when {
-        name.isBlank() -> "名前を入力してください"
-        localPath.isBlank() -> "ローカルのパスを入力してください"
-        connectionId.isNullOrBlank() -> "リモートの接続を選択してください"
-        scheduleType == ScheduleType.INTERVAL && intervalMinutes < 0 -> "間隔は 0 以上にしてください"
+    @StringRes
+    fun validate(): Int? = when {
+        name.isBlank() -> R.string.sync_error_name_required
+        localPath.isBlank() -> R.string.sync_error_local_path_required
+        connectionId.isNullOrBlank() -> R.string.sync_error_connection_required
+        scheduleType == ScheduleType.INTERVAL && intervalMinutes < 0 -> R.string.sync_error_interval_nonnegative
         scheduleType == ScheduleType.INTERVAL && intervalMinutes in 1..14 ->
-            "定期実行の間隔は 0 (手動のみ) か 15 分以上にしてください"
-        scheduleType == ScheduleType.WEEKLY && daysOfWeek == 0 -> "曜日を 1 つ以上選んでください"
+            R.string.sync_error_interval_minimum
+        scheduleType == ScheduleType.WEEKLY && daysOfWeek == 0 -> R.string.sync_error_weekday_required
         scheduleType == ScheduleType.DATETIME && dateTimeMillis <= System.currentTimeMillis() ->
-            "未来の日時を指定してください"
+            R.string.sync_error_future_datetime
         maxFileSizeMb.isNotBlank() && (maxFileSizeMb.trim().toLongOrNull()?.let { it <= 0 } != false) ->
-            "最大ファイルサイズには正の数を入力してください"
+            R.string.sync_error_positive_max_size
         else -> null
     }
 

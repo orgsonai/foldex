@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -36,6 +37,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.zerotoship.foldex.R
 import java.io.File
 
 /**
@@ -68,7 +70,7 @@ fun VideoViewer(
     if (unsupportedExtension) {
         UnsupportedOverlay(
             modifier = modifier,
-            message = "WMV / ASF は内蔵プレイヤーで再生できません。",
+            message = stringResource(R.string.video_unsupported_wmv),
             onOpen = { onOpenExternally(file) },
         )
         return
@@ -84,7 +86,7 @@ fun VideoViewer(
             setMediaItem(MediaItem.fromUri(playUri))
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    playbackError = error.message ?: "再生エラー (${error.errorCodeName})"
+                    playbackError = error.message ?: context.getString(R.string.video_playback_error, error.errorCodeName)
                 }
                 override fun onIsPlayingChanged(playing: Boolean) {
                     isPlaying = playing
@@ -119,7 +121,7 @@ fun VideoViewer(
         playbackError?.let { msg ->
             UnsupportedOverlay(
                 modifier = Modifier.fillMaxSize(),
-                message = "再生できません: $msg",
+                message = stringResource(R.string.video_cannot_play, msg),
                 onOpen = { onOpenExternally(file) },
             )
         }
@@ -145,7 +147,7 @@ private fun UnsupportedOverlay(modifier: Modifier, message: String, onOpen: () -
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "VLC や MX Player など外部アプリで開いてください",
+                stringResource(R.string.video_open_external_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -154,7 +156,7 @@ private fun UnsupportedOverlay(modifier: Modifier, message: String, onOpen: () -
             Button(onClick = onOpen) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
                 Spacer(Modifier.height(0.dp))
-                Text("  別のアプリで開く")
+                Text(stringResource(R.string.open_in_another_app))
             }
         }
     }

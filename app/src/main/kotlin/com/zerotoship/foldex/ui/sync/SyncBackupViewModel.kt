@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.ui.sync
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,7 +14,9 @@ import com.zerotoship.foldex.core.data.repo.SyncJobRepository
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.StorageProvider
 import com.zerotoship.foldex.core.model.WriteMode
+import com.zerotoship.foldex.R
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,6 +73,7 @@ data class PendingBatchRestore(
 
 @HiltViewModel
 class SyncBackupViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
     private val backupRepo: SyncBackupRepository,
     private val jobRepo: SyncJobRepository,
@@ -127,7 +131,7 @@ class SyncBackupViewModel @Inject constructor(
             val gen = _state.value.generations.firstOrNull { it.gen.id == generationId }?.gen
             val files = backupRepo.filesIn(jobId, generationId)
             if (files.isEmpty()) {
-                _messages.send("このバックアップにはファイルがありません")
+                _messages.send(context.getString(R.string.sync_backup_no_files_in_generation))
                 return@launch
             }
             val conflicts = withContext(Dispatchers.IO) { detectConflicts(files) }
@@ -175,12 +179,13 @@ class SyncBackupViewModel @Inject constructor(
                     }
                 }
             }
-            val msg = buildString {
-                append("一括復元: L=").append(restoredLocal)
-                append(" / R=").append(restoredRemote)
-                if (skipped > 0) append(" (既存スキップ ").append(skipped).append(")")
-                if (failed > 0) append(" 失敗 ").append(failed)
-            }
+            val msg = context.getString(
+                R.string.sync_backup_restore_result,
+                restoredLocal,
+                restoredRemote,
+                if (skipped > 0) context.getString(R.string.sync_backup_restore_result_skipped, skipped) else "",
+                if (failed > 0) context.getString(R.string.sync_backup_restore_result_failed, failed) else "",
+            )
             appLogger.info("SyncBackup", msg)
             _messages.send(msg)
             refresh()

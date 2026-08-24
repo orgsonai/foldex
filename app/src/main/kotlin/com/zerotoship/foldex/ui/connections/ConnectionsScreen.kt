@@ -57,6 +57,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.Connection
@@ -92,10 +94,10 @@ fun ConnectionsScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("接続") },
+                title = { Text(stringResource(R.string.connections_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
             )
@@ -103,35 +105,35 @@ fun ConnectionsScreen(
         floatingActionButton = {
             Box {
                 FloatingActionButton(onClick = { protocolMenuOpen = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "接続を追加")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.connections_add))
                 }
                 DropdownMenu(
                     expanded = protocolMenuOpen,
                     onDismissRequest = { protocolMenuOpen = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text("SMB を追加") },
+                        text = { Text(stringResource(R.string.connections_add_protocol, "SMB")) },
                         onClick = {
                             protocolMenuOpen = false
                             viewModel.startCreate(Protocol.SMB)
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("SFTP を追加") },
+                        text = { Text(stringResource(R.string.connections_add_protocol, "SFTP")) },
                         onClick = {
                             protocolMenuOpen = false
                             viewModel.startCreate(Protocol.SFTP)
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("FTP を追加") },
+                        text = { Text(stringResource(R.string.connections_add_protocol, "FTP")) },
                         onClick = {
                             protocolMenuOpen = false
                             viewModel.startCreate(Protocol.FTP)
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("WebDAV を追加") },
+                        text = { Text(stringResource(R.string.connections_add_protocol, "WebDAV")) },
                         onClick = {
                             protocolMenuOpen = false
                             viewModel.startCreate(Protocol.WEBDAV)
@@ -155,12 +157,12 @@ fun ConnectionsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "保存された接続はありません",
+                        stringResource(R.string.connections_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "右下の + ボタンから追加",
+                        stringResource(R.string.connections_empty_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -196,17 +198,17 @@ fun ConnectionsScreen(
                                 Text(connection.summary(), style = MaterialTheme.typography.bodySmall)
                             },
                             leadingContent = {
-                                Icon(Icons.Default.DragHandle, contentDescription = "長押しで並び替え")
+                                Icon(Icons.Default.DragHandle, contentDescription = stringResource(R.string.action_reorder))
                             },
                             trailingContent = {
                                 Row {
                                     IconButton(onClick = { viewModel.startEdit(connection) }) {
-                                        Icon(Icons.Default.Edit, contentDescription = "編集")
+                                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.action_edit))
                                     }
                                     IconButton(onClick = { pendingDelete = connection }) {
                                         Icon(
                                             Icons.Default.Delete,
-                                            contentDescription = "削除",
+                                            contentDescription = stringResource(R.string.action_delete),
                                             tint = MaterialTheme.colorScheme.error,
                                         )
                                     }
@@ -238,41 +240,42 @@ fun ConnectionsScreen(
     pendingDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("接続を削除") },
-            text = { Text("「${target.name}」を削除します。よろしいですか?") },
+            title = { Text(stringResource(R.string.connections_delete_title)) },
+            text = { Text(stringResource(R.string.connections_delete_body, target.name)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         viewModel.delete(target)
                         pendingDelete = null
                     },
-                ) { Text("削除", color = MaterialTheme.colorScheme.error) }
+                ) { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("キャンセル") }
+                TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
 }
 
+@Composable
 private fun Connection.summary(): String = when (this) {
     is Connection.Smb -> {
-        val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
+        val auth = if (authMethod.wireName == "anonymous") stringResource(R.string.connection_anonymous) else (username ?: "user?")
         "smb://$host:$port/$share  ($auth)"
     }
     is Connection.Sftp -> {
-        val fp = if (hostKeyFingerprint.isNullOrBlank()) "未検証" else "鍵OK"
+        val fp = stringResource(if (hostKeyFingerprint.isNullOrBlank()) R.string.connection_host_key_unverified else R.string.connection_host_key_ok)
         "sftp://${username ?: "?"}@$host:$port  ($fp)"
     }
     is Connection.Ftp -> {
-        val tls = if (useTls) "FTPS" else "平文"
+        val tls = if (useTls) "FTPS" else stringResource(R.string.connection_plaintext)
         val mode = if (passiveMode) "PASV" else "ACTV"
-        val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
+        val auth = if (authMethod.wireName == "anonymous") stringResource(R.string.connection_anonymous) else (username ?: "user?")
         "ftp://$host:$port  ($tls / $mode / $auth)"
     }
     is Connection.WebDav -> {
         val scheme = if (useHttps) "https" else "http"
-        val auth = if (authMethod.wireName == "anonymous") "匿名" else (username ?: "user?")
+        val auth = if (authMethod.wireName == "anonymous") stringResource(R.string.connection_anonymous) else (username ?: "user?")
         "$scheme://$host:$port$basePath  ($auth)"
     }
 }
@@ -288,12 +291,10 @@ private fun ConnectionEditDialog(
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val title = when (state.protocol) {
-        Protocol.SMB -> if (state.isNew) "SMB 接続を追加" else "SMB 接続を編集"
-        Protocol.SFTP -> if (state.isNew) "SFTP 接続を追加" else "SFTP 接続を編集"
-        Protocol.FTP -> if (state.isNew) "FTP 接続を追加" else "FTP 接続を編集"
-        Protocol.WEBDAV -> if (state.isNew) "WebDAV 接続を追加" else "WebDAV 接続を編集"
-    }
+    val title = stringResource(
+        if (state.isNew) R.string.connection_add_title else R.string.connection_edit_title,
+        state.protocol.name,
+    )
     AlertDialog(
         // 範囲外タップ / 戻るキーで誤って閉じないようにする (入力済み内容を失うのを防ぐ)。
         // 閉じるのは「キャンセル」ボタン経由のみ。
@@ -315,11 +316,11 @@ private fun ConnectionEditDialog(
                             oneLiner = it
                             oneLinerError = false
                         },
-                        label = { Text("URL から入力 (例: sftp://user@host:22/path)") },
+                        label = { Text(stringResource(R.string.connection_uri_input)) },
                         singleLine = true,
                         isError = oneLinerError,
                         supportingText = if (oneLinerError) {
-                            { Text("URL の書式が不正です") }
+                            { Text(stringResource(R.string.connection_uri_invalid)) }
                         } else null,
                         trailingIcon = {
                             TextButton(onClick = {
@@ -331,7 +332,7 @@ private fun ConnectionEditDialog(
                                         oneLinerError = true
                                     }
                                 }
-                            }) { Text("展開") }
+                            }) { Text(stringResource(R.string.connection_uri_expand)) }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -363,7 +364,7 @@ private fun ConnectionEditDialog(
                 OutlinedTextField(
                     value = state.name,
                     onValueChange = { v -> onUpdate { it.copy(name = v) } },
-                    label = { Text("表示名") },
+                    label = { Text(stringResource(R.string.connection_display_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -372,7 +373,7 @@ private fun ConnectionEditDialog(
                     OutlinedTextField(
                         value = state.host,
                         onValueChange = { v -> onUpdate { it.copy(host = v) } },
-                        label = { Text("ホスト") },
+                        label = { Text(stringResource(R.string.connection_host)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
@@ -384,7 +385,7 @@ private fun ConnectionEditDialog(
                             val sanitized = v.filter { it.isDigit() }.take(5)
                             onUpdate { st -> st.copy(portText = sanitized) }
                         },
-                        label = { Text("ポート") },
+                        label = { Text(stringResource(R.string.connection_port)) },
                         singleLine = true,
                         placeholder = { Text(state.protocol.defaultPort.toString()) },
                         modifier = Modifier.size(width = 96.dp, height = 56.dp),
@@ -400,10 +401,10 @@ private fun ConnectionEditDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onSave) { Text("保存") }
+            TextButton(onClick = onSave) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 }
@@ -418,17 +419,17 @@ private fun SmbExtraFields(
     OutlinedTextField(
         value = state.share,
         onValueChange = { v -> onUpdate { it.copy(share = v) } },
-        label = { Text("パス (共有名/フォルダ)") },
+        label = { Text(stringResource(R.string.connection_smb_path)) },
         singleLine = true,
         placeholder = { Text("public/sub/folder") },
-        supportingText = { Text("先頭が共有名。例: public または public/docs。空欄も可 (その場合は / )") },
+        supportingText = { Text(stringResource(R.string.connection_smb_path_hint)) },
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = state.domain,
         onValueChange = { v -> onUpdate { it.copy(domain = v) } },
-        label = { Text("ドメイン (任意)") },
+        label = { Text(stringResource(R.string.connection_domain_optional)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -438,7 +439,7 @@ private fun SmbExtraFields(
             checked = state.anonymous,
             onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
         )
-        Text("匿名アクセス")
+        Text(stringResource(R.string.connection_anonymous_access))
     }
     if (!state.anonymous) {
         UserPasswordFields(state, onUpdate)
@@ -454,23 +455,23 @@ private fun SftpExtraFields(
     OutlinedTextField(
         value = state.username,
         onValueChange = { v -> onUpdate { it.copy(username = v) } },
-        label = { Text("ユーザー名") },
+        label = { Text(stringResource(R.string.connection_username)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(8.dp))
     // 認証方式: パスワード or 公開鍵 (authorized_keys)。
-    Text("認証方式", style = MaterialTheme.typography.labelMedium)
+    Text(stringResource(R.string.connection_auth_method), style = MaterialTheme.typography.labelMedium)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChip(
             selected = state.sftpAuthMode == ConnectionsViewModel.SftpAuthMode.PASSWORD,
             onClick = { onUpdate { it.copy(sftpAuthMode = ConnectionsViewModel.SftpAuthMode.PASSWORD) } },
-            label = { Text("パスワード") },
+            label = { Text(stringResource(R.string.connection_password)) },
         )
         FilterChip(
             selected = state.sftpAuthMode == ConnectionsViewModel.SftpAuthMode.PUBLIC_KEY,
             onClick = { onUpdate { it.copy(sftpAuthMode = ConnectionsViewModel.SftpAuthMode.PUBLIC_KEY) } },
-            label = { Text("公開鍵 (authorized_keys)") },
+            label = { Text(stringResource(R.string.connection_public_key)) },
         )
     }
     Spacer(Modifier.height(8.dp))
@@ -478,7 +479,7 @@ private fun SftpExtraFields(
         OutlinedTextField(
             value = state.password,
             onValueChange = { v -> onUpdate { it.copy(password = v) } },
-            label = { Text(if (state.isNew) "パスワード" else "パスワード (変更時のみ)") },
+            label = { Text(stringResource(if (state.isNew) R.string.connection_password else R.string.connection_password_change)) },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth(),
@@ -486,12 +487,13 @@ private fun SftpExtraFields(
     } else {
         val clipboard = androidx.compose.ui.platform.LocalClipboard.current
         val clipboardScope = androidx.compose.runtime.rememberCoroutineScope()
+        val publicKeyClipboardLabel = stringResource(R.string.connection_public_key_clipboard)
         TextButton(onClick = onGenerateKey) {
-            Text(if (state.sftpPublicKeyOpenSsh.isBlank()) "鍵を生成" else "鍵を再生成")
+            Text(stringResource(if (state.sftpPublicKeyOpenSsh.isBlank()) R.string.connection_generate_key else R.string.connection_regenerate_key))
         }
         if (state.sftpPublicKeyOpenSsh.isNotBlank()) {
             Text(
-                "リモートの ~/.ssh/authorized_keys にコピーしてください:",
+                stringResource(R.string.connection_public_key_hint),
                 style = MaterialTheme.typography.labelSmall,
             )
             OutlinedTextField(
@@ -504,12 +506,12 @@ private fun SftpExtraFields(
             )
             TextButton(onClick = {
                 clipboardScope.launch {
-                    clipboard.setPlainText("SSH 公開鍵", state.sftpPublicKeyOpenSsh)
+                    clipboard.setPlainText(publicKeyClipboardLabel, state.sftpPublicKeyOpenSsh)
                 }
-            }) { Text("公開鍵をコピー") }
+            }) { Text(stringResource(R.string.connection_copy_public_key)) }
         } else if (!state.isNew) {
             Text(
-                "既に登録済みの鍵を使用します (再生成する場合は上の「鍵を生成」)。",
+                stringResource(R.string.connection_existing_key_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -519,7 +521,7 @@ private fun SftpExtraFields(
     OutlinedTextField(
         value = state.hostKeyFingerprint,
         onValueChange = { v -> onUpdate { it.copy(hostKeyFingerprint = v) } },
-        label = { Text("ホスト鍵 SHA-256 (任意/初回は空でOK)") },
+        label = { Text(stringResource(R.string.connection_host_key_optional)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -527,7 +529,7 @@ private fun SftpExtraFields(
     OutlinedTextField(
         value = state.initialPath,
         onValueChange = { v -> onUpdate { it.copy(initialPath = v) } },
-        label = { Text("初期パス (任意)") },
+        label = { Text(stringResource(R.string.connection_initial_path_optional)) },
         singleLine = true,
         placeholder = { Text("/home/user") },
         modifier = Modifier.fillMaxWidth(),
@@ -544,7 +546,7 @@ private fun FtpExtraFields(
             checked = state.anonymous,
             onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
         )
-        Text("匿名アクセス")
+        Text(stringResource(R.string.connection_anonymous_access))
     }
     if (!state.anonymous) {
         UserPasswordFields(state, onUpdate)
@@ -555,11 +557,11 @@ private fun FtpExtraFields(
             checked = state.useTls,
             onCheckedChange = { v -> onUpdate { it.copy(useTls = v) } },
         )
-        Text("FTPS (TLS) を使用")
+        Text(stringResource(R.string.connection_use_ftps))
     }
     if (!state.useTls) {
         Text(
-            "⚠ 平文通信です。パスワードとファイル内容が暗号化されません。",
+            stringResource(R.string.connection_ftp_plain_warning),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
         )
@@ -569,13 +571,13 @@ private fun FtpExtraFields(
             checked = state.passiveMode,
             onCheckedChange = { v -> onUpdate { it.copy(passiveMode = v) } },
         )
-        Text("パッシブモード (PASV)")
+        Text(stringResource(R.string.connection_passive_mode))
     }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = state.charset,
         onValueChange = { v -> onUpdate { it.copy(charset = v) } },
-        label = { Text("文字コード (UTF-8 / Shift_JIS / EUC-JP など)") },
+        label = { Text(stringResource(R.string.connection_charset)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -583,7 +585,7 @@ private fun FtpExtraFields(
     OutlinedTextField(
         value = state.initialPath,
         onValueChange = { v -> onUpdate { it.copy(initialPath = v) } },
-        label = { Text("初期パス (任意)") },
+        label = { Text(stringResource(R.string.connection_initial_path_optional)) },
         singleLine = true,
         placeholder = { Text("/pub") },
         modifier = Modifier.fillMaxWidth(),
@@ -605,11 +607,11 @@ private fun WebDavExtraFields(
                 }
             },
         )
-        Text("HTTPS を使用")
+        Text(stringResource(R.string.connection_use_https))
     }
     if (!state.useHttps) {
         Text(
-            "⚠ 平文通信です。Basic 認証パスワードが暗号化されません。",
+            stringResource(R.string.connection_http_plain_warning),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
         )
@@ -618,7 +620,7 @@ private fun WebDavExtraFields(
     OutlinedTextField(
         value = state.basePath,
         onValueChange = { v -> onUpdate { it.copy(basePath = v) } },
-        label = { Text("ベースパス (例: /remote.php/dav/files/USER)") },
+        label = { Text(stringResource(R.string.connection_base_path)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -628,7 +630,7 @@ private fun WebDavExtraFields(
             checked = state.anonymous,
             onCheckedChange = { v -> onUpdate { it.copy(anonymous = v) } },
         )
-        Text("匿名アクセス")
+        Text(stringResource(R.string.connection_anonymous_access))
     }
     if (!state.anonymous) {
         UserPasswordFields(state, onUpdate)
@@ -643,7 +645,7 @@ private fun UserPasswordFields(
     OutlinedTextField(
         value = state.username,
         onValueChange = { v -> onUpdate { it.copy(username = v) } },
-        label = { Text("ユーザー名") },
+        label = { Text(stringResource(R.string.connection_username)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -652,7 +654,7 @@ private fun UserPasswordFields(
         value = state.password,
         onValueChange = { v -> onUpdate { it.copy(password = v) } },
         label = {
-            Text(if (state.isNew) "パスワード" else "パスワード (変更時のみ)")
+            Text(stringResource(if (state.isNew) R.string.connection_password else R.string.connection_password_change))
         },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),

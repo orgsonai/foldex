@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_notification_channel">サーバー稼働中</string>
+    <string name="server_notification_channel_description">SFTP / FTP サーバーの稼働状態を表示します</string>
+    <string name="server_notification_title">Foldex サーバー稼働中</string>
+    <string name="server_notification_none">稼働中のサーバーはありません</string>
+    <plurals name="server_notification_more">
+        <item quantity="other">他 %d 件</item>
+    </plurals>
+    <string name="server_notification_stop_all">すべて停止</string>
+    <string name="server_start_unexpected">%1$s サーバーの起動中に予期しないエラー: %2$s</string>
+    <string name="server_start_failed">%1$s サーバーを起動できませんでした: %2$s</string>
+    <string name="server_root_must_be_local">ルートパスはローカルパスである必要があります: %1$s</string>
+    <string name="server_wifi_unavailable">Wi-Fi に接続されていないため起動できません</string>
+    <string name="server_bind_unresolved">バインドアドレスを解決できませんでした: %1$s</string>
+    <string name="server_ftps_cert_failed">FTPS 証明書の準備に失敗しました: %1$s</string>
+    <string name="server_listen_failed">ポート %1$d で待ち受けを開始できませんでした: %2$s</string>
+    <string name="server_stop_exception">サーバーの停止処理で例外: %1$s</string>
+    <string name="server_stop_timeout">停止要求を出しましたが %1$dms で解放が終わりませんでした (停止扱いにします)</string>
+</resources>

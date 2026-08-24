@@ -17,6 +17,7 @@ import com.zerotoship.foldex.core.model.SortBy
 import com.zerotoship.foldex.core.model.StorageError
 import com.zerotoship.foldex.core.model.StorageProvider
 import com.zerotoship.foldex.core.model.WriteMode
+import com.zerotoship.foldex.storage.local.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -114,7 +115,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         if (mode == WriteMode.CREATE_NEW) {
                             val name = uri.pendingChildName
                                 ?: return@withContext Result.Failure(
-                                    StorageError.IoError("SAF CREATE_NEW には親 + 子名が必要です"),
+                                    StorageError.IoError(context.getString(R.string.storage_saf_child_required)),
                                 )
                             val parent = DocumentFile.fromTreeUri(context, Uri.parse(uri.documentUri))
                                 ?: return@withContext Result.Failure(StorageError.NotFound(uri))
@@ -153,7 +154,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
                         // SAF: 親 URI の配下に pendingChildName でディレクトリを作成。
                         val name = uri.pendingChildName
                             ?: return@withContext Result.Failure(
-                                StorageError.IoError("SAF mkdir には親 + 子名が必要です"),
+                                StorageError.IoError(context.getString(R.string.storage_saf_mkdir_child_required)),
                             )
                         val parent = DocumentFile.fromTreeUri(context, Uri.parse(uri.documentUri))
                             ?: return@withContext Result.Failure(StorageError.NotFound(uri))
@@ -395,7 +396,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
             Result.Success(Unit)
         }.getOrElse { t ->
             if (t is CancellationException) throw t
-            Result.Failure(StorageError.IoError("コピーに失敗しました: ${t.message}", t))
+            Result.Failure(StorageError.IoError(context.getString(R.string.storage_copy_failed, t.message.orEmpty()), t))
         }
     }
 

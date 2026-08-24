@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.zerotoship.foldex.R
 
 /**
  * フォルダコピー/移動/解凍など長時間のファイル操作中に、画面OFF/Doze でも
@@ -45,7 +46,7 @@ class FileOpService : Service() {
                 return START_NOT_STICKY
             }
             else -> {
-                val label = intent?.getStringExtra(EXTRA_LABEL) ?: DEFAULT_LABEL
+                val label = intent?.getStringExtra(EXTRA_LABEL) ?: getString(R.string.file_op_in_progress)
                 startForegroundCompat(label)
                 acquireLocks()
             }
@@ -109,10 +110,10 @@ class FileOpService : Service() {
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "ファイル操作",
+            getString(R.string.file_op_channel),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "コピー・移動・解凍など進行中の操作を表示します"
+            description = getString(R.string.file_op_channel_desc)
             setShowBadge(false)
         }
         nm.createNotificationChannel(channel)
@@ -128,7 +129,6 @@ class FileOpService : Service() {
         const val EXTRA_LABEL: String = "label"
         const val CHANNEL_ID: String = "foldex_file_ops"
         const val NOTIFICATION_ID: Int = 4343
-        private const val DEFAULT_LABEL: String = "ファイル操作中…"
         private const val WAKE_TAG: String = "foldex:fileop"
         private const val WIFI_TAG: String = "foldex:fileop-wifi"
         private const val MAX_HOLD_MS: Long = 2L * 60 * 60 * 1000 // 安全弁: 最長2時間

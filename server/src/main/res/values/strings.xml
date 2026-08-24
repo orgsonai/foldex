@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_notification_channel">Running servers</string>
+    <string name="server_notification_channel_description">Shows the status of running SFTP and FTP servers</string>
+    <string name="server_notification_title">Foldex servers running</string>
+    <string name="server_notification_none">No servers are running</string>
+    <plurals name="server_notification_more">
+        <item quantity="one">and %d more</item>
+        <item quantity="other">and %d more</item>
+    </plurals>
+    <string name="server_notification_stop_all">Stop all</string>
+    <string name="server_start_unexpected">%1$s server encountered an unexpected startup error: %2$s</string>
+    <string name="server_start_failed">Could not start the %1$s server: %2$s</string>
+    <string name="server_root_must_be_local">The root must be a local path: %1$s</string>
+    <string name="server_wifi_unavailable">Cannot start because Wi-Fi is not connected</string>
+    <string name="server_bind_unresolved">Could not resolve the bind address: %1$s</string>
+    <string name="server_ftps_cert_failed">Could not prepare the FTPS certificate: %1$s</string>
+    <string name="server_listen_failed">Could not listen on port %1$d: %2$s</string>
+    <string name="server_stop_exception">Exception while stopping the server: %1$s</string>
+    <string name="server_stop_timeout">The stop request did not finish releasing resources within %1$d ms; treating the server as stopped</string>
+</resources>

@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -166,10 +167,14 @@ fun MediaCollectionScreen(
     Scaffold(
         topBar = {
             val title = when {
-                state.isSelectionMode -> "${state.selectedUris.size}件選択中"
+                state.isSelectionMode -> pluralStringResource(
+                    R.plurals.selection_count,
+                    state.selectedUris.size,
+                    state.selectedUris.size,
+                )
                 state.openedFolder != null -> File(state.openedFolder!!).name
-                state.kind == MediaKind.IMAGE -> "画像"
-                else -> "動画"
+                state.kind == MediaKind.IMAGE -> stringResource(R.string.home_images)
+                else -> stringResource(R.string.home_videos)
             }
             TopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -183,7 +188,7 @@ fun MediaCollectionScreen(
                     }) {
                         Icon(
                             if (state.isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "戻る",
+                            contentDescription = stringResource(R.string.navigate_back),
                         )
                     }
                 },
@@ -247,7 +252,7 @@ fun MediaCollectionScreen(
                 if (state.folders.isEmpty()) {
                     Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
                         Text(
-                            if (state.kind == MediaKind.IMAGE) "画像は見つかりません" else "動画は見つかりません",
+                            stringResource(if (state.kind == MediaKind.IMAGE) R.string.media_no_images else R.string.media_no_videos),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -265,7 +270,7 @@ fun MediaCollectionScreen(
                                 folder = folder,
                                 onClick = { viewModel.openFolder(folder.path) },
                                 onLongClick = {
-                                    if (folder.path != "(その他)") onOpenLocalFolder(folder.path)
+                                    if (folder.path != OTHER_FOLDER_PATH) onOpenLocalFolder(folder.path)
                                 },
                             )
                         }
@@ -277,7 +282,7 @@ fun MediaCollectionScreen(
                 val visible = state.visibleItems
                 if (visible.isEmpty()) {
                     Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
-                        Text("空のフォルダです", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.folder_empty), style = MaterialTheme.typography.bodyMedium)
                     }
                 } else {
                     LazyVerticalGrid(
@@ -426,15 +431,15 @@ private fun NoPermissionContent(onGrant: () -> Unit, inner: PaddingValues) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("メディアにアクセスするには権限が必要です", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.media_permission_required), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "「すべてのファイルへのアクセス」を許可済みの場合は\n一度戻って再度開いてください。",
+            stringResource(R.string.media_permission_help),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onGrant) { Text("メディアアクセスを許可") }
+        Button(onClick = onGrant) { Text(stringResource(R.string.media_permission_grant)) }
     }
 }
 
@@ -494,7 +499,7 @@ private fun shareSelected(context: android.content.Context, state: MediaCollecti
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
-    runCatching { context.startActivity(Intent.createChooser(send, "共有")) }
+    runCatching { context.startActivity(Intent.createChooser(send, context.getString(R.string.action_share))) }
 }
 
 private fun openSelectedExternally(context: android.content.Context, state: MediaCollectionState) {

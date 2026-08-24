@@ -26,6 +26,7 @@ import com.zerotoship.foldex.ui.imageedit.model.LayerTransform
 import com.zerotoship.foldex.ui.imageedit.model.SaveNaming
 import com.zerotoship.foldex.ui.imageedit.model.Stroke
 import com.zerotoship.foldex.ui.imageedit.model.TextStyleSpec
+import com.zerotoship.foldex.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -102,7 +103,7 @@ class ImageEditViewModel @Inject constructor(
                 src to doc
             }
             if (prepared == null) {
-                _state.update { it.copy(loading = false, error = "この画像を開けませんでした") }
+                _state.update { it.copy(loading = false, error = appContext.getString(R.string.image_open_failed)) }
                 return@launch
             }
             val (src, doc) = prepared
@@ -121,7 +122,7 @@ class ImageEditViewModel @Inject constructor(
             if (doc.output.scale < 1f) {
                 _events.trySend(
                     ImageEditEvent.Message(
-                        "大きい画像なので、保存サイズを長辺 ${MAX_OUTPUT_LONG_EDGE}px に抑えて開きました",
+                        appContext.getString(R.string.image_large_limited, MAX_OUTPUT_LONG_EDGE),
                     ),
                 )
             }
@@ -275,7 +276,7 @@ class ImageEditViewModel @Inject constructor(
             doc.copy(
                 layers = doc.layers + Layer.Drawing(
                     id = "draw-${doc.layers.size}",
-                    name = "描画",
+                    name = appContext.getString(R.string.image_drawing_layer),
                     strokes = listOf(stroke),
                 ),
             )
@@ -294,7 +295,7 @@ class ImageEditViewModel @Inject constructor(
         val id = "text-${doc.layers.size}"
         val layer = Layer.Text(
             id = id,
-            name = "文字",
+            name = appContext.getString(R.string.image_text),
             text = "",
             style = TextStyleSpec(sizePx = initialSizePx, color = color),
             transform = LayerTransform(
@@ -430,7 +431,7 @@ class ImageEditViewModel @Inject constructor(
         viewModelScope.launch {
             val outcome = runCatching {
                 withContext(Dispatchers.Default) { performSave(doc, file, request) }
-            }.getOrElse { t -> SaveOutcome.Failure(t.message ?: "不明なエラー") }
+            }.getOrElse { t -> SaveOutcome.Failure(t.message ?: appContext.getString(R.string.unknown_error)) }
 
             _state.update {
                 it.copy(saving = false, dirty = outcome !is SaveOutcome.Success)
@@ -438,7 +439,7 @@ class ImageEditViewModel @Inject constructor(
             when (outcome) {
                 is SaveOutcome.Success -> _events.trySend(ImageEditEvent.Saved(outcome.displayPath))
                 is SaveOutcome.Failure ->
-                    _events.trySend(ImageEditEvent.Message("保存に失敗しました: ${outcome.reason}"))
+                    _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_save_failed_reason, outcome.reason)))
             }
         }
     }
@@ -450,7 +451,7 @@ class ImageEditViewModel @Inject constructor(
     ): SaveOutcome {
         // 1) 原寸で描く。プレビューと同じ render() に解像度だけ変えて通す。
         val bitmap = DocumentRenderer.render(doc, sourceResolver())
-            ?: return SaveOutcome.Failure("メモリが足りません")
+            ?: return SaveOutcome.Failure(appContext.getString(R.string.image_not_enough_memory))
         try {
             val format = doc.output.format
             // 2) 目標容量の指定があれば、そこに収まる最大の品質を探す。
@@ -467,7 +468,7 @@ class ImageEditViewModel @Inject constructor(
             val encoded = temp.outputStream().use { out ->
                 ImageEncoder.encode(bitmap, format, quality, out)
             }
-            if (!encoded) return SaveOutcome.Failure("画像を書き出せませんでした")
+            if (!encoded) return SaveOutcome.Failure(appContext.getString(R.string.image_encode_failed))
 
             // 4) EXIF を引き継ぐ (Orientation は正規化、位置情報は要求どおり)。
             ExifTransfer.copy(from = original, to = temp, keepLocation = request.keepLocation)
@@ -489,7 +490,7 @@ class ImageEditViewModel @Inject constructor(
         val remote = sourceUri
         if (remote == null) {
             // ローカルの実ファイルを直接編集していた場合。
-            val dir = original.parentFile ?: return SaveOutcome.Failure("保存先フォルダが見つかりません")
+            val dir = original.parentFile ?: return SaveOutcome.Failure(appContext.getString(R.string.image_destination_missing))
             val name = if (request.overwrite) {
                 SaveNaming.sameNameWithFormat(original.name, format)
             } else {
@@ -501,14 +502,14 @@ class ImageEditViewModel @Inject constructor(
             return runCatching {
                 temp.inputStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
                 SaveOutcome.Success(dest.absolutePath)
-            }.getOrElse { SaveOutcome.Failure(it.message ?: "書き込みエラー") }
+            }.getOrElse { SaveOutcome.Failure(it.message ?: appContext.getString(R.string.write_error)) }
         }
 
         // リモート / SAF から開いていた場合は元 URI (別名なら兄弟の URI) へ書き戻す。
         val targetUri = if (request.overwrite) {
             remote
         } else {
-            siblingUri(remote, format) ?: return SaveOutcome.Failure("この場所には別名で保存できません")
+            siblingUri(remote, format) ?: return SaveOutcome.Failure(appContext.getString(R.string.image_save_as_unsupported))
         }
         val mode = if (request.overwrite) WriteMode.OVERWRITE else WriteMode.CREATE_NEW
         return runCatching {
@@ -517,7 +518,7 @@ class ImageEditViewModel @Inject constructor(
                     temp.inputStream().use { it.copyTo(out) }
                 }
                 is Result.Failure ->
-                    return SaveOutcome.Failure(r.error.message ?: "書き込めませんでした")
+                    return SaveOutcome.Failure(r.error.message ?: appContext.getString(R.string.write_failed))
             }
             // 上書きしたときは、次に開いたときに編集後が出るようキャッシュ実体も更新する。
             if (request.overwrite) {
@@ -526,7 +527,7 @@ class ImageEditViewModel @Inject constructor(
                 }
             }
             SaveOutcome.Success(targetUri.displayName())
-        }.getOrElse { SaveOutcome.Failure(it.message ?: "書き込みエラー") }
+        }.getOrElse { SaveOutcome.Failure(it.message ?: appContext.getString(R.string.write_error)) }
     }
 
     /** 元 URI と同じフォルダに、編集後の名前で作る URI。SAF は親を辿れないので null。 */

@@ -3,10 +3,13 @@
 
 package com.zerotoship.foldex.ui.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.core.data.repo.TrashRepository
+import com.zerotoship.foldex.R
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +26,7 @@ data class TrashUiState(
 
 @HiltViewModel
 class TrashViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repo: TrashRepository,
 ) : ViewModel() {
 
@@ -45,7 +49,7 @@ class TrashViewModel @Inject constructor(
     fun restore(id: String) {
         viewModelScope.launch {
             val ok = repo.restore(id)
-            _messages.send(if (ok) "復元しました" else "復元に失敗しました (同名のファイルが既に存在する可能性があります)")
+            _messages.send(context.getString(if (ok) R.string.trash_restored else R.string.trash_restore_failed))
             refresh()
         }
     }
@@ -55,6 +59,6 @@ class TrashViewModel @Inject constructor(
     }
 
     fun emptyTrash() {
-        viewModelScope.launch { repo.empty(); _messages.send("ゴミ箱を空にしました"); refresh() }
+        viewModelScope.launch { repo.empty(); _messages.send(context.getString(R.string.trash_emptied)); refresh() }
     }
 }

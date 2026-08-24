@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_completion_channel">Operation completion</string>
+    <string name="notification_completion_channel_description">Notifies you when copying, moving, extracting, syncing, or another operation finishes</string>
+    <string name="update_error_empty_response">The response could not be read</string>
+    <string name="update_error_version_unknown">The latest version could not be determined</string>
+    <string name="update_error_release_not_found">The release was not found</string>
+    <string name="update_error_rate_limited">Try again later (rate limit)</string>
+    <string name="update_error_server_code">The server returned %d</string>
+    <string name="update_error_no_network">Could not connect to the network</string>
+    <string name="update_error_timeout">The connection timed out</string>
+</resources>

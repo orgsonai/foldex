@@ -26,6 +26,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 
 enum class CreateKind { FOLDER, FILE }
 
@@ -45,7 +47,7 @@ fun CreateDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (kind == CreateKind.FOLDER) "新しいフォルダ" else "新しいファイル") },
+        title = { Text(stringResource(if (kind == CreateKind.FOLDER) R.string.create_new_folder else R.string.create_new_file)) },
         text = {
             Column {
                 SingleChoiceSegmentedButtonRow {
@@ -53,18 +55,18 @@ fun CreateDialog(
                         selected = kind == CreateKind.FOLDER,
                         onClick = { kind = CreateKind.FOLDER },
                         shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    ) { Text("フォルダ") }
+                    ) { Text(stringResource(R.string.create_folder)) }
                     SegmentedButton(
                         selected = kind == CreateKind.FILE,
                         onClick = { kind = CreateKind.FILE },
                         shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    ) { Text("ファイル") }
+                    ) { Text(stringResource(R.string.create_file)) }
                 }
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text(if (kind == CreateKind.FOLDER) "フォルダ名" else "ファイル名 (拡張子付き)") },
+                    label = { Text(stringResource(if (kind == CreateKind.FOLDER) R.string.create_folder_name else R.string.create_file_name)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onConfirm(name, kind) }),
@@ -76,10 +78,10 @@ fun CreateDialog(
             TextButton(
                 onClick = { onConfirm(name, kind) },
                 enabled = name.isNotBlank(),
-            ) { Text("作成") }
+            ) { Text(stringResource(R.string.action_create)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 

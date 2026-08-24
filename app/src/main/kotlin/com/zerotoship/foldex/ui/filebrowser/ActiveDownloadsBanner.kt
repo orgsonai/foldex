@@ -16,6 +16,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.zerotoship.foldex.R
 
 /**
  * バックグラウンド DL バナー。
@@ -37,12 +40,12 @@ internal fun ActiveDownloadsBanner(downloads: List<ActiveDownload>) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "DL中 ${downloads.size} 件",
+                    text = pluralStringResource(R.plurals.downloads_active, downloads.size, downloads.size),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 Text(
-                    text = "  ${first.name}${if (downloads.size > 1) " 他" else ""}",
+                    text = "  ${first.name}${if (downloads.size > 1) stringResource(R.string.downloads_more) else ""}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     maxLines = 1,

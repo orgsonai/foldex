@@ -99,17 +99,17 @@ fun SyncJobsScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("同期") },
+                title = { Text(stringResource(R.string.sync_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onAdd) {
-                Icon(Icons.Default.Add, contentDescription = "同期ジョブを追加")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.sync_add_job))
             }
         },
     ) { padding ->
@@ -121,7 +121,7 @@ fun SyncJobsScreen(
         )
         if (state.jobs.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("同期ジョブがありません。FAB から追加してください", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.sync_empty), style = MaterialTheme.typography.bodyMedium)
             }
         } else {
             // ドラッグ中はローカル liveOrder に楽観更新し、ドロップ時に確定保存する。
@@ -167,16 +167,16 @@ fun SyncJobsScreen(
     pendingDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("削除しますか?") },
-            text = { Text("「${target.name}」を削除します。前回同期状態の記録も消えます。") },
+            title = { Text(stringResource(R.string.sync_delete_title)) },
+            text = { Text(stringResource(R.string.sync_delete_body, target.name)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.delete(target)
                     pendingDelete = null
-                }) { Text("削除") }
+                }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("キャンセル") }
+                TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -199,7 +199,7 @@ private fun SyncJobRow(
             // このハンドルを長押し = ドラッグ開始。
             Icon(
                 Icons.Default.DragHandle,
-                contentDescription = "ドラッグして並び替え",
+                contentDescription = stringResource(R.string.action_reorder),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = dragHandleModifier.padding(end = 8.dp),
             )
@@ -221,12 +221,12 @@ private fun SyncJobRow(
                 )
                 nextRunLabel(job)?.let { next ->
                     Text(
-                        "次回: $next",
+                        stringResource(R.string.sync_next_run, next),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Text("前回: ${lastRunLabel(job)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.sync_last_run, lastRunLabel(job)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(checked = job.enabled, onCheckedChange = onToggleEnabled)
         }
@@ -237,11 +237,11 @@ private fun SyncJobRow(
             when (runStatus) {
                 com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE ->
                     IconButton(onClick = onRunNow) {
-                        Icon(Icons.Default.Sync, contentDescription = "今すぐ同期")
+                        Icon(Icons.Default.Sync, contentDescription = stringResource(R.string.sync_run_now))
                     }
                 com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.ENQUEUED ->
                     IconButton(onClick = onCancelRun) {
-                        Icon(Icons.Default.Close, contentDescription = "キュー待ちを解除")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.sync_cancel_queue))
                     }
                 com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.RUNNING ->
                     IconButton(onClick = onCancelRun) {
@@ -252,16 +252,16 @@ private fun SyncJobRow(
                             )
                             Icon(
                                 Icons.Default.Close,
-                                contentDescription = "実行を停止",
+                                contentDescription = stringResource(R.string.sync_cancel_running),
                                 modifier = Modifier.size(12.dp),
                             )
                         }
                     }
             }
-            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "編集") }
-            IconButton(onClick = onOpenBackups) { Icon(Icons.Default.History, contentDescription = "削除バックアップ") }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.action_edit)) }
+            IconButton(onClick = onOpenBackups) { Icon(Icons.Default.History, contentDescription = stringResource(R.string.sync_delete_backups)) }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "削除") }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_delete)) }
         }
     }
 }
@@ -294,21 +294,21 @@ private fun NotificationPermissionBanner() {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                "通知が許可されていません",
+                stringResource(R.string.notification_denied_title),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
             Text(
-                "同期の完了通知を受け取るには、通知を許可してください。",
+                stringResource(R.string.notification_denied_sync),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
-                    Text("許可する")
+                    Text(stringResource(R.string.notification_allow))
                 }
                 TextButton(onClick = { openAppNotificationSettings(context) }) {
-                    Text("設定を開く")
+                    Text(stringResource(R.string.action_open_settings))
                 }
             }
         }
@@ -443,9 +443,9 @@ private fun openAppNotificationSettings(context: Context) {
 private fun JobStatusChip(status: com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus) {
     val (label, container, content) = when (status) {
         com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.RUNNING ->
-            Triple("実行中", MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
+            Triple(stringResource(R.string.sync_status_running), MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
         com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.ENQUEUED ->
-            Triple("キュー中", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+            Triple(stringResource(R.string.sync_status_queued), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
         com.zerotoship.foldex.sync.scheduler.SyncScheduler.JobRunStatus.IDLE -> return
     }
     androidx.compose.material3.Surface(

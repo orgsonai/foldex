@@ -23,6 +23,7 @@ import com.zerotoship.foldex.core.model.StorageProvider
 import com.zerotoship.foldex.sync.engine.SyncEngine
 import com.zerotoship.foldex.sync.model.SyncProgress
 import com.zerotoship.foldex.sync.model.SyncResult
+import com.zerotoship.foldex.sync.R
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -77,7 +78,10 @@ class SyncWorker @AssistedInject constructor(
         return when (result.outcome) {
             SyncResult.Outcome.SUCCESS -> {
                 if (notifyOnDone) {
-                    opNotifier.notify("同期が完了しました", "「${job.name}」: ${result.toSummaryLine()}")
+                    opNotifier.notify(
+                        applicationContext.getString(R.string.sync_notification_complete),
+                        applicationContext.getString(R.string.sync_notification_result, job.name, result.toSummaryLine(applicationContext)),
+                    )
                 }
                 Result.success(result.toData())
             }
@@ -86,7 +90,10 @@ class SyncWorker @AssistedInject constructor(
                     Result.retry()
                 } else {
                     if (notifyOnDone) {
-                        opNotifier.notify("同期が完了しました (一部失敗)", "「${job.name}」: ${result.toSummaryLine()}")
+                        opNotifier.notify(
+                            applicationContext.getString(R.string.sync_notification_complete_partial),
+                            applicationContext.getString(R.string.sync_notification_result, job.name, result.toSummaryLine(applicationContext)),
+                        )
                     }
                     Result.failure(result.toData())
                 }
@@ -103,8 +110,8 @@ class SyncWorker @AssistedInject constructor(
     private fun createForegroundInfo(): ForegroundInfo {
         ensureChannel()
         val notif = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setContentTitle("Foldex 同期中")
-            .setContentText("バックグラウンドで同期を実行しています")
+            .setContentTitle(applicationContext.getString(R.string.sync_notification_running_title))
+            .setContentText(applicationContext.getString(R.string.sync_notification_running_text))
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
@@ -122,10 +129,10 @@ class SyncWorker @AssistedInject constructor(
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "同期",
+            applicationContext.getString(R.string.sync_notification_channel),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "バックグラウンド同期の進行状態を表示します"
+            description = applicationContext.getString(R.string.sync_notification_channel_description)
             setShowBadge(false)
         }
         nm.createNotificationChannel(channel)
@@ -151,7 +158,7 @@ class SyncWorker @AssistedInject constructor(
 
     private fun SyncResult.toData(): Data = workDataOf(
         KEY_RESULT_OUTCOME to outcome.name,
-        KEY_RESULT_SUMMARY to toSummaryLine(),
+        KEY_RESULT_SUMMARY to toSummaryLine(applicationContext),
         KEY_RESULT_TRANSFERRED to transferredCount,
         KEY_RESULT_DELETED to deleted,
         KEY_RESULT_CONFLICTS to conflicts,

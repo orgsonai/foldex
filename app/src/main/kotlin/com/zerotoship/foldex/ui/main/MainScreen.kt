@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -41,6 +42,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.zerotoship.foldex.core.model.Connection
+import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.home.HomeFunction
 import com.zerotoship.foldex.ui.connections.ConnectionsScreen
@@ -63,16 +65,16 @@ import com.zerotoship.foldex.ui.sync.SyncJobsScreen
 
 private enum class TopTab(
     val route: String,
-    val label: String,
+    val labelRes: Int,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
 ) {
-    HOME("home", "HOME", Icons.Filled.Home, Icons.Outlined.Home),
-    FILES("files", "ファイル", Icons.Filled.Folder, Icons.Outlined.Folder),
-    CONNECTIONS("connections", "接続", Icons.Filled.Lan, Icons.Outlined.Lan),
-    SERVER("server", "サーバー", Icons.Filled.Storage, Icons.Outlined.Storage),
-    SYNC("sync", "同期", Icons.Filled.Sync, Icons.Outlined.Sync),
-    SETTINGS("settings", "設定", Icons.Filled.Settings, Icons.Outlined.Settings),
+    HOME("home", R.string.tab_home, Icons.Filled.Home, Icons.Outlined.Home),
+    FILES("files", R.string.tab_files, Icons.Filled.Folder, Icons.Outlined.Folder),
+    CONNECTIONS("connections", R.string.tab_connections, Icons.Filled.Lan, Icons.Outlined.Lan),
+    SERVER("server", R.string.tab_server, Icons.Filled.Storage, Icons.Outlined.Storage),
+    SYNC("sync", R.string.tab_sync, Icons.Filled.Sync, Icons.Outlined.Sync),
+    SETTINGS("settings", R.string.tab_settings, Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
 @Composable
@@ -163,10 +165,10 @@ fun MainScreen(
                         icon = {
                             Icon(
                                 if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                contentDescription = tab.label,
+                                contentDescription = stringResource(tab.labelRes),
                             )
                         },
-                        label = { Text(tab.label) },
+                        label = { Text(stringResource(tab.labelRes)) },
                     )
                 }
             }

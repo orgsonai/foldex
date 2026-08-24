@@ -121,6 +121,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -219,7 +220,7 @@ fun FileBrowserScreen(
                     )
             }
             if (runCatching { context.startActivity(intent) }.isFailure) {
-                snackbarHostState.showSnackbar("開けるアプリが見つかりません")
+                snackbarHostState.showSnackbar(context.getString(R.string.file_no_opening_app))
             }
         }
     }
@@ -321,7 +322,7 @@ fun FileBrowserScreen(
                             value = state.searchQuery,
                             onValueChange = { viewModel.setSearchQuery(it) },
                             placeholder = {
-                                Text(if (state.searchInContent) "本文を検索…" else "ファイル名を検索…")
+                                Text(stringResource(if (state.searchInContent) R.string.search_content else R.string.search_file_name))
                             },
                             singleLine = true,
                             colors = TextFieldDefaults.colors(
@@ -342,7 +343,7 @@ fun FileBrowserScreen(
                         FilterChip(
                             selected = state.searchInContent,
                             onClick = { viewModel.setSearchInContent(!state.searchInContent) },
-                            label = { Text("本文") },
+                            label = { Text(stringResource(R.string.search_content_chip)) },
                             leadingIcon = if (state.searchInContent) {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             } else {
@@ -354,7 +355,7 @@ fun FileBrowserScreen(
                         FilterChip(
                             selected = state.searchRecursive,
                             onClick = { viewModel.setSearchRecursive(!state.searchRecursive) },
-                            label = { Text("全ての階層") },
+                            label = { Text(stringResource(R.string.search_all_levels)) },
                             leadingIcon = if (state.searchRecursive) {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             } else {
@@ -362,7 +363,7 @@ fun FileBrowserScreen(
                             },
                         )
                         IconButton(onClick = { viewModel.closeSearch() }) {
-                            Icon(Icons.Default.Close, contentDescription = "検索を閉じる")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.search_close))
                         }
                     },
                 )
@@ -370,7 +371,7 @@ fun FileBrowserScreen(
                 TopAppBar(
                     title = {
                         if (state.isSelectionMode) {
-                            Text("${state.selectedUris.size}件選択中")
+                            Text(pluralStringResource(R.plurals.selection_count, state.selectedUris.size, state.selectedUris.size))
                         } else {
                             // タップ: パスを手動入力するダイアログを開く。
                             // 長押し: 現在の絶対パスをクリップボードへコピー。
@@ -385,8 +386,8 @@ fun FileBrowserScreen(
                                         val path = viewModel.currentAbsolutePath()
                                         if (path != null) {
                                             drawerScope.launch {
-                                                clipboard.setPlainText("パス", path)
-                                                snackbarHostState.showSnackbar("パスをコピーしました: $path")
+                                                clipboard.setPlainText(context.getString(R.string.clipboard_path_label), path)
+                                                snackbarHostState.showSnackbar(context.getString(R.string.path_copied, path))
                                             }
                                         }
                                     },
@@ -399,13 +400,13 @@ fun FileBrowserScreen(
                         // 上へ戻る操作はパンくず・端末の戻るボタンで行う。
                         if (state.isSelectionMode) {
                             IconButton(onClick = { viewModel.clearSelection() }) {
-                                Icon(Icons.Default.Close, contentDescription = "選択解除")
+                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.selection_clear))
                             }
                         } else {
                             IconButton(onClick = {
                                 drawerScope.launch { drawerState.open() }
                             }) {
-                                Icon(Icons.Default.Menu, contentDescription = "メニュー")
+                                Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.home_menu))
                             }
                         }
                     },
@@ -413,18 +414,18 @@ fun FileBrowserScreen(
                         // タイトル (内部ストレージ名等) を埋もれさせないため、常時表示は検索と
                         // オーバーフローの 2 つだけにする。表示モード切替・お気に入り・更新は ⋮ へ。
                         IconButton(onClick = { viewModel.toggleSearch() }) {
-                            Icon(Icons.Default.Search, contentDescription = "検索")
+                            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.action_search))
                         }
                         var menuOpen by remember { mutableStateOf(false) }
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
+                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.home_menu))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             val curUri = state.currentUri
                             if (curUri != null) {
                                 val isFav = curUri.toStorageString() in state.favoriteUris
                                 DropdownMenuItem(
-                                    text = { Text(if (isFav) "お気に入りから外す" else "お気に入りに追加") },
+                                    text = { Text(stringResource(if (isFav) R.string.favorite_remove else R.string.favorite_add)) },
                                     leadingIcon = {
                                         Icon(if (isFav) Icons.Filled.Star else Icons.Outlined.StarBorder, null)
                                     },
@@ -432,19 +433,19 @@ fun FileBrowserScreen(
                                 )
                                 HorizontalDivider()
                             }
-                            ViewModeMenuItem(ViewMode.LIST, "リスト表示", Icons.AutoMirrored.Outlined.List, state.viewMode) {
+                            ViewModeMenuItem(ViewMode.LIST, stringResource(R.string.view_list), Icons.AutoMirrored.Outlined.List, state.viewMode) {
                                 viewModel.setViewMode(it); menuOpen = false
                             }
-                            ViewModeMenuItem(ViewMode.DETAILED, "詳細表示", Icons.AutoMirrored.Outlined.ViewList, state.viewMode) {
+                            ViewModeMenuItem(ViewMode.DETAILED, stringResource(R.string.view_detailed), Icons.AutoMirrored.Outlined.ViewList, state.viewMode) {
                                 viewModel.setViewMode(it); menuOpen = false
                             }
-                            ViewModeMenuItem(ViewMode.GRID, "グリッド表示", Icons.Outlined.GridView, state.viewMode) {
+                            ViewModeMenuItem(ViewMode.GRID, stringResource(R.string.view_grid), Icons.Outlined.GridView, state.viewMode) {
                                 viewModel.setViewMode(it); menuOpen = false
                             }
                             HorizontalDivider()
                             // ソート
                             Text(
-                                "並び替え",
+                                stringResource(R.string.sort_title),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -469,13 +470,13 @@ fun FileBrowserScreen(
                                     },
                                 )
                             }
-                            sortItem("名前", com.zerotoship.foldex.core.model.SortBy.NAME)
-                            sortItem("サイズ", com.zerotoship.foldex.core.model.SortBy.SIZE)
-                            sortItem("更新日時", com.zerotoship.foldex.core.model.SortBy.DATE)
-                            sortItem("種類", com.zerotoship.foldex.core.model.SortBy.TYPE)
+                            sortItem(stringResource(R.string.sort_name), com.zerotoship.foldex.core.model.SortBy.NAME)
+                            sortItem(stringResource(R.string.sort_size), com.zerotoship.foldex.core.model.SortBy.SIZE)
+                            sortItem(stringResource(R.string.sort_modified), com.zerotoship.foldex.core.model.SortBy.DATE)
+                            sortItem(stringResource(R.string.sort_type), com.zerotoship.foldex.core.model.SortBy.TYPE)
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text(if (state.showHidden) "隠しファイルを隠す" else "隠しファイルを表示") },
+                                text = { Text(stringResource(if (state.showHidden) R.string.hidden_hide else R.string.hidden_show)) },
                                 leadingIcon = {
                                     Icon(
                                         if (state.showHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -487,10 +488,10 @@ fun FileBrowserScreen(
                             if (curUri != null) {
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text = { Text("使用量を分析") },
+                                    text = { Text(stringResource(R.string.usage_analyze)) },
                                     leadingIcon = { Icon(Icons.Outlined.PieChart, null) },
                                     onClick = {
-                                        val name = state.breadcrumbs.lastOrNull()?.displayName ?: "使用量"
+                                        val name = state.breadcrumbs.lastOrNull()?.displayName ?: context.getString(R.string.usage_title)
                                         runCatching {
                                             context.startActivity(
                                                 com.zerotoship.foldex.ui.usage.DiskUsageActivity.intent(
@@ -504,7 +505,7 @@ fun FileBrowserScreen(
                             }
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("更新") },
+                                text = { Text(stringResource(R.string.refresh)) },
                                 leadingIcon = { Icon(Icons.Outlined.Refresh, null) },
                                 onClick = { viewModel.refresh(); menuOpen = false },
                             )
@@ -591,8 +592,8 @@ fun FileBrowserScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         val opLabel = when (state.clipboard) {
-                            is ClipboardOperation.Copy -> "コピー: ${state.clipboard!!.nodes.size}件"
-                            is ClipboardOperation.Cut -> "切り取り: ${state.clipboard!!.nodes.size}件"
+                            is ClipboardOperation.Copy -> pluralStringResource(R.plurals.clipboard_copy_count, state.clipboard!!.nodes.size, state.clipboard!!.nodes.size)
+                            is ClipboardOperation.Cut -> pluralStringResource(R.plurals.clipboard_cut_count, state.clipboard!!.nodes.size, state.clipboard!!.nodes.size)
                             null -> ""
                         }
                         Text(
@@ -606,7 +607,7 @@ fun FileBrowserScreen(
                             TextButton(
                                 onClick = { viewModel.clearClipboard() },
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            ) { Text("クリア") }
+                            ) { Text(stringResource(R.string.action_clear)) }
                             Spacer(Modifier.size(4.dp))
                             Button(
                                 onClick = { viewModel.paste() },
@@ -617,7 +618,7 @@ fun FileBrowserScreen(
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(Modifier.size(4.dp))
-                                Text("貼り付け")
+                                Text(stringResource(R.string.action_paste))
                             }
                         }
                     }
@@ -627,7 +628,7 @@ fun FileBrowserScreen(
         floatingActionButton = {
             if (!state.isSelectionMode && !state.canPaste && state.currentUri != null) {
                 FloatingActionButton(onClick = { viewModel.showCreateDialog(CreateKind.FOLDER) }) {
-                    Icon(Icons.Default.Add, contentDescription = "新規作成")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.create_new))
                 }
             }
         },
@@ -691,8 +692,7 @@ fun FileBrowserScreen(
                         state.searchQuery.isEmpty() ->
                             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                                 Text(
-                                    "キーワードを入力すると、本文から検索します\n" +
-                                        "(テキスト / json / csv / Word / Excel / PowerPoint …)",
+                                    stringResource(R.string.content_search_hint),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -703,14 +703,14 @@ fun FileBrowserScreen(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     CircularProgressIndicator()
                                     Spacer(Modifier.height(12.dp))
-                                    Text("本文を検索中…",
+                                    Text(stringResource(R.string.content_searching),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         state.contentResults.isEmpty() ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("「${state.searchQuery}」を含むファイルは見つかりません",
+                                Text(stringResource(R.string.content_search_empty, state.searchQuery),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -728,14 +728,14 @@ fun FileBrowserScreen(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     CircularProgressIndicator()
                                     Spacer(Modifier.height(12.dp))
-                                    Text("全ての階層を検索中…",
+                                    Text(stringResource(R.string.recursive_searching),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         state.recursiveResults.isEmpty() && state.searchQuery.isNotEmpty() ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("「${state.searchQuery}」に一致するファイルは全ての階層にありません",
+                                Text(stringResource(R.string.recursive_search_empty, state.searchQuery),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -751,7 +751,7 @@ fun FileBrowserScreen(
                     }
                     state.filteredFiles.isEmpty() && state.searchQuery.isNotEmpty() ->
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("「${state.searchQuery}」に一致するファイルはありません",
+                            Text(stringResource(R.string.name_search_empty, state.searchQuery),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -832,21 +832,20 @@ fun FileBrowserScreen(
     state.pendingApplyViewModeToSubtree?.let { mode ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { viewModel.applyViewModeToSubtree(false) },
-            title = { Text("配下のフォルダにも適用?") },
+            title = { Text(stringResource(R.string.view_apply_subfolders_title)) },
             text = {
                 Text(
-                    "この「${viewModeLabel(mode)}」を、現在のフォルダの配下にも初期値として適用しますか?\n" +
-                        "(個別フォルダで別のモードを選び直せば上書きされます)",
+                    stringResource(R.string.view_apply_subfolders_body, viewModeLabel(mode)),
                 )
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = { viewModel.applyViewModeToSubtree(true) }) {
-                    Text("配下にも適用")
+                    Text(stringResource(R.string.view_apply_subfolders))
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { viewModel.applyViewModeToSubtree(false) }) {
-                    Text("このフォルダのみ")
+                    Text(stringResource(R.string.view_current_only))
                 }
             },
         )
@@ -854,10 +853,11 @@ fun FileBrowserScreen(
     } // end ModalNavigationDrawer content
 }
 
+@Composable
 private fun viewModeLabel(mode: ViewMode): String = when (mode) {
-    ViewMode.LIST -> "リスト"
-    ViewMode.DETAILED -> "詳細"
-    ViewMode.GRID -> "グリッド"
+    ViewMode.LIST -> stringResource(R.string.view_list_short)
+    ViewMode.DETAILED -> stringResource(R.string.view_detailed_short)
+    ViewMode.GRID -> stringResource(R.string.view_grid_short)
 }
 
 @Composable
@@ -1089,19 +1089,19 @@ private fun NoAccessContent(onRequestPermission: () -> Unit, onPickFolder: () ->
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("ストレージへのアクセスが必要です", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.storage_access_required), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(16.dp))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Button(onClick = onRequestPermission) {
-                Text("すべてのファイルへのアクセスを許可")
+                Text(stringResource(R.string.grant_all_files_access))
             }
             Spacer(Modifier.height(8.dp))
-            Text("または", style = MaterialTheme.typography.bodySmall,
+            Text(stringResource(R.string.permission_or), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
         }
         Button(onClick = onPickFolder) {
-            Text("フォルダを選択して開く")
+            Text(stringResource(R.string.pick_folder))
         }
     }
 }
@@ -1116,7 +1116,7 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
         Text(text = message, style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onRetry) { Text("再試行") }
+        Button(onClick = onRetry) { Text(stringResource(R.string.retry)) }
     }
 }
 
@@ -1128,10 +1128,9 @@ private fun EmptyContent() {
     LazyColumn(Modifier.fillMaxSize()) {
         item {
             Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
-                Text("このフォルダは空です", style = MaterialTheme.typography.bodyMedium,
+                Text(stringResource(R.string.folder_empty), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
-
