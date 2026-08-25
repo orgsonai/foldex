@@ -1,0 +1,2 @@
+1.6.2
+- Added an optional "Record display performance" setting that logs dropped frames to the app log, so sluggishness can be traced without a PC

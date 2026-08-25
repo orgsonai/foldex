@@ -14,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -24,6 +25,7 @@ import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.model.ThemeMode
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import com.zerotoship.foldex.ui.main.MainScreen
+import com.zerotoship.foldex.ui.perf.JankTracker
 import com.zerotoship.foldex.ui.settings.SettingsViewModel
 import com.zerotoship.foldex.ui.theme.FoldexTheme
 import com.zerotoship.foldex.sync.scheduler.SyncScheduler
@@ -45,6 +47,9 @@ class MainActivity : ComponentActivity() {
     /** 起動時、設定が読めるまで最初の描画を止めるために見る。 */
     @Inject lateinit var settingsRepository: SettingsRepository
 
+    /** 「動作の重さを記録する」が ON のときだけフレームの遅れを測る。 */
+    @Inject lateinit var jankTracker: JankTracker
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -63,6 +68,13 @@ class MainActivity : ComponentActivity() {
             }
             var shortcut by pendingShortcut
             var shares by pendingShares
+
+            // 設定が ON の間だけ計測する。画面を閉じるときに必ず外す
+            // (残したままだとフレームごとのコールバックが生き続ける)。
+            DisposableEffect(settings.logFramePerformance) {
+                if (settings.logFramePerformance) jankTracker.attach(this@MainActivity)
+                onDispose { jankTracker.detach() }
+            }
             FoldexTheme(
                 darkTheme = darkTheme,
                 dynamicColor = settings.dynamicColor,
@@ -74,6 +86,7 @@ class MainActivity : ComponentActivity() {
                     onShortcutConsumed = { shortcut = null },
                     sharedUris = shares,
                     onSharedUrisConsumed = { shares = emptyList() },
+                    onRouteChanged = jankTracker::setScreen,
                 )
             }
         }

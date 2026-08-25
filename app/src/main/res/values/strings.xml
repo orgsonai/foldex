@@ -1008,4 +1008,6 @@
         <item quantity="one">Show older logs (%1$d more line)</item>
         <item quantity="other">Show older logs (%1$d more lines)</item>
     </plurals>
+    <string name="settings_log_frame_perf">Record display performance</string>
+    <string name="settings_log_frame_perf_sub">Writes dropped frames to the app log so slowness can be traced. Turn off once you are done.</string>
 </resources>

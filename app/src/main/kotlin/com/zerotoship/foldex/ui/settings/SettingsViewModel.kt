@@ -133,6 +133,7 @@ class SettingsViewModel @Inject constructor(
     fun setNotifyOnFileOpComplete(enabled: Boolean) = viewModelScope.launch { repo.setNotifyOnFileOpComplete(enabled) }
     fun setNotifyOnExtractComplete(enabled: Boolean) = viewModelScope.launch { repo.setNotifyOnExtractComplete(enabled) }
     fun setNotifyOnSyncComplete(enabled: Boolean) = viewModelScope.launch { repo.setNotifyOnSyncComplete(enabled) }
+    fun setLogFramePerformance(enabled: Boolean) = viewModelScope.launch { repo.setLogFramePerformance(enabled) }
     fun setSyncQueueTimeoutEnabled(enabled: Boolean) = viewModelScope.launch { repo.setSyncQueueTimeoutEnabled(enabled) }
     fun setSyncQueueTimeoutMinutes(minutes: Int) = viewModelScope.launch { repo.setSyncQueueTimeoutMinutes(minutes) }
 }

@@ -47,6 +47,7 @@ class SettingsRepository @Inject constructor(
             dynamicColor = p[KEY_DYNAMIC_COLOR] ?: false,
             colorTheme = p[KEY_COLOR_THEME]?.let { runCatching { AppColorTheme.valueOf(it) }.getOrNull() }
                 ?: AppColorTheme.GREEN,
+            logFramePerformance = p[KEY_LOG_FRAME_PERF] ?: false,
             showExtensionBadge = p[KEY_EXTENSION_BADGE] ?: true,
             confirmBeforeDelete = p[KEY_CONFIRM_DELETE] ?: true,
             undoTimeoutSeconds = p[KEY_UNDO_TIMEOUT] ?: 5,
@@ -117,6 +118,8 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setNotifyOnSyncComplete(enabled: Boolean) = edit { it[KEY_NOTIFY_SYNC] = enabled }
 
+    suspend fun setLogFramePerformance(enabled: Boolean) = edit { it[KEY_LOG_FRAME_PERF] = enabled }
+
     suspend fun setSyncQueueTimeoutEnabled(enabled: Boolean) = edit { it[KEY_SYNC_QUEUE_TIMEOUT_ON] = enabled }
 
     suspend fun setSyncQueueTimeoutMinutes(minutes: Int) = edit { it[KEY_SYNC_QUEUE_TIMEOUT_MIN] = minutes }
@@ -150,5 +153,6 @@ class SettingsRepository @Inject constructor(
         val KEY_SYNC_QUEUE_TIMEOUT_ON = booleanPreferencesKey("sync_queue_timeout_enabled")
         val KEY_SYNC_QUEUE_TIMEOUT_MIN = intPreferencesKey("sync_queue_timeout_minutes")
         val KEY_PERMANENT_LOG_URI = stringPreferencesKey("permanent_log_uri")
+        val KEY_LOG_FRAME_PERF = booleanPreferencesKey("log_frame_performance")
     }
 }

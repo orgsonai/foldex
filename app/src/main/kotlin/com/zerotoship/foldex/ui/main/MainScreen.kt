@@ -84,11 +84,17 @@ fun MainScreen(
     onShortcutConsumed: () -> Unit = {},
     sharedUris: List<android.net.Uri> = emptyList(),
     onSharedUrisConsumed: () -> Unit = {},
+    /** 表示中の画面が変わったら知らせる (動作の重さの計測で、どの画面かを残すため)。 */
+    onRouteChanged: (String) -> Unit = {},
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val context = LocalContext.current
+
+    androidx.compose.runtime.LaunchedEffect(currentRoute) {
+        onRouteChanged(currentRoute ?: "-")
+    }
 
     fun selectTab(tab: TopTab) {
         navController.navigate(tab.route) {

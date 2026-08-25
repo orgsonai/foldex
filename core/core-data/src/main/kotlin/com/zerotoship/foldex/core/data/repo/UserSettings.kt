@@ -26,6 +26,13 @@ data class UserSettings(
      * 既定は Foldex 独自の Forest Green。[dynamicColor] が ON のときは無視される。
      */
     val colorTheme: AppColorTheme = AppColorTheme.GREEN,
+    /**
+     * 描画の遅れ (もっさり) をアプリ内ログに記録するか。既定は OFF。
+     *
+     * この端末では adb が使えないため、動作の重さを調べる手段がこれしかない。
+     * 調べ終わったら戻してよい。
+     */
+    val logFramePerformance: Boolean = false,
     /** ファイル一覧でファイル名の後ろに拡張子バッジを表示するか。 */
     val showExtensionBadge: Boolean = true,
     /** 削除前に確認ダイアログを出すか。 */

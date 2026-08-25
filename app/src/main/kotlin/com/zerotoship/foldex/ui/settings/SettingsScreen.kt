@@ -373,6 +373,12 @@ fun SettingsScreen(
                 subtitle = stringResource(R.string.settings_logs_sub),
                 onClick = onOpenLogs,
             )
+            SwitchRow(
+                title = stringResource(R.string.settings_log_frame_perf),
+                subtitle = stringResource(R.string.settings_log_frame_perf_sub),
+                checked = settings.logFramePerformance,
+                onCheckedChange = viewModel::setLogFramePerformance,
+            )
 
             HorizontalDivider()
             SettingsSectionHeader(stringResource(R.string.settings_section_storage))
