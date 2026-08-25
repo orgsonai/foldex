@@ -7,6 +7,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.View
+import android.view.ViewTreeObserver
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.model.ThemeMode
 import com.zerotoship.foldex.ui.filebrowser.FileBrowserViewModel
 import com.zerotoship.foldex.ui.main.MainScreen
@@ -37,6 +41,9 @@ class MainActivity : ComponentActivity() {
     private val pendingShares = mutableStateOf<List<Uri>>(emptyList())
 
     @Inject lateinit var syncScheduler: SyncScheduler
+
+    /** 起動時、設定が読めるまで最初の描画を止めるために見る。 */
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,6 +77,32 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        holdFirstFrameUntilSettingsLoaded()
+    }
+
+    /**
+     * 設定が DataStore から届くまで**最初の 1 枚を描かせない**。
+     *
+     * 設定は非同期に届くため、そのまま描くと既定テーマ (ライト/GREEN) で 1 度描いてから
+     * 本来のテーマに切り替わる = 起動のたびにテーマがちらつく。描画を数ミリ秒待たせれば、
+     * その間はシステムが出している起動画面のままなので、切り替わりが見えない。
+     *
+     * 万一 DataStore が応答しなくてもアプリが開かなくなっては困るので、上限を設けて
+     * 時間切れなら既定値のまま描き始める。
+     */
+    private fun holdFirstFrameUntilSettingsLoaded() {
+        val content = findViewById<View>(android.R.id.content) ?: return
+        val deadline = SystemClock.uptimeMillis() + SETTINGS_WAIT_MAX_MS
+        content.viewTreeObserver.addOnPreDrawListener(
+            object : ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    val ready = settingsRepository.loaded.value != null ||
+                        SystemClock.uptimeMillis() >= deadline
+                    if (ready) content.viewTreeObserver.removeOnPreDrawListener(this)
+                    return ready
+                }
+            },
+        )
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -104,6 +137,9 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** 設定の読み込みを待つ上限 (ms)。これを過ぎたら既定値のまま描き始める。 */
+        private const val SETTINGS_WAIT_MAX_MS = 700L
+
         const val EXTRA_SHORTCUT = "foldex.shortcut"
     }
 }

@@ -995,4 +995,7 @@
     <string name="image_select_hint">写真をなぞって範囲を選びます。</string>
     <string name="image_fill_layer_color">塗りつぶし</string>
     <string name="image_fill_layer_clear">透明にした範囲</string>
+    <plurals name="log_show_older">
+        <item quantity="other">古いログもすべて表示 (残り %1$d 行)</item>
+    </plurals>
 </resources>

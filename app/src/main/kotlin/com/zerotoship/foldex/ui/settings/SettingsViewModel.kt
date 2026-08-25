@@ -19,6 +19,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -34,8 +35,21 @@ class SettingsViewModel @Inject constructor(
     private val updateChecker: UpdateChecker,
 ) : ViewModel() {
 
-    val settings: StateFlow<UserSettings> = repo.settings
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UserSettings())
+    /**
+     * 設定。**初期値に「既に読み込み済みの値」を使う**のが要点。
+     *
+     * 以前は `WhileSubscribed(5_000)` + 初期値 `UserSettings()` だったため、
+     * 画面を開き直すたびに既定値から始まり、テーマが一瞬切り替わって見えていた。
+     * リポジトリ側がプロセスで 1 本の [SettingsRepository.loaded] を温めているので、
+     * 2 回目以降は最初から正しい値で描ける。
+     */
+    val settings: StateFlow<UserSettings> = repo.loaded
+        .filterNotNull()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            repo.loaded.value ?: UserSettings(),
+        )
 
     /** 更新確認の状態。ユーザーが設定画面で押したときだけ動かす (自動確認はしない)。 */
     private val _updateStatus = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)

@@ -1004,4 +1004,8 @@
     <string name="image_select_hint">Drag across the photo to select an area.</string>
     <string name="image_fill_layer_color">Fill</string>
     <string name="image_fill_layer_clear">Transparent area</string>
+    <plurals name="log_show_older">
+        <item quantity="one">Show older logs (%1$d more line)</item>
+        <item quantity="other">Show older logs (%1$d more lines)</item>
+    </plurals>
 </resources>

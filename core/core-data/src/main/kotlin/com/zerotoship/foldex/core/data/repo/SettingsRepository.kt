@@ -16,8 +16,14 @@ import com.zerotoship.foldex.core.model.DeleteBehavior
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -61,6 +67,22 @@ class SettingsRepository @Inject constructor(
             permanentLogUri = p[KEY_PERMANENT_LOG_URI],
         )
     }
+
+    /**
+     * 読み込みが済んだ設定。**まだ DataStore から届いていない間は null。**
+     *
+     * `@Singleton` なのでプロセスに 1 本だけ存在し、`Eagerly` で常に温まっている。
+     * これが無いと、画面ごとの ViewModel が開くたびに既定値から読み直しになり、
+     * **設定画面を開くたびにテーマが一瞬既定値で描かれてから切り替わる**。
+     *
+     * null を潰さずそのまま公開しているのは、呼び出し側が「まだ読めていない」を
+     * 区別できるようにするため (起動時の最初の描画を止めるのに使う)。
+     */
+    val loaded: StateFlow<UserSettings?> = settings.stateIn(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        SharingStarted.Eagerly,
+        null,
+    )
 
     suspend fun setThemeMode(mode: ThemeMode) = edit { it[KEY_THEME_MODE] = mode.name }
 
