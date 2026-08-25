@@ -14,9 +14,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -40,7 +41,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -50,7 +50,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -73,10 +72,8 @@ fun AppLogScreen(
     val resources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     var confirmClear by remember { mutableStateOf(false) }
-    // 古い行まで全部出すか。既定は直近だけ (全行を 1 つの Text に載せると重すぎるため)。
-    var showAllLines by rememberSaveable { mutableStateOf(false) }
 
     // 永久ログの保存先 (.log) をユーザーに手動作成させる。
     // MIME に "text/plain" を使うと SAF が拡張子 .txt を補って "foldex.log.txt" になってしまうため、
@@ -98,10 +95,10 @@ fun AppLogScreen(
 
     // 新しい行が追加されたら自動で末尾へスクロール。
     // maxValue はレイアウトが終わるまで 0 なので、1 フレーム待ってから動かす。
-    LaunchedEffect(state.lines.size, showAllLines) {
+    LaunchedEffect(state.lines.size) {
         if (state.lines.isNotEmpty()) {
             withFrameNanos { }
-            scrollState.animateScrollTo(scrollState.maxValue)
+            listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
         }
     }
 
@@ -216,40 +213,29 @@ fun AppLogScreen(
                         primary = MaterialTheme.colorScheme.primary,
                         error = MaterialTheme.colorScheme.error,
                     )
-                    // 表示は「直近 LOG_WINDOW_LINES 行」に絞る。
-                    // 全行 (ログ上限 256KB = 2000 行超) を 1 つの Text に載せると、
-                    // 測定もレイアウトも毎回全体に掛かり、なぞり選択がまともに効かなくなる。
-                    // 行ごとに Text を分けない理由は変わらない (選択が行をまたげなくなる)。
-                    val hidden = (shown.size - LOG_WINDOW_LINES).coerceAtLeast(0)
-                    val windowed = if (showAllLines || hidden == 0) {
-                        shown
-                    } else {
-                        shown.takeLast(LOG_WINDOW_LINES)
+                    // 行ごとの Text を LazyColumn に並べる。内蔵ビューアの ReadOnlyText と同じ形。
+                    //
+                    // 全行を 1 つの Text に載せる形 (1.5.6〜1.6.2) は、1 行あたり最大 9 個の
+                    // スパンが数千個になり、なぞり選択のヒットテストが追いつかなかった。
+                    // 500 行に絞っても足りなかったので、器ごと変える。
+                    // 行をまたいだ選択は SelectionContainer が LazyColumn 越しでも扱える。
+                    val body = remember(state.lines, state.filter, palette) {
+                        buildLogLines(shown, palette)
                     }
-                    // remember のキーに shown をそのまま使うと、フィルタ時は毎回新しい List に
-                    // なるため再構築が走り続ける。元の行・フィルタ・表示範囲で持つ。
-                    val body = remember(state.lines, state.filter, showAllLines, palette) {
-                        buildLogText(windowed, palette)
-                    }
-                    Column(Modifier.fillMaxSize()) {
-                        if (hidden > 0 && !showAllLines) {
-                            TextButton(
-                                onClick = { showAllLines = true },
-                                modifier = Modifier.padding(horizontal = 4.dp),
-                            ) {
-                                Text(pluralStringResource(R.plurals.log_show_older, hidden, hidden))
+                    SelectionContainer {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            items(count = body.size, key = { it }) { i ->
+                                Text(
+                                    text = body[i],
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                )
                             }
-                        }
-                        SelectionContainer {
-                            Text(
-                                text = body,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(scrollState)
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                            )
                         }
                     }
                 }
@@ -271,12 +257,3 @@ fun AppLogScreen(
         )
     }
 }
-
-/**
- * 既定で画面に載せる行数 (新しい方から)。
- *
- * ログの上限は 256KB (`AppLogger.MAX_BYTES`) で 2000 行を超える。全部を 1 つの Text に
- * 載せると測定・レイアウトが毎回全体に掛かり、なぞり選択が指に付いてこなくなる。
- * 行をまたいだ選択は残したいので、行ごとに分けるのではなく **窓を切る**ことで軽くした。
- */
-private const val LOG_WINDOW_LINES = 500

@@ -227,20 +227,30 @@ internal fun ParsedLogLine.annotated(palette: LogPalette): AnnotatedString = bui
  * Text にすれば、ログの好きな範囲をなぞって部分コピーできる。
  * 日付が変わるところには日付だけの行を挟む (行頭からは日付を落としているため)。
  */
-internal fun buildLogText(lines: List<String>, palette: LogPalette): AnnotatedString = buildAnnotatedString {
+/**
+ * 表示用に 1 行ずつ組み立てる。日付の区切りも 1 行として混ぜる。
+ *
+ * **全行を 1 つの AnnotatedString にしない。** 1 行あたり最大 9 個のスパンが付くので、
+ * 数百行を 1 つの Text に載せると数千個のスパンになり、なぞり選択のヒットテストが
+ * 追いつかなくなる (実機で「選択が重くてできない」)。
+ * 内蔵ビューアの ReadOnlyText と同じく、行ごとの Text を LazyColumn に並べる形に合わせた。
+ */
+internal fun buildLogLines(lines: List<String>, palette: LogPalette): List<AnnotatedString> {
+    val out = ArrayList<AnnotatedString>(lines.size + 8)
     var prevDate = ""
-    lines.forEachIndexed { index, raw ->
+    for (raw in lines) {
         val parsed = parseLogLine(raw)
         if (parsed.parsed && parsed.date != prevDate) {
-            if (index > 0) append("\n\n")
-            withStyle(SpanStyle(color = palette.muted)) { append(parsed.date) }
-            append('\n')
+            out.add(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = palette.muted)) { append(parsed.date) }
+                },
+            )
             prevDate = parsed.date
-        } else if (index > 0) {
-            append('\n')
         }
-        append(parsed.annotated(palette))
+        out.add(parsed.annotated(palette))
     }
+    return out
 }
 
 /**

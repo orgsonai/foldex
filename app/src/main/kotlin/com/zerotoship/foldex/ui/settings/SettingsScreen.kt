@@ -108,10 +108,10 @@ fun SettingsScreen(
                 .padding(padding)
                 .fillMaxWidth(),
         ) {
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_display))
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_theme),
                     subtitle = stringResource(R.string.settings_theme_sub),
@@ -128,7 +128,7 @@ fun SettingsScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_material_you),
                     subtitle = stringResource(R.string.settings_material_you_sub),
@@ -136,7 +136,7 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setDynamicColor,
                 )
             }
-            item {
+            item(contentType = "row") {
                 // Material You OFF のときだけアクセント配色を選べる (ON のときは壁紙が優先)。
                 SettingRow(
                     title = stringResource(R.string.settings_accent),
@@ -166,10 +166,10 @@ fun SettingsScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "row") {
                 LanguageRow()
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_ext_badge),
                     subtitle = stringResource(R.string.settings_ext_badge_sub),
@@ -177,13 +177,13 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setShowExtensionBadge,
                 )
             }
-            item {
+            item(contentType = "divider") {
                 HorizontalDivider()
             }
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_behavior))
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_confirm_delete),
                     subtitle = stringResource(R.string.settings_confirm_delete_sub),
@@ -191,7 +191,7 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setConfirmBeforeDelete,
                 )
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_undo_timeout),
                     subtitle = stringResource(R.string.settings_undo_timeout_sub),
@@ -208,13 +208,13 @@ fun SettingsScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "divider") {
                 HorizontalDivider()
             }
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_notifications))
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_notify_fileop),
                     subtitle = stringResource(R.string.settings_notify_fileop_sub),
@@ -222,7 +222,7 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setNotifyOnFileOpComplete,
                 )
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_notify_extract),
                     subtitle = stringResource(R.string.settings_notify_extract_sub),
@@ -230,7 +230,7 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setNotifyOnExtractComplete,
                 )
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_notify_sync),
                     subtitle = stringResource(R.string.settings_notify_sync_sub),
@@ -238,13 +238,13 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setNotifyOnSyncComplete,
                 )
             }
-            item {
+            item(contentType = "divider") {
                 HorizontalDivider()
             }
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_trash))
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_delete_behavior),
                     subtitle = stringResource(R.string.settings_delete_behavior_sub),
@@ -261,7 +261,7 @@ fun SettingsScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_trash_retention),
                     subtitle = stringResource(R.string.settings_trash_retention_sub),
@@ -283,20 +283,20 @@ fun SettingsScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_open_trash),
                     subtitle = stringResource(R.string.settings_open_trash_sub),
                     onClick = onOpenTrash,
                 )
             }
-            item {
+            item(contentType = "divider") {
                 HorizontalDivider()
             }
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_sync))
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_sync_backup),
                     subtitle = stringResource(R.string.settings_sync_backup_sub),
@@ -304,7 +304,7 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setSyncDeleteBackup,
                 )
             }
-            item {
+            item(contentType = "row") {
                 if (settings.syncDeleteBackup) {
                     SettingRow(
                         title = stringResource(R.string.settings_sync_generations),
@@ -353,7 +353,7 @@ fun SettingsScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_queue_timeout_enabled),
                     subtitle = stringResource(R.string.settings_queue_timeout_enabled_sub),
@@ -361,7 +361,7 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setSyncQueueTimeoutEnabled,
                 )
             }
-            item {
+            item(contentType = "row") {
                 if (settings.syncQueueTimeoutEnabled) {
                     SettingRow(
                         title = stringResource(R.string.settings_queue_timeout),
@@ -385,20 +385,20 @@ fun SettingsScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "divider") {
                 HorizontalDivider()
             }
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_files))
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_file_types),
                     subtitle = stringResource(R.string.settings_file_types_sub),
                     onClick = onOpenFileTypes,
                 )
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_editor_limit),
                     subtitle = stringResource(R.string.settings_editor_limit_sub),
@@ -423,20 +423,20 @@ fun SettingsScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "divider") {
                 HorizontalDivider()
             }
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_logs))
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_logs),
                     subtitle = stringResource(R.string.settings_logs_sub),
                     onClick = onOpenLogs,
                 )
             }
-            item {
+            item(contentType = "switch") {
                 SwitchRow(
                     title = stringResource(R.string.settings_log_frame_perf),
                     subtitle = stringResource(R.string.settings_log_frame_perf_sub),
@@ -444,13 +444,13 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setLogFramePerformance,
                 )
             }
-            item {
+            item(contentType = "divider") {
                 HorizontalDivider()
             }
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_storage))
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_clear_cache),
                     subtitle = stringResource(R.string.settings_clear_cache_sub) +
@@ -458,16 +458,16 @@ fun SettingsScreen(
                     onClick = { pendingClear = true },
                 )
             }
-            item {
+            item(contentType = "divider") {
                 HorizontalDivider()
             }
-            item {
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_advanced))
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(title = stringResource(R.string.settings_version), subtitle = versionName)
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_check_update),
                     subtitle = when (val s = updateStatus) {
@@ -492,14 +492,14 @@ fun SettingsScreen(
                     },
                 )
             }
-            item {
+            item(contentType = "row") {
                 SettingRow(
                     title = stringResource(R.string.settings_license),
                     subtitle = stringResource(R.string.settings_license_sub),
                     onClick = onOpenLicenses,
                 )
             }
-            item {
+            item(contentType = "spacer") {
                 Spacer(Modifier.height(16.dp))
             }
         }

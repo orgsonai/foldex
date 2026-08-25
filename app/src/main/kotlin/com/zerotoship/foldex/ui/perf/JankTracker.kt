@@ -49,6 +49,8 @@ class JankTracker @Inject constructor(
     private var late = 0
     private var severe = 0
     private var worstMs = 0.0
+    /** 遅れたフレームの合計時間。平均を出すのに使う。 */
+    private var sumLateMs = 0.0
     private var sumInput = 0L
     private var sumLayout = 0L
     private var sumDraw = 0L
@@ -126,6 +128,7 @@ class JankTracker @Inject constructor(
             late++
             if (ms > budgetMs * SEVERE_FACTOR) severe++
             if (ms > worstMs) worstMs = ms
+            sumLateMs += ms
             // 内訳は「遅れたフレーム」についてだけ足す。速いフレームまで混ぜると
             // 平均が薄まって、どこが犯人か見えなくなる。
             sumInput += metrics.getMetric(FrameMetrics.INPUT_HANDLING_DURATION)
@@ -157,8 +160,12 @@ class JankTracker @Inject constructor(
         val pct = (late * 100.0 / total).roundToInt()
         val breakdown = breakdown()
         val seconds = ((now - windowStartMs) / 1000.0).roundToInt().coerceAtLeast(1)
-        val line = "$screen  late $late/$total (${pct}%)  worst ${fmt(worstMs)}ms  " +
-            "severe $severe  ${seconds}s  $breakdown"
+        // 平均を出すのが要点。「75% が遅延」でも平均 18ms なら体感はほぼ変わらないし、
+        // 平均 60ms なら別問題。worst だけでは、たまたま 1 枚重かったのか
+        // 全体が重いのかを区別できない。
+        val avg = if (late > 0) sumLateMs / late else 0.0
+        val line = "$screen  late $late/$total (${pct}%)  avg ${fmt(avg)}ms  " +
+            "worst ${fmt(worstMs)}ms  severe $severe  ${seconds}s  $breakdown"
         // 4 分の 1 以上のフレームが遅れていれば体感で分かる水準なので WARN に上げる。
         if (pct >= WARN_PERCENT) logger.warn(TAG, line) else logger.info(TAG, line)
         reset(now)
@@ -178,6 +185,7 @@ class JankTracker @Inject constructor(
         late = 0
         severe = 0
         worstMs = 0.0
+        sumLateMs = 0.0
         sumInput = 0
         sumLayout = 0
         sumDraw = 0
