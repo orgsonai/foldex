@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -99,328 +100,408 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_title)) }) },
     ) { padding ->
-        Column(
+        // 設定は 30 行以上ある。Column + verticalScroll だと画面外の行まで毎フレーム
+        // 描画されるため、スクロール中に描画だけで 456ms かかるフレームが出ていた
+        // (実機計測: draw=80%)。LazyColumn にして見えている行だけ描く。
+        LazyColumn(
             modifier = Modifier
                 .padding(padding)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .fillMaxWidth(),
         ) {
-            SettingsSectionHeader(stringResource(R.string.settings_section_display))
-            SettingRow(
-                title = stringResource(R.string.settings_theme),
-                subtitle = stringResource(R.string.settings_theme_sub),
-                wide = true,
-            ) {
-                ChipsControl {
-                    ThemeMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = settings.themeMode == mode,
-                            onClick = { viewModel.setThemeMode(mode) },
-                            label = { Text(stringResource(mode.labelRes)) },
-                        )
-                    }
-                }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_display))
             }
-            SwitchRow(
-                title = stringResource(R.string.settings_material_you),
-                subtitle = stringResource(R.string.settings_material_you_sub),
-                checked = settings.dynamicColor,
-                onCheckedChange = viewModel::setDynamicColor,
-            )
-            // Material You OFF のときだけアクセント配色を選べる (ON のときは壁紙が優先)。
-            SettingRow(
-                title = stringResource(R.string.settings_accent),
-                subtitle = stringResource(
-                    if (settings.dynamicColor) R.string.settings_accent_sub_locked
-                    else R.string.settings_accent_sub,
-                ),
-                wide = true,
-            ) {
-                ChipsControl {
-                    AppColorTheme.entries.forEach { theme ->
-                        FilterChip(
-                            selected = settings.colorTheme == theme,
-                            enabled = !settings.dynamicColor,
-                            onClick = { viewModel.setColorTheme(theme) },
-                            leadingIcon = {
-                                Box(
-                                    Modifier
-                                        .size(16.dp)
-                                        .clip(CircleShape)
-                                        .background(appColorThemeSwatch(theme)),
-                                )
-                            },
-                            label = { Text(stringResource(theme.labelRes)) },
-                        )
-                    }
-                }
-            }
-            LanguageRow()
-            SwitchRow(
-                title = stringResource(R.string.settings_ext_badge),
-                subtitle = stringResource(R.string.settings_ext_badge_sub),
-                checked = settings.showExtensionBadge,
-                onCheckedChange = viewModel::setShowExtensionBadge,
-            )
-
-            HorizontalDivider()
-            SettingsSectionHeader(stringResource(R.string.settings_section_behavior))
-            SwitchRow(
-                title = stringResource(R.string.settings_confirm_delete),
-                subtitle = stringResource(R.string.settings_confirm_delete_sub),
-                checked = settings.confirmBeforeDelete,
-                onCheckedChange = viewModel::setConfirmBeforeDelete,
-            )
-            SettingRow(
-                title = stringResource(R.string.settings_undo_timeout),
-                subtitle = stringResource(R.string.settings_undo_timeout_sub),
-                wide = true,
-            ) {
-                ChipsControl {
-                    listOf(3, 5, 10).forEach { sec ->
-                        FilterChip(
-                            selected = settings.undoTimeoutSeconds == sec,
-                            onClick = { viewModel.setUndoTimeoutSeconds(sec) },
-                            label = { Text(pluralStringResource(R.plurals.settings_seconds, sec, sec)) },
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider()
-            SettingsSectionHeader(stringResource(R.string.settings_section_notifications))
-            SwitchRow(
-                title = stringResource(R.string.settings_notify_fileop),
-                subtitle = stringResource(R.string.settings_notify_fileop_sub),
-                checked = settings.notifyOnFileOpComplete,
-                onCheckedChange = viewModel::setNotifyOnFileOpComplete,
-            )
-            SwitchRow(
-                title = stringResource(R.string.settings_notify_extract),
-                subtitle = stringResource(R.string.settings_notify_extract_sub),
-                checked = settings.notifyOnExtractComplete,
-                onCheckedChange = viewModel::setNotifyOnExtractComplete,
-            )
-            SwitchRow(
-                title = stringResource(R.string.settings_notify_sync),
-                subtitle = stringResource(R.string.settings_notify_sync_sub),
-                checked = settings.notifyOnSyncComplete,
-                onCheckedChange = viewModel::setNotifyOnSyncComplete,
-            )
-
-            HorizontalDivider()
-            SettingsSectionHeader(stringResource(R.string.settings_section_trash))
-            SettingRow(
-                title = stringResource(R.string.settings_delete_behavior),
-                subtitle = stringResource(R.string.settings_delete_behavior_sub),
-                wide = true,
-            ) {
-                ChipsControl {
-                    DeleteBehavior.entries.forEach { b ->
-                        FilterChip(
-                            selected = settings.deleteBehavior == b,
-                            onClick = { viewModel.setDeleteBehavior(b) },
-                            label = { Text(stringResource(b.labelRes)) },
-                        )
-                    }
-                }
-            }
-            SettingRow(
-                title = stringResource(R.string.settings_trash_retention),
-                subtitle = stringResource(R.string.settings_trash_retention_sub),
-                wide = true,
-            ) {
-                ChipsControl {
-                    listOf(7, 30, 90, 0).forEach { days ->
-                        FilterChip(
-                            selected = settings.trashRetentionDays == days,
-                            onClick = { viewModel.setTrashRetentionDays(days) },
-                            label = {
-                                Text(
-                                    if (days == 0) stringResource(R.string.settings_forever)
-                                    else pluralStringResource(R.plurals.settings_days, days, days),
-                                )
-                            },
-                        )
-                    }
-                }
-            }
-            SettingRow(
-                title = stringResource(R.string.settings_open_trash),
-                subtitle = stringResource(R.string.settings_open_trash_sub),
-                onClick = onOpenTrash,
-            )
-
-            HorizontalDivider()
-            SettingsSectionHeader(stringResource(R.string.settings_section_sync))
-            SwitchRow(
-                title = stringResource(R.string.settings_sync_backup),
-                subtitle = stringResource(R.string.settings_sync_backup_sub),
-                checked = settings.syncDeleteBackup,
-                onCheckedChange = viewModel::setSyncDeleteBackup,
-            )
-            if (settings.syncDeleteBackup) {
+            item {
                 SettingRow(
-                    title = stringResource(R.string.settings_sync_generations),
-                    subtitle = stringResource(R.string.settings_sync_generations_sub),
+                    title = stringResource(R.string.settings_theme),
+                    subtitle = stringResource(R.string.settings_theme_sub),
                     wide = true,
                 ) {
                     ChipsControl {
-                        listOf(1, 3, 5).forEach { n ->
+                        ThemeMode.entries.forEach { mode ->
                             FilterChip(
-                                selected = settings.syncBackupGenerations == n,
-                                onClick = { viewModel.setSyncBackupGenerations(n) },
-                                label = { Text(pluralStringResource(R.plurals.settings_generations, n, n)) },
-                            )
-                        }
-                    }
-                }
-                SettingRow(
-                    title = stringResource(R.string.settings_sync_threshold),
-                    subtitle = stringResource(R.string.settings_sync_threshold_sub),
-                    wide = true,
-                ) {
-                    ChipsControl {
-                        listOf(10, 50, 200, 1000).forEach { mb ->
-                            FilterChip(
-                                selected = settings.syncBackupThresholdMb == mb,
-                                onClick = { viewModel.setSyncBackupThresholdMb(mb) },
-                                label = { Text(if (mb >= 1000) "${mb / 1000}GB" else "${mb}MB") },
-                            )
-                        }
-                    }
-                }
-                SettingRow(
-                    title = stringResource(R.string.settings_sync_over_threshold),
-                    subtitle = stringResource(R.string.settings_sync_over_threshold_sub),
-                    wide = true,
-                ) {
-                    ChipsControl {
-                        SyncBackupPolicy.entries.forEach { p ->
-                            FilterChip(
-                                selected = settings.syncBackupPolicyOverThreshold == p,
-                                onClick = { viewModel.setSyncBackupPolicyOverThreshold(p) },
-                                label = { Text(stringResource(p.labelRes)) },
+                                selected = settings.themeMode == mode,
+                                onClick = { viewModel.setThemeMode(mode) },
+                                label = { Text(stringResource(mode.labelRes)) },
                             )
                         }
                     }
                 }
             }
-            SwitchRow(
-                title = stringResource(R.string.settings_queue_timeout_enabled),
-                subtitle = stringResource(R.string.settings_queue_timeout_enabled_sub),
-                checked = settings.syncQueueTimeoutEnabled,
-                onCheckedChange = viewModel::setSyncQueueTimeoutEnabled,
-            )
-            if (settings.syncQueueTimeoutEnabled) {
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_material_you),
+                    subtitle = stringResource(R.string.settings_material_you_sub),
+                    checked = settings.dynamicColor,
+                    onCheckedChange = viewModel::setDynamicColor,
+                )
+            }
+            item {
+                // Material You OFF のときだけアクセント配色を選べる (ON のときは壁紙が優先)。
                 SettingRow(
-                    title = stringResource(R.string.settings_queue_timeout),
-                    subtitle = stringResource(R.string.settings_queue_timeout_sub),
+                    title = stringResource(R.string.settings_accent),
+                    subtitle = stringResource(
+                        if (settings.dynamicColor) R.string.settings_accent_sub_locked
+                        else R.string.settings_accent_sub,
+                    ),
                     wide = true,
                 ) {
                     ChipsControl {
-                        listOf(1, 5, 10, 30, 60).forEach { min ->
+                        AppColorTheme.entries.forEach { theme ->
                             FilterChip(
-                                selected = settings.syncQueueTimeoutMinutes == min,
-                                onClick = { viewModel.setSyncQueueTimeoutMinutes(min) },
+                                selected = settings.colorTheme == theme,
+                                enabled = !settings.dynamicColor,
+                                onClick = { viewModel.setColorTheme(theme) },
+                                leadingIcon = {
+                                    Box(
+                                        Modifier
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(appColorThemeSwatch(theme)),
+                                    )
+                                },
+                                label = { Text(stringResource(theme.labelRes)) },
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                LanguageRow()
+            }
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_ext_badge),
+                    subtitle = stringResource(R.string.settings_ext_badge_sub),
+                    checked = settings.showExtensionBadge,
+                    onCheckedChange = viewModel::setShowExtensionBadge,
+                )
+            }
+            item {
+                HorizontalDivider()
+            }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_behavior))
+            }
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_confirm_delete),
+                    subtitle = stringResource(R.string.settings_confirm_delete_sub),
+                    checked = settings.confirmBeforeDelete,
+                    onCheckedChange = viewModel::setConfirmBeforeDelete,
+                )
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_undo_timeout),
+                    subtitle = stringResource(R.string.settings_undo_timeout_sub),
+                    wide = true,
+                ) {
+                    ChipsControl {
+                        listOf(3, 5, 10).forEach { sec ->
+                            FilterChip(
+                                selected = settings.undoTimeoutSeconds == sec,
+                                onClick = { viewModel.setUndoTimeoutSeconds(sec) },
+                                label = { Text(pluralStringResource(R.plurals.settings_seconds, sec, sec)) },
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                HorizontalDivider()
+            }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_notifications))
+            }
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_notify_fileop),
+                    subtitle = stringResource(R.string.settings_notify_fileop_sub),
+                    checked = settings.notifyOnFileOpComplete,
+                    onCheckedChange = viewModel::setNotifyOnFileOpComplete,
+                )
+            }
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_notify_extract),
+                    subtitle = stringResource(R.string.settings_notify_extract_sub),
+                    checked = settings.notifyOnExtractComplete,
+                    onCheckedChange = viewModel::setNotifyOnExtractComplete,
+                )
+            }
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_notify_sync),
+                    subtitle = stringResource(R.string.settings_notify_sync_sub),
+                    checked = settings.notifyOnSyncComplete,
+                    onCheckedChange = viewModel::setNotifyOnSyncComplete,
+                )
+            }
+            item {
+                HorizontalDivider()
+            }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_trash))
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_delete_behavior),
+                    subtitle = stringResource(R.string.settings_delete_behavior_sub),
+                    wide = true,
+                ) {
+                    ChipsControl {
+                        DeleteBehavior.entries.forEach { b ->
+                            FilterChip(
+                                selected = settings.deleteBehavior == b,
+                                onClick = { viewModel.setDeleteBehavior(b) },
+                                label = { Text(stringResource(b.labelRes)) },
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_trash_retention),
+                    subtitle = stringResource(R.string.settings_trash_retention_sub),
+                    wide = true,
+                ) {
+                    ChipsControl {
+                        listOf(7, 30, 90, 0).forEach { days ->
+                            FilterChip(
+                                selected = settings.trashRetentionDays == days,
+                                onClick = { viewModel.setTrashRetentionDays(days) },
                                 label = {
-                                Text(
-                                    if (min >= 60) pluralStringResource(R.plurals.settings_hours, min / 60, min / 60)
-                                    else pluralStringResource(R.plurals.settings_minutes, min, min),
-                                )
-                            },
+                                    Text(
+                                        if (days == 0) stringResource(R.string.settings_forever)
+                                        else pluralStringResource(R.plurals.settings_days, days, days),
+                                    )
+                                },
                             )
                         }
                     }
                 }
             }
-
-            HorizontalDivider()
-            SettingsSectionHeader(stringResource(R.string.settings_section_files))
-            SettingRow(
-                title = stringResource(R.string.settings_file_types),
-                subtitle = stringResource(R.string.settings_file_types_sub),
-                onClick = onOpenFileTypes,
-            )
-            SettingRow(
-                title = stringResource(R.string.settings_editor_limit),
-                subtitle = stringResource(R.string.settings_editor_limit_sub),
-                wide = true,
-            ) {
-                ChipsControl {
-                    listOf(128, 256, 512, 1024, 2048, 4096, 8192, UNLIMITED_EDITABLE_LIMIT_KB).forEach { kb ->
-                        FilterChip(
-                            selected = settings.editorEditableLimitKb == kb,
-                            onClick = { viewModel.setEditorEditableLimitKb(kb) },
-                            label = {
-                                Text(
-                                    when {
-                                        kb == UNLIMITED_EDITABLE_LIMIT_KB -> stringResource(R.string.settings_unlimited)
-                                        kb >= 1024 -> "${kb / 1024}MB"
-                                        else -> "${kb}KB"
-                                    },
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_open_trash),
+                    subtitle = stringResource(R.string.settings_open_trash_sub),
+                    onClick = onOpenTrash,
+                )
+            }
+            item {
+                HorizontalDivider()
+            }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_sync))
+            }
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_sync_backup),
+                    subtitle = stringResource(R.string.settings_sync_backup_sub),
+                    checked = settings.syncDeleteBackup,
+                    onCheckedChange = viewModel::setSyncDeleteBackup,
+                )
+            }
+            item {
+                if (settings.syncDeleteBackup) {
+                    SettingRow(
+                        title = stringResource(R.string.settings_sync_generations),
+                        subtitle = stringResource(R.string.settings_sync_generations_sub),
+                        wide = true,
+                    ) {
+                        ChipsControl {
+                            listOf(1, 3, 5).forEach { n ->
+                                FilterChip(
+                                    selected = settings.syncBackupGenerations == n,
+                                    onClick = { viewModel.setSyncBackupGenerations(n) },
+                                    label = { Text(pluralStringResource(R.plurals.settings_generations, n, n)) },
                                 )
-                            },
-                        )
+                            }
+                        }
+                    }
+                    SettingRow(
+                        title = stringResource(R.string.settings_sync_threshold),
+                        subtitle = stringResource(R.string.settings_sync_threshold_sub),
+                        wide = true,
+                    ) {
+                        ChipsControl {
+                            listOf(10, 50, 200, 1000).forEach { mb ->
+                                FilterChip(
+                                    selected = settings.syncBackupThresholdMb == mb,
+                                    onClick = { viewModel.setSyncBackupThresholdMb(mb) },
+                                    label = { Text(if (mb >= 1000) "${mb / 1000}GB" else "${mb}MB") },
+                                )
+                            }
+                        }
+                    }
+                    SettingRow(
+                        title = stringResource(R.string.settings_sync_over_threshold),
+                        subtitle = stringResource(R.string.settings_sync_over_threshold_sub),
+                        wide = true,
+                    ) {
+                        ChipsControl {
+                            SyncBackupPolicy.entries.forEach { p ->
+                                FilterChip(
+                                    selected = settings.syncBackupPolicyOverThreshold == p,
+                                    onClick = { viewModel.setSyncBackupPolicyOverThreshold(p) },
+                                    label = { Text(stringResource(p.labelRes)) },
+                                )
+                            }
+                        }
                     }
                 }
             }
-
-            HorizontalDivider()
-            SettingsSectionHeader(stringResource(R.string.settings_section_logs))
-            SettingRow(
-                title = stringResource(R.string.settings_logs),
-                subtitle = stringResource(R.string.settings_logs_sub),
-                onClick = onOpenLogs,
-            )
-            SwitchRow(
-                title = stringResource(R.string.settings_log_frame_perf),
-                subtitle = stringResource(R.string.settings_log_frame_perf_sub),
-                checked = settings.logFramePerformance,
-                onCheckedChange = viewModel::setLogFramePerformance,
-            )
-
-            HorizontalDivider()
-            SettingsSectionHeader(stringResource(R.string.settings_section_storage))
-            SettingRow(
-                title = stringResource(R.string.settings_clear_cache),
-                subtitle = stringResource(R.string.settings_clear_cache_sub) +
-                    (cacheBytes?.let { stringResource(R.string.settings_cache_in_use, formatBytes(it)) } ?: ""),
-                onClick = { pendingClear = true },
-            )
-
-            HorizontalDivider()
-            SettingsSectionHeader(stringResource(R.string.settings_section_advanced))
-            SettingRow(title = stringResource(R.string.settings_version), subtitle = versionName)
-            SettingRow(
-                title = stringResource(R.string.settings_check_update),
-                subtitle = when (val s = updateStatus) {
-                    is UpdateStatus.Idle -> stringResource(R.string.settings_update_idle)
-                    is UpdateStatus.Checking -> stringResource(R.string.settings_update_checking)
-                    is UpdateStatus.UpToDate -> stringResource(R.string.settings_update_up_to_date, s.current)
-                    is UpdateStatus.Available -> stringResource(R.string.settings_update_available, s.latest)
-                    is UpdateStatus.Failed -> stringResource(R.string.settings_update_failed, s.reason)
-                },
-                onClick = {
-                    // 既に見つかっているときは、押し直しで変更履歴をもう一度出す。
-                    if (updateStatus is UpdateStatus.Available) {
-                        viewModel.reopenUpdateDialog()
-                    } else {
-                        viewModel.checkForUpdate()
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_queue_timeout_enabled),
+                    subtitle = stringResource(R.string.settings_queue_timeout_enabled_sub),
+                    checked = settings.syncQueueTimeoutEnabled,
+                    onCheckedChange = viewModel::setSyncQueueTimeoutEnabled,
+                )
+            }
+            item {
+                if (settings.syncQueueTimeoutEnabled) {
+                    SettingRow(
+                        title = stringResource(R.string.settings_queue_timeout),
+                        subtitle = stringResource(R.string.settings_queue_timeout_sub),
+                        wide = true,
+                    ) {
+                        ChipsControl {
+                            listOf(1, 5, 10, 30, 60).forEach { min ->
+                                FilterChip(
+                                    selected = settings.syncQueueTimeoutMinutes == min,
+                                    onClick = { viewModel.setSyncQueueTimeoutMinutes(min) },
+                                    label = {
+                                    Text(
+                                        if (min >= 60) pluralStringResource(R.plurals.settings_hours, min / 60, min / 60)
+                                        else pluralStringResource(R.plurals.settings_minutes, min, min),
+                                    )
+                                },
+                                )
+                            }
+                        }
                     }
-                },
-                control = {
-                    if (updateStatus is UpdateStatus.Checking) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+            }
+            item {
+                HorizontalDivider()
+            }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_files))
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_file_types),
+                    subtitle = stringResource(R.string.settings_file_types_sub),
+                    onClick = onOpenFileTypes,
+                )
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_editor_limit),
+                    subtitle = stringResource(R.string.settings_editor_limit_sub),
+                    wide = true,
+                ) {
+                    ChipsControl {
+                        listOf(128, 256, 512, 1024, 2048, 4096, 8192, UNLIMITED_EDITABLE_LIMIT_KB).forEach { kb ->
+                            FilterChip(
+                                selected = settings.editorEditableLimitKb == kb,
+                                onClick = { viewModel.setEditorEditableLimitKb(kb) },
+                                label = {
+                                    Text(
+                                        when {
+                                            kb == UNLIMITED_EDITABLE_LIMIT_KB -> stringResource(R.string.settings_unlimited)
+                                            kb >= 1024 -> "${kb / 1024}MB"
+                                            else -> "${kb}KB"
+                                        },
+                                    )
+                                },
+                            )
+                        }
                     }
-                },
-            )
-            SettingRow(
-                title = stringResource(R.string.settings_license),
-                subtitle = stringResource(R.string.settings_license_sub),
-                onClick = onOpenLicenses,
-            )
-            Spacer(Modifier.height(16.dp))
+                }
+            }
+            item {
+                HorizontalDivider()
+            }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_logs))
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_logs),
+                    subtitle = stringResource(R.string.settings_logs_sub),
+                    onClick = onOpenLogs,
+                )
+            }
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.settings_log_frame_perf),
+                    subtitle = stringResource(R.string.settings_log_frame_perf_sub),
+                    checked = settings.logFramePerformance,
+                    onCheckedChange = viewModel::setLogFramePerformance,
+                )
+            }
+            item {
+                HorizontalDivider()
+            }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_storage))
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_clear_cache),
+                    subtitle = stringResource(R.string.settings_clear_cache_sub) +
+                        (cacheBytes?.let { stringResource(R.string.settings_cache_in_use, formatBytes(it)) } ?: ""),
+                    onClick = { pendingClear = true },
+                )
+            }
+            item {
+                HorizontalDivider()
+            }
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_section_advanced))
+            }
+            item {
+                SettingRow(title = stringResource(R.string.settings_version), subtitle = versionName)
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_check_update),
+                    subtitle = when (val s = updateStatus) {
+                        is UpdateStatus.Idle -> stringResource(R.string.settings_update_idle)
+                        is UpdateStatus.Checking -> stringResource(R.string.settings_update_checking)
+                        is UpdateStatus.UpToDate -> stringResource(R.string.settings_update_up_to_date, s.current)
+                        is UpdateStatus.Available -> stringResource(R.string.settings_update_available, s.latest)
+                        is UpdateStatus.Failed -> stringResource(R.string.settings_update_failed, s.reason)
+                    },
+                    onClick = {
+                        // 既に見つかっているときは、押し直しで変更履歴をもう一度出す。
+                        if (updateStatus is UpdateStatus.Available) {
+                            viewModel.reopenUpdateDialog()
+                        } else {
+                            viewModel.checkForUpdate()
+                        }
+                    },
+                    control = {
+                        if (updateStatus is UpdateStatus.Checking) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        }
+                    },
+                )
+            }
+            item {
+                SettingRow(
+                    title = stringResource(R.string.settings_license),
+                    subtitle = stringResource(R.string.settings_license_sub),
+                    onClick = onOpenLicenses,
+                )
+            }
+            item {
+                Spacer(Modifier.height(16.dp))
+            }
         }
     }
 

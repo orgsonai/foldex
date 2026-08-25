@@ -1,0 +1,2 @@
+1.6.3
+- Settings now only renders the rows you can see, fixing the stutter when scrolling it
