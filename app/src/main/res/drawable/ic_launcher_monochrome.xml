@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Zero to Ship -->
+<!-- システムが着色する前景。背景の正方形は含めない。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#000000" android:fillType="evenOdd"
+        android:pathData="M31,43 L31,36 Q31,31 36,31 L48,31 Q50,31 51.5,33 L55,36 L73,36 Q78,36 78,41 L78,48 Q80,49 80,53 L80,72 Q80,77 75,77 L34,77 Q28,77 28,71 L28,49 Q28,45 31,43 Z M35,39 Q32,39 32,43 L46,43 Q49,43 51,45 L54,48 L76,48 L76,44 L55,44 L51,40 Q50,39 48,39 Z M63,63 L73,63 L73,65 L63,65 Z M63,67 L73,67 L73,69 L63,69 Z M63,71 L73,71 L73,73 L63,73 Z" />
+</vector>

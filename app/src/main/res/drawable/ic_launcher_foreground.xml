@@ -1,17 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  フォアグラウンドのデザイン本体 (file5)。108dp フォアグラウンドの中央に inset 配置する。
-  背景 (#1E1F24) を file5 の角丸正方形と同色にしてあるので、前景の正方形は地に溶け込み、
-  「一回り小さい正方形が浮く」現象は出ない。ランチャーが地をデバイス枠形へ型抜きし、
-  中央にフォルダ絵が乗る。サイズはこの width/height だけで調整する (大きいほどフォルダが拡大)。
-    70dp 付近〜 : 端が齧られやすい
-    44dp 以下   : フォルダが小さく余白過多
--->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:gravity="center"
-        android:width="52dp"
-        android:height="52dp">
-        <bitmap android:src="@mipmap/ic_launcher_foreground" />
-    </item>
-</layer-list>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Zero to Ship -->
+<!-- 108 × 108 の前景全体が描画先に追従する。固定 dp の子画像を置かない。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M31,43 L31,36 Q31,31 36,31 L48,31 Q50,31 51.5,33 L55,36 L73,36 Q78,36 78,41 L78,58 L31,58 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="42" android:startY="31" android:endX="62" android:endY="58">
+                <item android:offset="0" android:color="#70EF79" />
+                <item android:offset="1" android:color="#18B83A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M34,40 L49,40 Q51,40 53,42 L56,44 L73,44 Q77,44 77,48 L77,62 L30,62 L30,45 Q30,40 34,40 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="54" android:startY="40" android:endX="54" android:endY="61">
+                <item android:offset="0" android:color="#F0FFF2" />
+                <item android:offset="1" android:color="#B9DDC1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M34,43 L46,43 Q49,43 51,45 L54,48 L75,48 Q80,48 80,53 L80,72 Q80,77 75,77 L34,77 Q28,77 28,71 L28,49 Q28,43 34,43 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="32" android:startY="44" android:endX="73" android:endY="77">
+                <item android:offset="0" android:color="#67E875" />
+                <item android:offset="0.5" android:color="#2CC94C" />
+                <item android:offset="1" android:color="#11A936" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#A2F4A6"
+        android:pathData="M63,63 L72,63 Q72.8,63 72.8,63.8 Q72.8,64.6 72,64.6 L63,64.6 Q62.2,64.6 62.2,63.8 Q62.2,63 63,63 Z M63,67.2 L72,67.2 Q72.8,67.2 72.8,68 Q72.8,68.8 72,68.8 L63,68.8 Q62.2,68.8 62.2,68 Q62.2,67.2 63,67.2 Z M63,71.4 L72,71.4 Q72.8,71.4 72.8,72.2 Q72.8,73 72,73 L63,73 Q62.2,73 62.2,72.2 Q62.2,71.4 63,71.4 Z" />
+</vector>
