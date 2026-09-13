@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -482,29 +481,20 @@ fun ImageEditScreen(
     }
 
     if (showDiscardDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showDiscardDialog = false },
-            title = { Text(stringResource(R.string.image_draft_close_title)) },
-            text = { Text(stringResource(R.string.image_draft_close_body)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDiscardDialog = false
-                    onBack()
-                }) { Text(stringResource(R.string.image_draft_keep)) }
+        ImageEditExitDialog(
+            onKeepDraft = {
+                showDiscardDialog = false
+                onBack()
             },
-            dismissButton = {
-                Column {
-                    TextButton(onClick = { showDiscardDialog = false; showSaveDialog = true }) {
-                        Text(stringResource(R.string.image_save_action))
-                    }
-                    TextButton(onClick = { showDiscardDialog = false; onDiscardDraft() }) {
-                        Text(stringResource(R.string.image_draft_discard))
-                    }
-                    TextButton(onClick = { showDiscardDialog = false }) {
-                        Text(stringResource(R.string.image_export_back_to_edit))
-                    }
-                }
+            onSaveImage = {
+                showDiscardDialog = false
+                showSaveDialog = true
             },
+            onDiscardDraft = {
+                showDiscardDialog = false
+                onDiscardDraft()
+            },
+            onDismiss = { showDiscardDialog = false },
         )
     }
 }
