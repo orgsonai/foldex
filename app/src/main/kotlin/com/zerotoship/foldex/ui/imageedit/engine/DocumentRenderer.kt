@@ -135,8 +135,7 @@ object DocumentRenderer {
 
         // 元画像 1px が出力上で何 px になるか。これが必要な解像度をそのまま決める。
         // (切り抜きや回転は倍率を変えないので、レイヤーの拡大率と出力スケールの積でよい)
-        val pixelRatio = layer.transform.scale * s
-        val neededLongEdge = (layer.sourceSize.longEdge * pixelRatio).roundToInt().coerceAtLeast(1)
+        val neededLongEdge = RenderBudget.sourceLongEdge(layer, s)
         val drawn = source.withBitmap(neededLongEdge) { bitmap ->
             if (bitmap.isRecycled) throw RenderAbort(RenderFailure.UnreadableSource(layer.sourceKey))
 

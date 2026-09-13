@@ -6,21 +6,27 @@ package com.zerotoship.foldex.ui.imageedit.engine
 import android.graphics.Bitmap
 import android.os.Build
 import com.zerotoship.foldex.ui.imageedit.model.ImageFormat
-import java.io.ByteArrayOutputStream
 import java.io.OutputStream
+import kotlinx.coroutines.CancellationException
 
 /** 出力形式・品質へのエンコードと、「目標ファイルサイズ」からの品質決定。 */
 object ImageEncoder {
 
     fun encode(bitmap: Bitmap, format: ImageFormat, quality: Int, out: OutputStream): Boolean =
-        runCatching {
+        try {
             bitmap.compress(compressFormat(format), quality.coerceIn(1, 100), out)
-        }.getOrDefault(false)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: OutOfMemoryError) {
+            false
+        } catch (_: Exception) {
+            false
+        }
 
-    /** メモリ上でエンコードしてバイト数だけ測る (予想サイズ表示・品質探索用)。 */
-    fun encodedSize(bitmap: Bitmap, format: ImageFormat, quality: Int): Int {
-        val buffer = ByteArrayOutputStream(DEFAULT_BUFFER)
-        return if (encode(bitmap, format, quality, buffer)) buffer.size() else -1
+    /** 圧縮データは捨て、バイト数だけ測る (予想サイズ表示・品質探索用)。 */
+    fun encodedSize(bitmap: Bitmap, format: ImageFormat, quality: Int, checkCancelled: () -> Unit = {}): Int {
+        val counter = CountingOutputStream(checkCancelled)
+        return if (encode(bitmap, format, quality, counter)) counter.sizeOrFailure() else -1
     }
 
     /**
@@ -90,5 +96,4 @@ object ImageEncoder {
     const val MIN_QUALITY: Int = 30
     const val MAX_QUALITY: Int = 95
     const val DEFAULT_STEPS: Int = 6
-    private const val DEFAULT_BUFFER = 256 * 1024
 }

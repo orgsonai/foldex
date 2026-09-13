@@ -74,6 +74,13 @@ fun SaveDialog(
                     "${doc.outputSize.width} × ${doc.outputSize.height}",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (state.estimateMemoryLimited) {
+                    Text(
+                        stringResource(R.string.image_memory_estimate_limited),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (state.estimatedBytes != null && !useTargetSize) {
                     Text(
                         if (state.originalBytes > 0)

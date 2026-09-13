@@ -951,6 +951,11 @@
     <string name="unknown_error">不明なエラー</string>
     <string name="image_save_failed_reason">保存に失敗しました: %1$s</string>
     <string name="image_not_enough_memory">メモリが足りません</string>
+    <string name="image_memory_title">保存する画像を小さくする</string>
+    <string name="image_memory_suggestion">現在のサイズでは作業用メモリが不足します。縮小候補は %1$d × %2$d px です。\n\n編集内容は保持されます。サイズ変更後、もう一度「保存」を選んでください。</string>
+    <string name="image_memory_apply">このサイズに変更</string>
+    <string name="image_memory_busy">処理を始めるメモリが足りません。他の画像編集画面やアプリを閉じて再度お試しください。編集内容は保持されています。</string>
+    <string name="image_memory_estimate_limited">メモリ不足のため容量計測を停止しました。保存時に縮小サイズを案内します。</string>
     <string name="image_encode_failed">画像を書き出せませんでした</string>
     <string name="image_destination_missing">保存先フォルダが見つかりません</string>
     <string name="write_error">書き込みエラー</string>

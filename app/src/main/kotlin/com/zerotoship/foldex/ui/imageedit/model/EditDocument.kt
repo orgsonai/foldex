@@ -70,7 +70,7 @@ data class EditDocument(
     /** 出力の長辺を [longEdge] px にする倍率を設定する。 */
     fun withOutputLongEdge(longEdge: Int): EditDocument {
         val current = maxOf(canvas.width, canvas.height)
-        return copy(output = output.copy(scale = (longEdge.toFloat() / current).coerceAtLeast(0.01f)))
+        return copy(output = output.copy(scale = longEdge.coerceAtLeast(1).toFloat() / current))
     }
 
     companion object {

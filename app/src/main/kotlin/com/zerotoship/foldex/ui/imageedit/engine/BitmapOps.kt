@@ -20,23 +20,21 @@ object BitmapOps {
     fun scale(src: Bitmap, target: EditSize): Bitmap {
         if (src.width == target.width && src.height == target.height) return src
         var current = src
-        var createdIntermediate = false
-        // 目標の 2 倍より大きい間は半分ずつ落とす。
-        while (current.width / 2 >= target.width && current.height / 2 >= target.height &&
-            current.width / 2 >= 1 && current.height / 2 >= 1
-        ) {
-            val half = runCatching {
-                Bitmap.createScaledBitmap(current, current.width / 2, current.height / 2, true)
-            }.getOrNull() ?: break
-            if (createdIntermediate && current !== src) current.recycle()
-            current = half
-            createdIntermediate = true
+        try {
+            while (current.width / 2 >= target.width && current.height / 2 >= target.height &&
+                current.width / 2 >= 1 && current.height / 2 >= 1
+            ) {
+                val half = Bitmap.createScaledBitmap(current, current.width / 2, current.height / 2, true)
+                if (current !== src && current !== half) current.recycle()
+                current = half
+            }
+            val out = Bitmap.createScaledBitmap(current, target.width, target.height, true)
+            if (current !== src && current !== out) current.recycle()
+            return out
+        } catch (error: Throwable) {
+            if (current !== src) current.recycle()
+            throw error
         }
-        val out = runCatching {
-            Bitmap.createScaledBitmap(current, target.width, target.height, true)
-        }.getOrNull() ?: return current
-        if (createdIntermediate && current !== src && current !== out) current.recycle()
-        return out
     }
 
     /** ARGB_8888 の空キャンバスを作る。確保できなければ null (呼び出し側で握る)。 */

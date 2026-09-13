@@ -93,6 +93,7 @@ internal object ObjectSelectionEngine {
 internal sealed interface ObjectSelectionResult {
     data class Success(val selection: SelectionSpec) : ObjectSelectionResult
     data object Empty : ObjectSelectionResult
+    data object MemoryLimited : ObjectSelectionResult
     data object Failed : ObjectSelectionResult
     data object Unavailable : ObjectSelectionResult
 }

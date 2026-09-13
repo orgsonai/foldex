@@ -45,7 +45,7 @@ internal class ImageExportCoordinator(private val cacheDirectory: File) {
             val quality = if (targetBytes != null && format.hasQuality) {
                 val found = ImageEncoder.findQualityForTarget(targetBytes) { q ->
                     checkCancelled()
-                    ImageEncoder.encodedSize(pixels, format, q)
+                    ImageEncoder.encodedSize(pixels, format, q, checkCancelled)
                 }
                 if (!found.withinTarget) return Result.Failure(ExportFailure.TARGET_TOO_SMALL)
                 found.quality

@@ -80,6 +80,7 @@ fun ResizePanel(
                     Text(
                         when {
                             state.estimating -> stringResource(R.string.image_size_estimating)
+                            state.estimateMemoryLimited -> stringResource(R.string.image_memory_estimate_limited)
                             state.estimatedBytes != null && state.originalBytes > 0 ->
                                 stringResource(R.string.image_size_estimate_original, formatBytes(state.estimatedBytes.toLong()), formatBytes(state.originalBytes))
                             state.estimatedBytes != null ->

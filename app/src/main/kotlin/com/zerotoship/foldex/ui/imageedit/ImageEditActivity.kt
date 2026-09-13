@@ -148,6 +148,23 @@ class ImageEditActivity : ComponentActivity() {
                     onCancelObjectSelection = viewModel::cancelAutomaticSelection,
                     onSave = viewModel::save,
                 )
+                state.memorySuggestion?.let { size ->
+                    AlertDialog(
+                        onDismissRequest = viewModel::dismissMemorySuggestion,
+                        title = { Text(stringResource(R.string.image_memory_title)) },
+                        text = { Text(stringResource(R.string.image_memory_suggestion, size.width, size.height)) },
+                        confirmButton = {
+                            TextButton(onClick = viewModel::applyMemorySuggestion) {
+                                Text(stringResource(R.string.image_memory_apply))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = viewModel::dismissMemorySuggestion) {
+                                Text(stringResource(R.string.image_export_back_to_edit))
+                            }
+                        },
+                    )
+                }
                 state.unconfirmedSave?.let { name ->
                     AlertDialog(
                         onDismissRequest = viewModel::dismissSaveVerification,

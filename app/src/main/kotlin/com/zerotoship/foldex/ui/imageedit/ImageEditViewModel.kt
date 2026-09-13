@@ -13,6 +13,10 @@ import com.zerotoship.foldex.storage.StorageProviderRouter
 import com.zerotoship.foldex.ui.imageedit.engine.DocumentRenderer
 import com.zerotoship.foldex.ui.imageedit.engine.ExifTransfer
 import com.zerotoship.foldex.ui.imageedit.engine.ImageEncoder
+import com.zerotoship.foldex.ui.imageedit.engine.ImageRenderResources
+import com.zerotoship.foldex.ui.imageedit.engine.ImageWork
+import com.zerotoship.foldex.ui.imageedit.engine.ImageWorkResult
+import com.zerotoship.foldex.ui.imageedit.engine.RenderBudget
 import com.zerotoship.foldex.ui.imageedit.engine.ImageSource
 import com.zerotoship.foldex.ui.imageedit.engine.ExportFailure
 import com.zerotoship.foldex.ui.imageedit.engine.ExportReceipt
@@ -53,8 +57,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -103,8 +105,6 @@ class ImageEditViewModel @Inject constructor(
     private var previewJob: Job? = null
     private var estimateJob: Job? = null
     private var estimateRequest = 0L
-    private val previewMutex = Mutex()
-    private val selectionMutex = Mutex()
     private var selectionJob: Job? = null
     private var selectionRequest = 0L
 
@@ -282,7 +282,7 @@ class ImageEditViewModel @Inject constructor(
         if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val max = maxOf(doc.canvas.width, doc.canvas.height)
-        val clamped = longEdge.coerceIn(MIN_OUTPUT_LONG_EDGE, minOf(max, MAX_OUTPUT_LONG_EDGE))
+        val clamped = longEdge.coerceIn(minOf(MIN_OUTPUT_LONG_EDGE, max), minOf(max, MAX_OUTPUT_LONG_EDGE))
         if (clamped == doc.outputSize.longEdge) return
         history.record(doc)
         applyDocument(doc.withOutputLongEdge(clamped))
@@ -457,14 +457,14 @@ class ImageEditViewModel @Inject constructor(
         _state.update { it.copy(selectingObject = true) }
         selectionJob = viewModelScope.launch {
             try {
-                val result = withContext(Dispatchers.Default) {
-                    selectionMutex.withLock {
-                        val context = currentCoroutineContext()
+                val work = withContext(Dispatchers.Default) {
+                    val context = currentCoroutineContext()
+                    ImageRenderResources.run(appContext, doc, ImageWork.SELECTION) { edge ->
                         context.ensureActive()
                         // UI の Bitmap を推論側で解放しないよう、専用の縮小画像を作る。
-                        val bitmap = DocumentRenderer.render(doc, resolve, targetLongEdge = 1024) {
+                        val bitmap = DocumentRenderer.render(doc, resolve, targetLongEdge = edge) {
                             context.ensureActive()
-                        }.getOrNull() ?: return@withLock ObjectSelectionResult.Failed
+                        }.getOrNull() ?: return@run ObjectSelectionResult.Failed
                         try {
                             ObjectSelectionEngine.select(appContext, bitmap, point, doc.canvasSize) {
                                 context.ensureActive()
@@ -473,6 +473,10 @@ class ImageEditViewModel @Inject constructor(
                             bitmap.recycle()
                         }
                     }
+                }
+                val result = when (work) {
+                    is ImageWorkResult.Completed -> work.value
+                    is ImageWorkResult.Rejected -> ObjectSelectionResult.MemoryLimited
                 }
                 // 選択の解除・ツール変更・編集が先に進んでいれば古い結果を捨てる。
                 if (selectionRequest != request || _state.value.document !== doc) return@launch
@@ -483,6 +487,7 @@ class ImageEditViewModel @Inject constructor(
                     ObjectSelectionResult.Empty -> objectSelectionMessage(R.string.image_object_empty)
                     ObjectSelectionResult.Unavailable -> objectSelectionMessage(R.string.image_object_unavailable)
                     ObjectSelectionResult.Failed -> objectSelectionMessage(R.string.image_object_failed)
+                    ObjectSelectionResult.MemoryLimited -> objectSelectionMessage(R.string.image_memory_busy)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -630,6 +635,8 @@ class ImageEditViewModel @Inject constructor(
                 canRedo = history.canRedo,
                 // ドキュメントが変わったら前回の実測値は無効。
                 estimatedBytes = null,
+                estimateMemoryLimited = false,
+                memorySuggestion = null,
             )
         }
         refreshPreview()
@@ -646,22 +653,31 @@ class ImageEditViewModel @Inject constructor(
         previewJob?.cancel()
         _state.update { it.copy(previewing = true, previewFailed = false) }
         previewJob = viewModelScope.launch {
+            // UI へ渡す前にキャンセルされた画像は、この所有者が必ず解放する。
+            var ownedBitmap: Bitmap? = null
             try {
                 if (debounce) delay(100)
-                val bitmap = withContext(Dispatchers.Default) {
-                    previewMutex.withLock {
-                        val context = currentCoroutineContext()
+                val work = withContext(Dispatchers.Default) {
+                    val context = currentCoroutineContext()
+                    ImageRenderResources.run(appContext, doc, ImageWork.PREVIEW) { edge ->
                         context.ensureActive()
-                        DocumentRenderer.render(doc, resolve, targetLongEdge = PREVIEW_LONG_EDGE) {
+                        DocumentRenderer.render(doc, resolve, targetLongEdge = edge) {
                             context.ensureActive()
-                        }.getOrNull()
+                        }.getOrNull()?.also {
+                            ownedBitmap = it
+                            ImageRenderResources.retainPreview(it)
+                        }
                     }
                 }
+                val bitmap = (work as? ImageWorkResult.Completed)?.value
                 if (bitmap == null) {
-                    _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_preview_failed)))
+                    val message = if (work is ImageWorkResult.Rejected) R.string.image_memory_busy
+                        else R.string.image_preview_failed
+                    _events.trySend(ImageEditEvent.Message(appContext.getString(message)))
                 } else {
-                    // Compose の前フレームがまだ旧 Bitmap を参照しうるため、明示 recycle しない。
+                    // Compose の前フレームが参照する旧画像も、GC まで共通予算に数える。
                     _state.update { it.copy(preview = bitmap) }
+                    ownedBitmap = null
                 }
                 _state.update { it.copy(previewing = false, previewFailed = bitmap == null) }
             } catch (cancelled: CancellationException) {
@@ -669,6 +685,8 @@ class ImageEditViewModel @Inject constructor(
             } catch (_: Exception) {
                 _state.update { it.copy(previewing = false, previewFailed = true) }
                 _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_preview_failed)))
+            } finally {
+                ownedBitmap?.recycle()
             }
         }
     }
@@ -684,16 +702,16 @@ class ImageEditViewModel @Inject constructor(
         val resolve = sourceResolver()
         estimateJob?.cancel()
         val request = ++estimateRequest
-        _state.update { it.copy(estimating = true, estimatedBytes = null) }
+        _state.update { it.copy(estimating = true, estimatedBytes = null, estimateMemoryLimited = false) }
         estimateJob = viewModelScope.launch {
             try {
-                val bytes = withContext(Dispatchers.Default) {
-                    previewMutex.withLock {
-                        val context = currentCoroutineContext()
+                val work = withContext(Dispatchers.Default) {
+                    val context = currentCoroutineContext()
+                    ImageRenderResources.run(appContext, doc, ImageWork.EXPORT) {
                         val bitmap = DocumentRenderer.render(doc, resolve) { context.ensureActive() }
-                            .getOrNull() ?: return@withLock null
+                            .getOrNull() ?: return@run null
                         try {
-                            ImageEncoder.encodedSize(bitmap, doc.output.format, doc.output.quality)
+                            ImageEncoder.encodedSize(bitmap, doc.output.format, doc.output.quality) { context.ensureActive() }
                                 .takeIf { it >= 0 }
                         } finally {
                             bitmap.recycle()
@@ -702,7 +720,10 @@ class ImageEditViewModel @Inject constructor(
                     }
                 }
                 if (request == estimateRequest && _state.value.document === doc) {
-                    _state.update { it.copy(estimatedBytes = bytes) }
+                    _state.update { it.copy(
+                        estimatedBytes = (work as? ImageWorkResult.Completed)?.value,
+                        estimateMemoryLimited = work is ImageWorkResult.Rejected,
+                    ) }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -738,9 +759,9 @@ class ImageEditViewModel @Inject constructor(
                 estimateJob?.cancelAndJoin()
                 previewJob?.cancelAndJoin()
                 previousSelection?.cancelAndJoin()
-                val prepared = withContext(Dispatchers.Default) {
-                    previewMutex.withLock {
-                        val context = currentCoroutineContext()
+                val work = withContext(Dispatchers.Default) {
+                    val context = currentCoroutineContext()
+                    ImageRenderResources.run(appContext, doc, ImageWork.EXPORT) {
                         try {
                             exportCoordinator.prepare(
                                 doc, sourceResolver(), file, fingerprint, request.keepLocation, request.targetBytes,
@@ -748,6 +769,20 @@ class ImageEditViewModel @Inject constructor(
                         } finally {
                             imageSource?.release()
                         }
+                    }
+                }
+                val prepared = when (work) {
+                    is ImageWorkResult.Completed -> work.value
+                    is ImageWorkResult.Rejected -> {
+                        _state.update { it.copy(
+                            saving = false, previewing = false,
+                            memorySuggestion = work.suggestedLongEdge?.let { edge -> doc.withOutputLongEdge(edge).outputSize },
+                        ) }
+                        if (work.suggestedLongEdge == null) {
+                            _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_memory_busy)))
+                        }
+                        refreshPreview()
+                        return@launch
                     }
                 }
                 when (prepared) {
@@ -799,6 +834,17 @@ class ImageEditViewModel @Inject constructor(
                 ownedPrepared?.close()
             }
         }
+    }
+
+    fun dismissMemorySuggestion() {
+        _state.update { it.copy(memorySuggestion = null) }
+    }
+
+    fun applyMemorySuggestion() {
+        val size = _state.value.memorySuggestion ?: return
+        dismissMemorySuggestion()
+        setOutputLongEdge(size.longEdge)
+        selectTool(EditTool.RESIZE)
     }
 
     /** ACTION_CREATE_DOCUMENT が返した新規出力だけを受け取る。null は取消。 */
@@ -950,11 +996,8 @@ class ImageEditViewModel @Inject constructor(
     }
 
     companion object {
-        /** 画面表示用に描く解像度。編集中はこの大きさのビットマップだけを常時抱える。 */
-        const val PREVIEW_LONG_EDGE: Int = 2048
-
         /** 出力の上限。これを超える画像は出力倍率を下げた状態で開く。 */
-        const val MAX_OUTPUT_LONG_EDGE: Int = 8192
+        const val MAX_OUTPUT_LONG_EDGE: Int = RenderBudget.MAX_OUTPUT_EDGE
 
         const val MIN_OUTPUT_LONG_EDGE: Int = 16
 
@@ -981,6 +1024,8 @@ data class ImageEditUiState(
     val estimating: Boolean = false,
     /** 保存したときの実測バイト数。null なら未計測。 */
     val estimatedBytes: Int? = null,
+    val estimateMemoryLimited: Boolean = false,
+    val memorySuggestion: EditSize? = null,
     val originalBytes: Long = 0,
     /** 元画像が位置情報を持っているか (保存ダイアログの表示判断に使う)。 */
     val hasLocation: Boolean = false,

@@ -960,6 +960,11 @@
     <string name="unknown_error">Unknown error</string>
     <string name="image_save_failed_reason">Could not save: %1$s</string>
     <string name="image_not_enough_memory">Not enough memory</string>
+    <string name="image_memory_title">Reduce the output size</string>
+    <string name="image_memory_suggestion">The current output size needs more memory than is available. Suggested size: %1$d × %2$d px.\n\nYour edits are kept. Change the size, then choose Save again.</string>
+    <string name="image_memory_apply">Use this size</string>
+    <string name="image_memory_busy">Not enough memory to start. Close other image editors or apps, then try again. Your edits are kept.</string>
+    <string name="image_memory_estimate_limited">Size calculation paused for memory. A smaller output size will be suggested when saving.</string>
     <string name="image_encode_failed">Could not encode the image</string>
     <string name="image_destination_missing">The destination folder could not be found</string>
     <string name="write_error">Write error</string>

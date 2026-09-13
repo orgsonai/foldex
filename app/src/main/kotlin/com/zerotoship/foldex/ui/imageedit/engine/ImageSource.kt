@@ -15,12 +15,12 @@ import kotlin.math.max
  * 元画像を「必要な解像度だけ」デコードして貸し出す。
  *
  * 原寸を丸ごとメモリに載せない ([BitmapFactory.Options.inSampleSize] で間引く) のが要点。
- * 4000x3000 の写真は原寸 48MB だが、プレビュー用の 2048px なら 12MB で済む。
- * 保存時だけ原寸を要求し、終わったら解放する。
- *
- * 同じキーで同じ (以上の) 解像度が既にあれば使い回す。
+ * inSampleSize 後の画素と EXIF/縮小の中間画像も RenderBudget に含める。
+ * 貸出中だけ保持し、描画が終われば原寸・縮小版とも解放する。
  */
 class ImageSource(private val file: File) {
+
+    private val rawSize: EditSize? by lazy { readRawBounds() }
 
     /** EXIF の向きを適用した後の画素サイズ。 */
     val size: EditSize by lazy { readSizeWithOrientation() }
@@ -35,11 +35,11 @@ class ImageSource(private val file: File) {
      * 返した Bitmap は内部でキャッシュされる。呼び出し側で recycle しないこと。
      */
     @Synchronized
-    fun load(maxLongEdge: Int?): Bitmap? {
-        val want = maxLongEdge ?: size.longEdge
+    private fun load(maxLongEdge: Int?): Bitmap? {
+        val want = (maxLongEdge ?: size.longEdge).coerceIn(1, size.longEdge)
         cached?.let { if (cachedLongEdge >= want && !it.isRecycled) return it }
+        release()
         val decoded = decode(want) ?: return null
-        cached?.takeIf { it !== decoded && !it.isRecycled }?.recycle()
         cached = decoded
         cachedLongEdge = max(decoded.width, decoded.height)
         return decoded
@@ -56,13 +56,19 @@ class ImageSource(private val file: File) {
     /** 描画が終わるまで、別の解像度要求によるキャッシュの recycle を防ぐ。 */
     @Synchronized
     fun withBitmap(maxLongEdge: Int, draw: (Bitmap) -> Unit): Boolean {
-        val bitmap = load(maxLongEdge) ?: return false
-        draw(bitmap)
-        return true
+        try {
+            val bitmap = load(maxLongEdge) ?: return false
+            draw(bitmap)
+            return true
+        } finally {
+            release()
+        }
     }
 
     private fun decode(maxLongEdge: Int): Bitmap? {
         val bounds = readRawBounds() ?: return null
+        // 予算の計算後に別サイズのファイルへ差し替わった場合は再確保しない。
+        if (bounds != rawSize) return null
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sampleSizeFor(max(bounds.width, bounds.height), maxLongEdge)
             inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -76,9 +82,11 @@ class ImageSource(private val file: File) {
         val longEdge = max(rotated.width, rotated.height)
         if (longEdge <= maxLongEdge) return rotated
         val target = EditSize(rotated.width, rotated.height).fitLongEdge(maxLongEdge, allowUpscale = false)
-        val scaled = BitmapOps.scale(rotated, target)
-        if (scaled !== rotated) rotated.recycle()
-        return scaled
+        return try {
+            BitmapOps.scale(rotated, target)
+        } finally {
+            rotated.recycle()
+        }
     }
 
     private fun readRawBounds(): EditSize? {
@@ -89,7 +97,7 @@ class ImageSource(private val file: File) {
     }
 
     private fun readSizeWithOrientation(): EditSize {
-        val raw = readRawBounds() ?: EditSize(1, 1)
+        val raw = rawSize ?: EditSize(1, 1)
         return if (exifQuarterTurns() % 2 == 1) EditSize(raw.height, raw.width) else raw
     }
 
@@ -143,11 +151,7 @@ class ImageSource(private val file: File) {
          * 長辺 [sourceLongEdge] の画像を [targetLongEdge] 以下にするための間引き率。
          * BitmapFactory は 2 のべき乗しか受け付けないので、目標を下回らない最大の 2^n を返す。
          */
-        fun sampleSizeFor(sourceLongEdge: Int, targetLongEdge: Int): Int {
-            if (targetLongEdge <= 0 || sourceLongEdge <= targetLongEdge) return 1
-            var sample = 1
-            while (sourceLongEdge / (sample * 2) >= targetLongEdge) sample *= 2
-            return sample
-        }
+        fun sampleSizeFor(sourceLongEdge: Int, targetLongEdge: Int): Int =
+            RenderBudget.sampleSizeFor(sourceLongEdge, targetLongEdge)
     }
 }
