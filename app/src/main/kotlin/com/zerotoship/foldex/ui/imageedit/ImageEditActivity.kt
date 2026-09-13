@@ -50,7 +50,8 @@ class ImageEditActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val path = intent.getStringExtra(EXTRA_PATH).orEmpty()
-        if (path.isBlank()) { finish(); return }
+        val draftId = intent.getStringExtra(EXTRA_DRAFT_ID)
+        if (path.isBlank() && draftId == null) { finish(); return }
         val file = File(path)
         val name = intent.getStringExtra(EXTRA_NAME) ?: file.name
         val sourceUri = intent.getStringExtra(EXTRA_SOURCE_URI)
@@ -72,16 +73,29 @@ class ImageEditActivity : ComponentActivity() {
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 val snackbar = remember { SnackbarHostState() }
                 val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                    viewModel.destinationSelected(
-                        result.data?.data?.toString().takeIf { result.resultCode == Activity.RESULT_OK },
-                    )
+                    val uri = result.data?.data?.takeIf { result.resultCode == Activity.RESULT_OK }
+                    if (uri != null) {
+                        try {
+                            contentResolver.takePersistableUriPermission(uri, (result.data?.flags ?: 0) and
+                                (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))
+                        } catch (_: SecurityException) { /* 保存先によって再起動後の権限は提供されない。 */ }
+                    }
+                    viewModel.destinationSelected(uri?.toString())
                 }
 
-                LaunchedEffect(Unit) { viewModel.load(file, name, sourceUri) }
+                LaunchedEffect(Unit) { viewModel.load(file, name, sourceUri, draftId) }
+                androidx.compose.runtime.DisposableEffect(viewModel) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) viewModel.flushDraftOnBackground()
+                    }
+                    lifecycle.addObserver(observer)
+                    onDispose { lifecycle.removeObserver(observer) }
+                }
 
                 LaunchedEffect(Unit) {
                     viewModel.events.collect { event ->
                         when (event) {
+                            ImageEditEvent.Close -> finish()
                             is ImageEditEvent.Message -> snackbar.showSnackbar(event.text)
                             is ImageEditEvent.Saved -> {
                                 Toast.makeText(
@@ -91,7 +105,6 @@ class ImageEditActivity : ComponentActivity() {
                                     if (event.metadataWarning) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
                                 ).show()
                                 setResult(Activity.RESULT_OK)
-                                finish()
                             }
                             is ImageEditEvent.ChooseDestination -> {
                                 try {
@@ -99,7 +112,7 @@ class ImageEditActivity : ComponentActivity() {
                                         addCategory(Intent.CATEGORY_OPENABLE)
                                         type = event.mimeType
                                         putExtra(Intent.EXTRA_TITLE, event.name)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                                     })
                                 } catch (_: android.content.ActivityNotFoundException) {
                                     viewModel.destinationSelected(null)
@@ -113,7 +126,10 @@ class ImageEditActivity : ComponentActivity() {
                 ImageEditScreen(
                     state = state,
                     snackbar = snackbar,
-                    onBack = { finish() },
+                    onBack = { viewModel.closeEditor(keepDraft = true) },
+                    onDiscardDraft = { viewModel.closeEditor(keepDraft = false) },
+                    onRetryDraft = viewModel::retryDraft,
+                    onOpenDrafts = { startActivity(Intent(this@ImageEditActivity, ImageDraftsActivity::class.java)) },
                     onUndo = viewModel::undo,
                     onRedo = viewModel::redo,
                     onSelectTool = viewModel::selectTool,
@@ -222,6 +238,11 @@ class ImageEditActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val EXTRA_DRAFT_ID = "foldex.imageedit.draft_id"
+
+        fun draftIntent(context: Context, id: String): Intent = Intent(context, ImageEditActivity::class.java)
+            .putExtra(EXTRA_DRAFT_ID, id)
+
         private const val EXTRA_PATH = "foldex.imageedit.path"
         private const val EXTRA_NAME = "foldex.imageedit.name"
         private const val EXTRA_SOURCE_URI = "foldex.imageedit.source_uri"

@@ -1045,4 +1045,31 @@
     <string name="image_target_failed_body">上限：%1$s。撮影情報を含む出力の実測：%2$s。保存先にはまだ書き込んでいません。</string>
     <string name="image_target_suggestion">縮小候補：%1$d × %2$d px。編集内容と容量指定を保持します。再度「保存」を選ぶと、最終容量を確認します。</string>
     <string name="image_target_remove_save">容量指定を外して保存</string>
+    <!-- Persistent image editing drafts -->
+    <string name="image_drafts_title">画像編集の下書き</string>
+    <string name="image_draft_saved">下書き保存済み</string>
+    <string name="image_draft_pending">下書きを保存中…</string>
+    <string name="image_draft_failed">下書きを保存できません。空き容量などを確認して再試行してください。</string>
+    <string name="image_draft_retry">再試行</string>
+    <string name="image_draft_recovered">最新の記録を読み込めなかったため、前の正常な下書きを復元しました。</string>
+    <string name="image_draft_busy">別の画面で編集中です。編集画面を閉じてから再度開いてください。</string>
+    <string name="image_draft_unsupported">この下書きの形式には対応していません。対応するバージョンで開いてください。</string>
+    <string name="image_draft_corrupt">下書きまたは素材が壊れているか、見つかりません。</string>
+    <string name="image_draft_conflict">下書きの記録が変更されたため保存できません。</string>
+    <string name="image_draft_too_large">編集内容が下書きの保存上限を超えています。画像として保存してください。</string>
+    <string name="image_draft_close_failed">下書きを保存・削除できなかったため、編集画面を残しています。</string>
+    <string name="image_draft_close_title">編集を終了</string>
+    <string name="image_draft_close_body">下書きを残すと、保存した編集内容を後から再開できます。未確定の調整と、再開前の「元に戻す」の履歴は残りません。</string>
+    <string name="image_draft_keep">下書きを残して閉じる</string>
+    <string name="image_draft_discard">下書きを破棄して閉じる</string>
+    <string name="image_draft_list_failed">下書き一覧を読み込めませんでした。</string>
+    <string name="image_draft_delete_failed">下書きを削除できません。編集中の画面があれば閉じてください。</string>
+    <string name="image_draft_refresh">更新</string>
+    <string name="image_drafts_storage">%1$d 件 · 使用容量 %2$s</string>
+    <string name="image_drafts_description">下書きには元画像と編集内容が含まれます。画像を書き出しても残り、ここで削除できます。</string>
+    <string name="image_drafts_empty">下書きはありません。画像を編集すると自動保存されます。</string>
+    <string name="image_draft_delete_named">「%1$s」の下書きを削除</string>
+    <string name="image_draft_delete_title">下書きを削除</string>
+    <string name="image_draft_delete_body">「%1$s」の下書きと内部の素材コピーを削除します。元のファイルと書き出した画像は残ります。</string>
+    <string name="image_draft_delete">削除</string>
 </resources>

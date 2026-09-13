@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.ui.imageedit
 
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -79,6 +80,9 @@ fun ImageEditScreen(
     state: ImageEditUiState,
     snackbar: SnackbarHostState,
     onBack: () -> Unit,
+    onDiscardDraft: () -> Unit,
+    onRetryDraft: () -> Unit,
+    onOpenDrafts: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onSelectTool: (EditTool?) -> Unit,
@@ -144,7 +148,7 @@ fun ImageEditScreen(
             showSaveDialog -> showSaveDialog = false
             state.mosaicDraft != null -> onCancelMosaic()
             state.activeTool != null -> onSelectTool(null)
-            state.dirty -> showDiscardDialog = true
+            doc != null -> showDiscardDialog = true
             else -> onBack()
         }
     }
@@ -172,7 +176,7 @@ fun ImageEditScreen(
                     IconButton(onClick = {
                         if (state.selectingObject) onCancelObjectSelection()
                         else if (state.mosaicDraft != null) onCancelMosaic()
-                        else if (state.dirty) showDiscardDialog = true else onBack()
+                        else if (doc != null) showDiscardDialog = true else onBack()
                     }, enabled = !state.saving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
@@ -197,6 +201,31 @@ fun ImageEditScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.fillMaxSize()) {
+                if (doc != null) {
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = onOpenDrafts, enabled = !state.saving) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = stringResource(R.string.image_drafts_title))
+                        }
+                        Text(
+                            when (state.draftStatus) {
+                                ImageDraftStatus.SAVED -> stringResource(R.string.image_draft_saved)
+                                ImageDraftStatus.PENDING -> stringResource(R.string.image_draft_pending)
+                                ImageDraftStatus.FAILED -> state.draftError ?: stringResource(R.string.image_draft_failed)
+                            },
+                            modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                            color = if (state.draftStatus == ImageDraftStatus.FAILED) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (state.draftStatus == ImageDraftStatus.FAILED) {
+                            TextButton(onClick = onRetryDraft, enabled = !state.saving) {
+                                Text(stringResource(R.string.image_draft_retry))
+                            }
+                        }
+                    }
+                }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when {
                         state.loading -> CenterProgress(stringResource(R.string.loading))
@@ -396,19 +425,26 @@ fun ImageEditScreen(
     if (showDiscardDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDiscardDialog = false },
-            title = { Text(stringResource(R.string.image_unsaved_title)) },
-            text = { Text(stringResource(R.string.image_unsaved_body)) },
+            title = { Text(stringResource(R.string.image_draft_close_title)) },
+            text = { Text(stringResource(R.string.image_draft_close_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     showDiscardDialog = false
-                    showSaveDialog = true
-                }) { Text(stringResource(R.string.image_save_action)) }
+                    onBack()
+                }) { Text(stringResource(R.string.image_draft_keep)) }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    showDiscardDialog = false
-                    onBack()
-                }) { Text(stringResource(R.string.image_discard_close)) }
+                Column {
+                    TextButton(onClick = { showDiscardDialog = false; showSaveDialog = true }) {
+                        Text(stringResource(R.string.image_save_action))
+                    }
+                    TextButton(onClick = { showDiscardDialog = false; onDiscardDraft() }) {
+                        Text(stringResource(R.string.image_draft_discard))
+                    }
+                    TextButton(onClick = { showDiscardDialog = false }) {
+                        Text(stringResource(R.string.image_export_back_to_edit))
+                    }
+                }
             },
         )
     }

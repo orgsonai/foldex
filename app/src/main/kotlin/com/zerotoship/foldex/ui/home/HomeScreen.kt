@@ -123,6 +123,7 @@ fun HomeScreen(
     browserViewModel: FileBrowserViewModel,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
+    val draftContext = androidx.compose.ui.platform.LocalContext.current
     val shortcuts by viewModel.shortcuts.collectAsState()
     val hidden by viewModel.hiddenShortcuts.collectAsState()
     val connections by viewModel.allConnections.collectAsState()
@@ -174,6 +175,14 @@ fun HomeScreen(
                             Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.home_menu))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.image_drafts_title)) },
+                                onClick = {
+                                    menuOpen = false
+                                    draftContext.startActivity(android.content.Intent(draftContext,
+                                        com.zerotoship.foldex.ui.imageedit.ImageDraftsActivity::class.java))
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.home_show_hidden)) },
                                 leadingIcon = { Icon(Icons.Default.Restore, null) },

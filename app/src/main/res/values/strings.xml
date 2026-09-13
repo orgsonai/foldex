@@ -1054,4 +1054,32 @@
     <string name="image_target_failed_body">Limit: %1$s. Measured output including photo information: %2$s. Nothing has been saved to the destination.</string>
     <string name="image_target_suggestion">Try %1$d × %2$d px. Your edits and size limit are kept. Choose Save again; the final file size will be checked.</string>
     <string name="image_target_remove_save">Save without the size limit</string>
+
+    <!-- Persistent image editing drafts -->
+    <string name="image_drafts_title">Image editing drafts</string>
+    <string name="image_draft_saved">Draft saved</string>
+    <string name="image_draft_pending">Saving draft…</string>
+    <string name="image_draft_failed">Could not save the draft. Check free space and try again.</string>
+    <string name="image_draft_retry">Retry</string>
+    <string name="image_draft_recovered">The latest record could not be read. The previous valid draft was restored.</string>
+    <string name="image_draft_busy">Open in another editor. Close that editor before opening this draft.</string>
+    <string name="image_draft_unsupported">This draft format is unsupported. Open it with a compatible version.</string>
+    <string name="image_draft_corrupt">The draft or its source image is damaged or missing.</string>
+    <string name="image_draft_conflict">The draft record changed and could not be saved.</string>
+    <string name="image_draft_too_large">The edits exceed the draft size limit. Save an image to keep the result.</string>
+    <string name="image_draft_close_failed">The editor remains open because the draft could not be saved or deleted.</string>
+    <string name="image_draft_close_title">Close editor</string>
+    <string name="image_draft_close_body">Keep a draft to resume the saved edits later. Unapplied adjustments and earlier undo history are not restored.</string>
+    <string name="image_draft_keep">Keep draft and close</string>
+    <string name="image_draft_discard">Discard draft and close</string>
+    <string name="image_draft_list_failed">Could not load drafts.</string>
+    <string name="image_draft_delete_failed">Could not delete the draft. Close any editor using it and try again.</string>
+    <string name="image_draft_refresh">Refresh</string>
+    <string name="image_drafts_storage">%1$d drafts · %2$s used</string>
+    <string name="image_drafts_description">Drafts include source images and edits. They remain after exporting an image and can be deleted here.</string>
+    <string name="image_drafts_empty">No drafts yet. Image edits are saved automatically.</string>
+    <string name="image_draft_delete_named">Delete draft for %1$s</string>
+    <string name="image_draft_delete_title">Delete draft</string>
+    <string name="image_draft_delete_body">Delete the draft and its internal source copy for %1$s. Original files and exported images are kept.</string>
+    <string name="image_draft_delete">Delete</string>
 </resources>

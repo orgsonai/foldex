@@ -5,6 +5,7 @@ package com.zerotoship.foldex.ui.imageedit
 
 import android.content.Context
 import android.graphics.Bitmap
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.core.common.Result
@@ -49,6 +50,7 @@ import com.zerotoship.foldex.ui.imageedit.model.applying
 import com.zerotoship.foldex.ui.imageedit.model.invertedIn
 import com.zerotoship.foldex.ui.imageedit.model.mapPoints
 import com.zerotoship.foldex.ui.imageedit.model.TextStyleSpec
+import com.zerotoship.foldex.ui.imageedit.draft.*
 import com.zerotoship.foldex.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -66,6 +68,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -82,6 +88,7 @@ import javax.inject.Inject
 class ImageEditViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val storage: StorageProviderRouter,
+    private val savedState: SavedStateHandle,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ImageEditUiState())
@@ -112,73 +119,228 @@ class ImageEditViewModel @Inject constructor(
     private var selectionJob: Job? = null
     private var selectionRequest = 0L
 
-    // ---- 読み込み ----
+    private val draftStore = ImageDraftStore(imageDraftRoot(appContext.filesDir))
+    private var draftRecord: ImageDraft? = null
+    private var originalFile: File? = null
+    private var originalFingerprint: FileFingerprint? = null
+    private var draftRevision = 0L
+    private var draftSaveJob: Job? = null
+    private val draftMutex = Mutex()
+    private var loadStarted = false
+    private var closing = false
 
-    fun load(file: File, displayName: String, sourceUriString: String?) {
-        if (sourceFile != null) return // 再入防止 (Composable の再構成で二重に呼ばれても無視)
-        sourceFile = file
-        sourceUri = sourceUriString?.let { FileUri.fromStorageStringOrNull(it) }
-        if (!sourceUriString.isNullOrBlank() && sourceUri == null) {
-            _state.update { it.copy(error = appContext.getString(R.string.image_open_failed)) }
-            return
-        }
-        _state.update { it.copy(loading = true, fileName = displayName) }
-
+    init {
         viewModelScope.launch {
-            val prepared = withContext(Dispatchers.Default) {
-                val fingerprint = try {
-                    FileFingerprint.read(file)
-                } catch (_: Exception) {
-                    return@withContext null
-                }
-                sourceFingerprint = fingerprint
-                val src = ImageSource(file)
-                val size = src.size
-                if (size.width <= 1 && size.height <= 1) return@withContext null
-                val base = EditDocument.ofSingleImage(
-                    layerId = LAYER_ID,
-                    name = displayName,
-                    sourceKey = file.absolutePath,
-                    sourceSize = size,
-                    format = ImageFormat.fromFileName(displayName),
-                    sourceTransparency = src.transparency,
-                )
-                // 出力の上限を超える画像は、出力倍率を下げた状態で開く。
-                // (論理キャンバスは元の画素数のまま = 情報を捨てない)
-                val doc = if (size.longEdge > MAX_OUTPUT_LONG_EDGE) {
-                    base.withOutputLongEdge(MAX_OUTPUT_LONG_EDGE)
-                } else {
-                    base
-                }
-                src to doc
+            state.map { it.document }.distinctUntilChanged().collect { doc ->
+                if (doc != null && !textMoveInProgress) scheduleDraft()
             }
-            if (prepared == null) {
-                _state.update { it.copy(loading = false, error = appContext.getString(R.string.image_open_failed)) }
-                return@launch
-            }
-            val (src, doc) = prepared
-            imageSource = src
-            val hasLocation = withContext(Dispatchers.IO) { ExifTransfer.hasLocation(file) }
-            _state.update {
-                it.copy(
-                    loading = false,
-                    document = doc,
-                    originalBytes = file.length(),
-                    hasLocation = hasLocation,
-                    canOverwrite = sourceUri == null || sourceUri is FileUri.Local,
-                    originalName = (sourceUri as? FileUri.Local)?.absolutePath?.substringAfterLast('/') ?: file.name,
-                )
-            }
-            if (doc.output.scale < 1f) {
-                _events.trySend(
-                    ImageEditEvent.Message(
-                        appContext.getString(R.string.image_large_limited, MAX_OUTPUT_LONG_EDGE),
-                    ),
-                )
-            }
-            refreshPreview()
         }
     }
+
+    // ---- 読み込み・下書き ----
+
+    fun load(file: File, displayName: String, sourceUriString: String?, requestedDraftId: String? = null) {
+        if (loadStarted) return
+        loadStarted = true
+        _state.update { it.copy(loading = true, fileName = displayName) }
+        viewModelScope.launch {
+            try {
+                val id = requestedDraftId ?: savedState.get<String>(DRAFT_ID)
+                if (id != null) {
+                    val result = withContext(Dispatchers.IO) { draftStore.open(id) }
+                    when (result) {
+                        is Result.Failure -> {
+                            _state.update { it.copy(loading = false, error = draftError(result.error)) }
+                            return@launch
+                        }
+                        is Result.Success -> {
+                            installDraft(result.value.draft)
+                            if (result.value.recoveredPrevious) {
+                                _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_draft_recovered)))
+                            }
+                        }
+                    }
+                } else {
+                    sourceUri = sourceUriString?.let { FileUri.fromStorageStringOrNull(it) }
+                    if (!sourceUriString.isNullOrBlank() && sourceUri == null) error("Invalid source")
+                    val src = ImageSource(file)
+                    val size = withContext(Dispatchers.IO) { src.size }
+                    if (size.width <= 1 && size.height <= 1) error("Invalid image")
+                    val base = EditDocument.ofSingleImage(LAYER_ID, displayName, file.absolutePath, size,
+                        ImageFormat.fromFileName(displayName), sourceTransparency = src.transparency)
+                    val doc = if (size.longEdge > MAX_OUTPUT_LONG_EDGE) base.withOutputLongEdge(MAX_OUTPUT_LONG_EDGE) else base
+                    originalFile = (sourceUri as? FileUri.Local)?.let { File(it.absolutePath) } ?: file
+                    sourceFile = file
+                    sourceFingerprint = withContext(Dispatchers.IO) { FileFingerprint.read(file) }
+                    originalFingerprint = sourceFingerprint
+                    imageSource = src
+                    val newId = java.util.UUID.randomUUID().toString()
+                    // OS による再生成時は、途中まで作成した別の文書を新規作成しない。
+                    savedState[DRAFT_ID] = newId
+                    val context = currentCoroutineContext()
+                    val created = withContext(Dispatchers.IO) {
+                        draftStore.create(newId, file, displayName, sourceUriString, doc) { context.ensureActive() }
+                    }
+                    if (created is Result.Success) {
+                        src.release()
+                        installDraft(created.value)
+                    } else {
+                        savedState.remove<String>(DRAFT_ID)
+                        val hasLocation = withContext(Dispatchers.IO) { ExifTransfer.hasLocation(file) }
+                        _state.update { it.copy(document = doc, loading = false, draftStatus = ImageDraftStatus.FAILED,
+                            draftError = draftError((created as Result.Failure).error),
+                            originalBytes = file.length(), hasLocation = hasLocation,
+                            canOverwrite = sourceUri == null || sourceUri is FileUri.Local,
+                            originalName = originalFile?.name.orEmpty()) }
+                    }
+                    if (doc.output.scale < 1f) _events.trySend(ImageEditEvent.Message(
+                        appContext.getString(R.string.image_large_limited, MAX_OUTPUT_LONG_EDGE)))
+                }
+                refreshPreview()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.update { it.copy(loading = false, error = appContext.getString(R.string.image_open_failed)) }
+            }
+        }
+    }
+
+    private suspend fun installDraft(draft: ImageDraft) {
+        val image = draft.document.layers.filterIsInstance<Layer.Image>().single()
+        val file = draftStore.assetFile(draft.id, image.sourceKey)
+        val src = ImageSource(file)
+        val loadedSize = withContext(Dispatchers.IO) { src.size }
+        if (loadedSize != image.sourceSize) error("Source dimensions changed")
+        draftRecord = draft
+        savedState[DRAFT_ID] = draft.id
+        draftRevision = withContext(Dispatchers.IO) { draftStore.nextRevision(draft.id, draft.revision) - 1 }
+        sourceFile = file
+        sourceFingerprint = draft.assets.getValue(image.sourceKey)
+        originalFile = File(draft.origin.localPath)
+        originalFingerprint = draft.origin.fingerprint
+        sourceUri = draft.origin.uri?.let { FileUri.fromStorageString(it) }
+        imageSource = src
+        unconfirmedReceipt = draft.pendingExport
+        exportMetadataWarning = draft.pendingExportMetadataWarning
+        history.clear()
+        val location = withContext(Dispatchers.IO) { ExifTransfer.hasLocation(file) }
+        _state.update { it.copy(document = draft.document, loading = false, fileName = draft.name,
+            originalName = originalFile?.name.orEmpty(), originalBytes = file.length(), hasLocation = location,
+            dirty = draft.dirty, canUndo = false, canRedo = false, draftStatus = ImageDraftStatus.SAVED, draftError = null,
+            canOverwrite = sourceUri == null || sourceUri is FileUri.Local,
+            unconfirmedSave = draft.pendingExport?.destination?.displayName()) }
+    }
+
+    private fun scheduleDraft() {
+        if (closing) return
+        draftRevision++
+        draftSaveJob?.cancel()
+        if (draftRecord == null) return
+        _state.update { it.copy(draftStatus = ImageDraftStatus.PENDING) }
+        draftSaveJob = viewModelScope.launch {
+            delay(1_000)
+            persistDraft()
+        }
+    }
+
+    /** 画面を閉じるときと出力の受領記録では、デバウンスを待たず確定する。 */
+    private suspend fun persistDraft(): Boolean = draftMutex.withLock {
+        val doc = _state.value.document ?: return@withLock true
+        val record = draftRecord ?: run {
+            _state.update { it.copy(draftStatus = ImageDraftStatus.FAILED) }
+            return@withLock false
+        }
+        val revision = ++draftRevision
+        val snapshot = record.copy(revision = revision, updatedAt = System.currentTimeMillis(), document = doc,
+            origin = record.origin.copy(fingerprint = originalFingerprint ?: record.origin.fingerprint),
+            dirty = _state.value.dirty, pendingExport = unconfirmedReceipt,
+            pendingExportMetadataWarning = unconfirmedReceipt != null && exportMetadataWarning)
+        val result = withContext(NonCancellable + Dispatchers.IO) { draftStore.save(snapshot) }
+        when (result) {
+            is Result.Success -> {
+                if (revision == draftRevision) _state.update { it.copy(draftStatus = ImageDraftStatus.SAVED, draftError = null) }
+                true
+            }
+            is Result.Failure -> {
+                _state.update { it.copy(draftStatus = ImageDraftStatus.FAILED, draftError = draftError(result.error)) }
+                false
+            }
+        }
+    }
+
+    fun flushDraftOnBackground() {
+        if (closing || _state.value.document == null || draftRecord == null) return
+        if (textMoveInProgress) commitTextMove()
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch { persistDraft() }
+    }
+
+    fun retryDraft() {
+        if (_state.value.saving) return
+        viewModelScope.launch {
+            if (draftRecord == null) {
+                val doc = _state.value.document ?: return@launch
+                val file = sourceFile ?: return@launch
+                _state.update { it.copy(saving = true, draftStatus = ImageDraftStatus.PENDING) }
+                pauseRendering()
+                val id = java.util.UUID.randomUUID().toString()
+                val result = withContext(Dispatchers.IO) {
+                    draftStore.create(id, file, _state.value.fileName, sourceUri?.toStorageString(), doc)
+                }
+                if (result is Result.Success) {
+                    val wasDirty = _state.value.dirty
+                    imageSource?.release()
+                    installDraft(result.value)
+                    _state.update { it.copy(dirty = wasDirty) }
+                    refreshPreview()
+                } else _state.update { it.copy(draftStatus = ImageDraftStatus.FAILED,
+                    draftError = draftError((result as Result.Failure).error)) }
+                _state.update { it.copy(saving = false) }
+            }
+            persistDraft()
+        }
+    }
+
+    fun closeEditor(keepDraft: Boolean) {
+        if (_state.value.saving) return
+        if (_state.value.document == null) { _events.trySend(ImageEditEvent.Close); return }
+        closing = true
+        draftSaveJob?.cancel()
+        _state.update { it.copy(saving = true) }
+        viewModelScope.launch {
+            pauseRendering()
+            val okay = if (keepDraft) persistDraft() else draftMutex.withLock {
+                draftRecord?.let { record ->
+                    withContext(Dispatchers.IO) { draftStore.discard(record.id) }.isSuccess
+                } ?: true
+            }
+            if (okay) _events.send(ImageEditEvent.Close)
+            else {
+                closing = false
+                _state.update { it.copy(saving = false) }
+                refreshPreview()
+                _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_draft_close_failed)))
+            }
+        }
+    }
+
+    private suspend fun pauseRendering() {
+        val selecting = selectionJob
+        cancelAutomaticSelection()
+        selecting?.cancelAndJoin()
+        previewJob?.cancelAndJoin()
+        estimateJob?.cancelAndJoin()
+        imageSource?.release()
+    }
+
+    private fun draftError(reason: DraftFailure): String = appContext.getString(when (reason) {
+        DraftFailure.BUSY -> R.string.image_draft_busy
+        DraftFailure.UNSUPPORTED -> R.string.image_draft_unsupported
+        DraftFailure.CORRUPT, DraftFailure.MISSING_SOURCE -> R.string.image_draft_corrupt
+        DraftFailure.CONFLICT -> R.string.image_draft_conflict
+        DraftFailure.TOO_LARGE -> R.string.image_draft_too_large
+        DraftFailure.IO -> R.string.image_draft_failed
+    })
 
     // ---- 編集操作 ----
 
@@ -436,6 +598,7 @@ class ImageEditViewModel @Inject constructor(
         if (!textMoveInProgress) {
             history.record(doc)
             textMoveInProgress = true
+            draftSaveJob?.cancel()
         }
         applyDocument(
             doc.updateLayer(id) { (it as Layer.Text).movedBy(dx, dy) },
@@ -445,6 +608,7 @@ class ImageEditViewModel @Inject constructor(
 
     fun commitTextMove() {
         textMoveInProgress = false
+        scheduleDraft()
     }
 
     /** 編集中のテキストを消す。空のまま完了したときも呼ばれる。 */
@@ -852,15 +1016,20 @@ class ImageEditViewModel @Inject constructor(
                             prepared.value.use { image ->
                                 // 最終配置に入ったらキャンセルで完了結果を失わない。
                                 withContext(NonCancellable) {
+                                    val remote = sourceUri as? FileUri.Remote
+                                    val destination = remote?.let { ExternalImageExport.newSibling(it, _state.value.fileName, doc.output.format) }
+                                        ?: originalFile?.takeIf { request.overwrite }?.let { FileUri.Local(it.absolutePath) }
+                                    if (destination != null) {
+                                        unconfirmedReceipt = ExportReceipt(destination, image.fingerprint)
+                                        persistDraft()
+                                    }
                                     val outcome = withContext(Dispatchers.IO) {
                                         when (val source = sourceUri) {
-                                            is FileUri.Remote -> externalExport.deliver(
-                                                image, ExternalImageExport.newSibling(source, _state.value.fileName, doc.output.format), source,
-                                            )
+                                            is FileUri.Remote -> externalExport.deliver(image, destination!!, source)
                                             else -> LocalImageExport().deliver(
                                                 image,
-                                                (source as? FileUri.Local)?.let { File(it.absolutePath) } ?: file,
-                                                fingerprint, doc.output.format, request.overwrite,
+                                                originalFile ?: file,
+                                                originalFingerprint ?: fingerprint, doc.output.format, request.overwrite,
                                             )
                                         }
                                     }
@@ -927,6 +1096,8 @@ class ImageEditViewModel @Inject constructor(
         viewModelScope.launch {
             prepared.use { image ->
                 withContext(NonCancellable) {
+                    unconfirmedReceipt = ExportReceipt(FileUri.Saf(uri), image.fingerprint)
+                    persistDraft()
                     val outcome = withContext(Dispatchers.IO) {
                         externalExport.deliver(image, FileUri.Saf(uri), sourceUri)
                     }
@@ -951,25 +1122,32 @@ class ImageEditViewModel @Inject constructor(
     fun dismissSaveVerification() {
         if (_state.value.saving) return
         unconfirmedReceipt = null
+        scheduleDraft()
         _state.update { it.copy(unconfirmedSave = null) }
         refreshPreview()
     }
 
-    private fun finishExport(result: ImageExportResult) {
+    private suspend fun finishExport(result: ImageExportResult) {
+        val previousReceipt = unconfirmedReceipt
+        if (result is ImageExportResult.Saved && previousReceipt?.destination == originalFile?.let { FileUri.Local(it.absolutePath) }) {
+            originalFingerprint = previousReceipt?.expected ?: originalFingerprint
+        }
         unconfirmedReceipt = (result as? ImageExportResult.Unconfirmed)?.receipt
         _state.update {
             it.copy(
-                saving = false, previewing = false,
+                previewing = false,
                 dirty = if (result is ImageExportResult.Saved) false else it.dirty,
                 unconfirmedSave = unconfirmedReceipt?.destination?.displayName(),
             )
         }
+        persistDraft()
+        _state.update { it.copy(saving = false) }
+        refreshPreview()
         when (result) {
             is ImageExportResult.Saved -> _events.trySend(ImageEditEvent.Saved(result.displayPath, exportMetadataWarning))
             is ImageExportResult.Unconfirmed -> Unit // 画面の確認ダイアログから同じ URI を再検証する。
             is ImageExportResult.Failed -> {
                 showExportFailure(result.reason, result.displayPath)
-                refreshPreview()
             }
         }
     }
@@ -995,6 +1173,8 @@ class ImageEditViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        draftSaveJob?.cancel()
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { draftStore.close() }
         selectionJob?.cancel()
         previewJob?.cancel()
         estimateJob?.cancel()
@@ -1008,7 +1188,7 @@ class ImageEditViewModel @Inject constructor(
 
     private fun sourceResolver(): (String) -> ImageSource? {
         val src = imageSource
-        val key = sourceFile?.absolutePath
+        val key = (_state.value.document?.layers?.firstOrNull { it is Layer.Image } as? Layer.Image)?.sourceKey
         return { requested -> if (key != null && requested == key) src else null }
     }
 
@@ -1068,12 +1248,15 @@ class ImageEditViewModel @Inject constructor(
 
         const val MIN_OUTPUT_LONG_EDGE: Int = 16
 
+        private const val DRAFT_ID = "image_draft_id"
         private const val LAYER_ID = "layer-0"
     }
 }
 
 /** 画面の状態。 */
 data class ImageEditUiState(
+    val draftStatus: ImageDraftStatus = ImageDraftStatus.PENDING,
+    val draftError: String? = null,
     val loading: Boolean = false,
     val error: String? = null,
     val fileName: String = "",
@@ -1124,6 +1307,8 @@ data class ImageEditUiState(
     val hasSelection: Boolean get() = selection?.isEmpty == false
 }
 
+enum class ImageDraftStatus { PENDING, SAVED, FAILED }
+
 /** ツールバーで選ぶツール。 */
 enum class EditTool { CROP, RESIZE, SELECT, BRUSH, TEXT }
 
@@ -1136,6 +1321,7 @@ data class SaveRequest(
 data class TargetSizeFailure(val targetBytes: Int, val actualBytes: Long, val suggestedSize: EditSize?)
 
 sealed interface ImageEditEvent {
+    data object Close : ImageEditEvent
     data class Message(val text: String) : ImageEditEvent
     data class Saved(val displayPath: String, val metadataWarning: Boolean = false) : ImageEditEvent
     data class ChooseDestination(val name: String, val mimeType: String) : ImageEditEvent

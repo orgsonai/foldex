@@ -137,6 +137,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.imageedit.ImageDraftsActivity"
+            android:exported="false" />
+
         <!-- 内蔵画像エディタ (切り抜き / 回転 / 解像度・容量の変更) -->
         <activity
             android:name=".ui.imageedit.ImageEditActivity"
