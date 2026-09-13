@@ -57,6 +57,29 @@ object SelectionPaths {
             }
         }
 
+        is SelectionSpec.BrushStroke -> {
+            val points = spec.points
+            val path = if (points.all { it == points.first() }) {
+                Path().apply { addCircle(points[0].x * scale, points[0].y * scale, spec.radius * scale, Path.Direction.CW) }
+            } else {
+                val center = Path().apply {
+                    moveTo(points[0].x * scale, points[0].y * scale)
+                    points.drop(1).forEach { lineTo(it.x * scale, it.y * scale) }
+                }
+                val paint = android.graphics.Paint().apply {
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeWidth = spec.radius * 2 * scale
+                    strokeCap = android.graphics.Paint.Cap.ROUND
+                    strokeJoin = android.graphics.Paint.Join.ROUND
+                }
+                Path().also { check(paint.getFillPath(center, it)) { "Could not build selection brush" } }
+            }
+            spec.clip?.let { clip ->
+                check(path.op(toPath(SelectionSpec.Rect(clip), scale), Path.Op.INTERSECT)) { "Could not clip selection brush" }
+            }
+            path
+        }
+
         is SelectionSpec.Combined -> {
             val out = Path()
             for (part in spec.parts) {

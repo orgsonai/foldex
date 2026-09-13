@@ -72,7 +72,7 @@ class ImageDraftCodecTest {
 
     @Test fun `未知のschemaは明示的に非対応となる`() {
         try {
-            decode(bytes(draft()).apply { this[7] = 2 })
+            decode(bytes(draft()).apply { this[7] = (ImageDraftCodec.SCHEMA + 1).toByte() })
             fail("Unsupported version was accepted")
         } catch (e: DraftException) { assertEquals(DraftFailure.UNSUPPORTED, e.reason) }
     }
@@ -115,4 +115,30 @@ class ImageDraftCodecTest {
         for (i in 8..11) bytes[i] = 0x7f
         assertTrue(runCatching { decode(bytes) }.isFailure)
     }
+    @Test fun `1_8_5の実際のcodecで作った下書きを同じ内容で読み込める`() {
+        val encoded = javaClass.getResourceAsStream("/imageedit/draft-1.8.5-schema1.base64")!!.bufferedReader().use { it.readText() }.trim()
+        val restored = decode(java.util.Base64.getDecoder().decode(encoded))
+        assertEquals(draft().copy(id = restored.id), restored)
+        assertEquals(restored, decode(bytes(restored)))
+    }
+
+    @Test fun `ブラシの半径と端のクリップと複合選択を保存復元する`() {
+        val original = draft()
+        val stroke = SelectionSpec.BrushStroke(listOf(EditPoint(-3f, 20f), EditPoint(30f, 30f)), 6f, EditRect.ofSize(800, 600))
+        val area = original.document.selection.applying(SelectionMode.SUBTRACT, stroke)
+        val updated = original.copy(document = original.document.copy(selection = area,
+            layers = original.document.layers + Layer.Mosaic("new-mosaic", "mosaic", area = area!!, blockSizePx = 16f)))
+        assertEquals(updated, decode(bytes(updated)))
+    }
+
+    @Test fun `schema1に新しい選択型が現れても勝手に受け入れない`() {
+        val original = draft()
+        val updated = original.copy(document = original.document.copy(selection =
+            SelectionSpec.BrushStroke(listOf(EditPoint(20f, 20f)), 6f)))
+        try {
+            decode(bytes(updated).apply { this[7] = 1 })
+            fail("Unsupported schema 1 operation was accepted")
+        } catch (error: DraftException) { assertEquals(DraftFailure.UNSUPPORTED, error.reason) }
+    }
+
 }

@@ -90,6 +90,42 @@ sealed interface SelectionSpec {
         }
     }
 
+    /** 硬い円形ブラシの軌跡。半径と点列を論理座標で保持し、保存倍率で粗くならない。 */
+    data class BrushStroke(val points: List<EditPoint>, val radius: Float, val clip: EditRect? = null) : SelectionSpec {
+        init {
+            require(points.isNotEmpty() && points.size <= MAX_BRUSH_POINTS)
+            require(radius.isFinite() && radius > 0f)
+            require(points.all { it.x.isFinite() && it.y.isFinite() })
+            require(clip == null || (!clip.isEmpty && listOf(clip.left, clip.top, clip.right, clip.bottom).all { it.isFinite() }))
+        }
+
+        private val strokeBounds = EditRect(
+            points.minOf { it.x } - radius, points.minOf { it.y } - radius,
+            points.maxOf { it.x } + radius, points.maxOf { it.y } + radius,
+        )
+        override val bounds: EditRect = if (clip == null) strokeBounds else
+            strokeBounds.intersect(clip) ?: EditRect(0f, 0f, 0f, 0f)
+
+        override fun contains(x: Float, y: Float): Boolean {
+            if (bounds.isEmpty || x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return false
+            if (clip != null && (x >= clip.right || y >= clip.bottom)) return false
+            val radiusSquared = radius * radius
+            var previous = points.first()
+            for (point in points) {
+                val dx = point.x - previous.x
+                val dy = point.y - previous.y
+                val lengthSquared = dx * dx + dy * dy
+                val t = if (lengthSquared == 0f) 0f else
+                    (((x - previous.x) * dx + (y - previous.y) * dy) / lengthSquared).coerceIn(0f, 1f)
+                val distanceX = x - (previous.x + dx * t)
+                val distanceY = y - (previous.y + dy * t)
+                if (distanceX * distanceX + distanceY * distanceY <= radiusSquared) return true
+                previous = point
+            }
+            return false
+        }
+    }
+
     /** 自動選択の閉じた輪郭。even-odd で穴と離れた領域をともに保持する。 */
     data class Contours(val rings: List<List<EditPoint>>) : SelectionSpec {
         private val polygons = rings.filter { it.size >= 3 }.map { Lasso(it) }
@@ -143,6 +179,7 @@ sealed interface SelectionSpec {
     companion object {
         /** 多角形として成立する最小の点数。 */
         private const val MIN_POLYGON_POINTS = 3
+        const val MAX_BRUSH_POINTS = 4096
 
         /** キャンバス全体を覆う選択。反転の下敷きに使う。 */
         fun whole(canvas: EditSize): SelectionSpec =
@@ -156,6 +193,7 @@ enum class BoolOp { ADD, SUBTRACT }
 /** 指でなぞって作る形。 */
 enum class SelectionShape {
     OBJECT,
+    BRUSH,
     RECT,
     ELLIPSE,
 
@@ -208,6 +246,11 @@ fun SelectionSpec.mapPoints(transform: (EditPoint) -> EditPoint): SelectionSpec 
     is SelectionSpec.Ellipse -> SelectionSpec.Ellipse(rect.mapCorners(transform))
     is SelectionSpec.Lasso -> SelectionSpec.Lasso(points.map(transform))
     is SelectionSpec.Contours -> SelectionSpec.Contours(rings.map { it.map(transform) })
+    is SelectionSpec.BrushStroke -> {
+        val origin = transform(EditPoint(0f, 0f))
+        val edge = transform(EditPoint(radius, 0f))
+        SelectionSpec.BrushStroke(points.map(transform), kotlin.math.hypot(edge.x - origin.x, edge.y - origin.y), clip?.mapCorners(transform))
+    }
     is SelectionSpec.Combined -> SelectionSpec.Combined(
         parts.map { it.copy(spec = it.spec.mapPoints(transform)) },
     )

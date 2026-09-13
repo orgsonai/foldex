@@ -5,6 +5,11 @@ package com.zerotoship.foldex.ui.imageedit
 
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,7 +121,12 @@ fun ImageEditScreen(
     onFillSelection: (Int) -> Unit,
     onEraseSelection: () -> Unit,
     onBeginMosaic: () -> Unit,
-    onMosaicPercent: (Float) -> Unit,
+    onMosaicBlockSize: (Float) -> Unit,
+    onMosaicSizeFinished: () -> Unit,
+    onEditMosaic: (String) -> Unit,
+    onToggleMosaicArea: () -> Unit,
+    onDeleteMosaic: () -> Unit,
+    onSelectionBrushFailure: () -> Unit,
     onCommitMosaic: () -> Unit,
     onCancelMosaic: () -> Unit,
     onSelectObject: (com.zerotoship.foldex.ui.imageedit.model.EditPoint, SelectionMode) -> Unit,
@@ -132,6 +142,36 @@ fun ImageEditScreen(
     var selectMode by remember { mutableStateOf(SelectionMode.REPLACE) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
+    var showMosaicDelete by remember { mutableStateOf(false) }
+    var backdrop by remember { mutableStateOf(SelectionBackdrop.CHECKERBOARD) }
+    val shortEdge = doc?.canvasSize?.let { minOf(it.width, it.height) } ?: 1000
+    val brushLimit = minOf(512f, maxOf(2f, shortEdge * .25f))
+    var selectionBrushDiameter by remember(doc?.canvas) { mutableFloatStateOf((shortEdge * .025f).coerceIn(1f, brushLimit)) }
+
+    LaunchedEffect(state.mosaicSelectingArea) {
+        if (state.mosaicSelectingArea) { selectShape = SelectionShape.BRUSH; selectMode = SelectionMode.ADD }
+    }
+
+    @Composable
+    fun SelectionTools() {
+        SelectionPanel(
+            shape = selectShape, mode = selectMode, color = brush.color, hasSelection = state.hasSelection,
+            selectingObject = state.selectingObject, brushDiameter = selectionBrushDiameter,
+            brushLimit = brushLimit, backdrop = backdrop, onBrushDiameterChange = { selectionBrushDiameter = it },
+            onBackdropChange = { backdrop = it }, mosaics = state.mosaics, onEditMosaic = onEditMosaic,
+            editingMosaicArea = state.mosaicSelectingArea,
+            onShapeChange = {
+                onCancelObjectSelection()
+                selectShape = it
+                if (it == SelectionShape.BRUSH) selectMode = SelectionMode.ADD
+            },
+            onModeChange = { onCancelObjectSelection(); selectMode = it },
+            onCancelObjectSelection = onCancelObjectSelection,
+            onColorChange = { brush = brush.copy(color = it) },
+            onFill = { onFillSelection(brush.color) }, onErase = onEraseSelection, onMosaic = onBeginMosaic,
+            onInvert = onInvertSelection, onDeselect = onClearSelection,
+        )
+    }
 
     // ツールを切り替えたら枠を初期化する。
     LaunchedEffect(state.activeTool, doc?.canvas) {
@@ -146,6 +186,7 @@ fun ImageEditScreen(
             state.saving -> Unit
             state.selectingObject -> onCancelObjectSelection()
             showSaveDialog -> showSaveDialog = false
+            state.mosaicSelectingArea -> onToggleMosaicArea()
             state.mosaicDraft != null -> onCancelMosaic()
             state.activeTool != null -> onSelectTool(null)
             doc != null -> showDiscardDialog = true
@@ -175,6 +216,7 @@ fun ImageEditScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         if (state.selectingObject) onCancelObjectSelection()
+                        else if (state.mosaicSelectingArea) onToggleMosaicArea()
                         else if (state.mosaicDraft != null) onCancelMosaic()
                         else if (doc != null) showDiscardDialog = true else onBack()
                     }, enabled = !state.saving) {
@@ -182,10 +224,10 @@ fun ImageEditScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onUndo, enabled = !state.saving && (state.canUndo || state.mosaicDraft != null)) {
+                    IconButton(onClick = onUndo, enabled = !state.saving && state.canUndo) {
                         Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.action_undo))
                     }
-                    IconButton(onClick = onRedo, enabled = state.canRedo && !state.saving && state.mosaicDraft == null) {
+                    IconButton(onClick = onRedo, enabled = state.canRedo && !state.saving) {
                         Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.action_redo))
                     }
                     TextButton(
@@ -199,7 +241,8 @@ fun ImageEditScreen(
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+            val panelMaxHeight = maxHeight * .5f
             Column(Modifier.fillMaxSize()) {
                 if (doc != null) {
                     androidx.compose.foundation.layout.Row(
@@ -234,7 +277,11 @@ fun ImageEditScreen(
                             preview = state.preview,
                             canvasSize = doc?.let { EditSize(it.canvas.width, it.canvas.height) },
                             mode = when {
-                                state.mosaicDraft != null || state.saving -> CanvasMode.View
+                                state.saving || (state.mosaicDraft != null && !state.mosaicSelectingArea) -> CanvasMode.View
+                                state.activeTool == EditTool.SELECT && selectShape == SelectionShape.BRUSH -> CanvasMode.SelectionBrush(
+                                    current = state.selection, diameter = selectionBrushDiameter, operation = selectMode,
+                                    onStroke = { onApplySelection(selectMode, it) }, onFailure = onSelectionBrushFailure,
+                                )
                                 state.activeTool == EditTool.CROP -> CanvasMode.Crop(
                                     rect = cropRect,
                                     onChange = { next ->
@@ -281,6 +328,8 @@ fun ImageEditScreen(
                                     )
                                 else -> CanvasMode.View
                             },
+                            backdrop = backdrop,
+                            highlight = state.mosaicDraft?.area,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -296,14 +345,22 @@ fun ImageEditScreen(
                 if (state.previewing) LinearProgressIndicator(Modifier.fillMaxWidth())
                 val mosaic = state.mosaicDraft
                 if (mosaic != null && doc != null) {
-                    MosaicPanel(
-                        blockSizePx = mosaic.blockSizePx,
-                        shortEdge = minOf(doc.canvas.width, doc.canvas.height),
-                        previewing = state.previewing || state.previewFailed,
-                        onPercentChange = onMosaicPercent,
-                        onApply = onCommitMosaic,
-                        onCancel = onCancelMosaic,
-                    )
+                    Column(Modifier.heightIn(max = panelMaxHeight).verticalScroll(rememberScrollState())) {
+                        MosaicPanel(
+                            blockSizePx = mosaic.blockSizePx,
+                            maximumBlockSize = state.mosaicMaximumBlockSize,
+                            previewing = state.previewing || state.previewFailed,
+                            selectingArea = state.mosaicSelectingArea,
+                            editingExisting = state.mosaicEditingExisting,
+                            onToggleArea = onToggleMosaicArea,
+                            onDelete = { showMosaicDelete = true },
+                            onSizeFinished = onMosaicSizeFinished,
+                            onBlockSizeChange = onMosaicBlockSize,
+                            onApply = onCommitMosaic,
+                            onCancel = onCancelMosaic,
+                        )
+                        if (state.mosaicSelectingArea) SelectionTools()
+                    }
                 } else {
                     when (state.activeTool) {
                         EditTool.CROP -> {
@@ -357,23 +414,9 @@ fun ImageEditScreen(
                         }
                         EditTool.SELECT -> {
                             HorizontalDivider()
-                            SelectionPanel(
-                                shape = selectShape,
-                                mode = selectMode,
-                                color = brush.color,
-                                hasSelection = state.hasSelection,
-                                onShapeChange = { onCancelObjectSelection(); selectShape = it },
-                                onModeChange = { onCancelObjectSelection(); selectMode = it },
-                                selectingObject = state.selectingObject,
-                                onCancelObjectSelection = onCancelObjectSelection,
-                                // 塗る色はペンと共有する (色の概念を 2 つ持たせない)。
-                                onColorChange = { brush = brush.copy(color = it) },
-                                onFill = { onFillSelection(brush.color) },
-                                onErase = onEraseSelection,
-                                onMosaic = onBeginMosaic,
-                                onInvert = onInvertSelection,
-                                onDeselect = onClearSelection,
-                            )
+                            Column(Modifier.heightIn(max = panelMaxHeight).verticalScroll(rememberScrollState())) {
+                                SelectionTools()
+                            }
                         }
                         EditTool.BRUSH -> {
                             HorizontalDivider()
@@ -418,6 +461,22 @@ fun ImageEditScreen(
             onSave = { request ->
                 showSaveDialog = false
                 onSave(request)
+            },
+        )
+    }
+
+    if (showMosaicDelete) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showMosaicDelete = false },
+            title = { Text(stringResource(R.string.image_mosaic_delete)) },
+            text = { Text(stringResource(R.string.image_mosaic_delete_body)) },
+            confirmButton = {
+                TextButton(onClick = { showMosaicDelete = false; onDeleteMosaic() }) {
+                    Text(stringResource(R.string.image_mosaic_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMosaicDelete = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }

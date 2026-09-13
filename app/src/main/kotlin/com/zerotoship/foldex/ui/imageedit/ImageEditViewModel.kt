@@ -42,6 +42,7 @@ import com.zerotoship.foldex.ui.imageedit.model.OutputSpec
 import com.zerotoship.foldex.ui.imageedit.model.ImageFormat
 import com.zerotoship.foldex.ui.imageedit.model.Layer
 import com.zerotoship.foldex.ui.imageedit.model.LayerTransform
+import com.zerotoship.foldex.ui.imageedit.model.MosaicEditSession
 import com.zerotoship.foldex.ui.imageedit.model.SaveNaming
 import com.zerotoship.foldex.ui.imageedit.model.SelectionMode
 import com.zerotoship.foldex.ui.imageedit.model.SelectionSpec
@@ -98,6 +99,7 @@ class ImageEditViewModel @Inject constructor(
     val events = _events.receiveAsFlow()
 
     private val history = EditHistory()
+    private var mosaicSession: MosaicEditSession? = null
 
     /** 元ファイル (ローカル実体、またはリモート/SAF のキャッシュ実体)。 */
     private var sourceFile: File? = null
@@ -496,7 +498,7 @@ class ImageEditViewModel @Inject constructor(
     /** 出力設定だけなら表示画像と選択を描き直す必要はない。 */
     private fun setOutputPolicy(output: OutputSpec) {
         val doc = _state.value.document ?: return
-        if (_state.value.saving || output == doc.output) return
+        if (_state.value.saving || mosaicSession != null || output == doc.output) return
         targetRetryRequest = null
         _state.update { it.copy(
             document = doc.copy(output = output), dirty = true, estimatedBytes = null,
@@ -508,7 +510,7 @@ class ImageEditViewModel @Inject constructor(
     fun undo() {
         if (_state.value.saving) return
         cancelAutomaticSelection()
-        if (_state.value.mosaicDraft != null) { cancelMosaic(); return }
+        mosaicSession?.let { if (it.undo()) updateMosaicPreview(); return }
         val current = _state.value.document ?: return
         val previous = history.undo(current) ?: return
         applyDocument(previous, recordHistory = false)
@@ -517,7 +519,7 @@ class ImageEditViewModel @Inject constructor(
     fun redo() {
         if (_state.value.saving) return
         cancelAutomaticSelection()
-        if (_state.value.mosaicDraft != null) return
+        mosaicSession?.let { if (it.redo()) updateMosaicPreview(); return }
         val current = _state.value.document ?: return
         val next = history.redo(current) ?: return
         applyDocument(next, recordHistory = false)
@@ -678,9 +680,9 @@ class ImageEditViewModel @Inject constructor(
                 // 選択の解除・ツール変更・編集が先に進んでいれば古い結果を捨てる。
                 if (selectionRequest != request || _state.value.document !== doc) return@launch
                 when (result) {
-                    is ObjectSelectionResult.Success -> _state.update {
-                        it.copy(document = doc.copy(selection = doc.selection.applying(mode, result.selection)))
-                    }
+                    is ObjectSelectionResult.Success -> updateSelection(
+                        doc.selection.applying(mode, result.selection), cancelPending = false,
+                    )
                     ObjectSelectionResult.Empty -> objectSelectionMessage(R.string.image_object_empty)
                     ObjectSelectionResult.Unavailable -> objectSelectionMessage(R.string.image_object_unavailable)
                     ObjectSelectionResult.Failed -> objectSelectionMessage(R.string.image_object_failed)
@@ -707,25 +709,25 @@ class ImageEditViewModel @Inject constructor(
         _events.trySend(ImageEditEvent.Message(appContext.getString(message)))
     }
 
-    /**
-     * 指で描いた形を選択に反映する。**履歴には積まない。**
-     *
-     * 選択そのものは画素を変えないので、Undo で選択の変遷を延々と戻らされるのは邪魔になる。
-     * 履歴に残すのは「塗りつぶした」「透明にした」という結果の方だけ。
-     */
+    /** 一筆・一回の選択を Undo 一手にする。モザイク調整中は未確定の範囲だけを変える。 */
     fun applySelection(mode: SelectionMode, drawn: SelectionSpec) {
-        val doc = _state.value.document ?: return
-        updateSelection(doc.selection.applying(mode, drawn))
+        val area = currentSelection()
+        updateSelection(area.applying(mode, drawn))
     }
 
-    /** 選択を反転する (選んでいなければ全面が選ばれる)。 */
     fun invertSelection() {
         val doc = _state.value.document ?: return
-        updateSelection(doc.selection.invertedIn(doc.canvasSize))
+        updateSelection(currentSelection().invertedIn(doc.canvasSize))
     }
 
-    /** 選択を解除する。 */
     fun clearSelection() = updateSelection(null)
+
+    private fun currentSelection(): SelectionSpec? = mosaicSession?.draft?.area?.takeUnless { it.isEmpty }
+        ?: if (mosaicSession == null) _state.value.document?.selection else null
+
+    fun selectionBrushFailed() {
+        _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_selection_brush_failed)))
+    }
 
     /** 選択範囲を [color] で塗る。 */
     fun fillSelection(color: Int) = addFill(FillMode.COLOR, color)
@@ -736,40 +738,76 @@ class ImageEditViewModel @Inject constructor(
     fun beginMosaic() {
         val doc = _state.value.document ?: return
         val area = doc.selection?.takeUnless { it.isEmpty } ?: return
-        if (_state.value.saving) return
+        if (_state.value.saving || mosaicSession != null) return
         cancelAutomaticSelection()
-        _state.update {
-            it.copy(mosaicDraft = Layer.Mosaic(
-                id = doc.freshLayerId("mosaic"),
-                name = appContext.getString(R.string.image_mosaic),
-                area = area,
-                blockSizePx = (minOf(doc.canvas.width, doc.canvas.height) * 0.025f).coerceAtLeast(2f),
-            ))
-        }
+        mosaicSession = MosaicEditSession.create(doc, Layer.Mosaic(
+            id = doc.freshLayerId("mosaic"), name = appContext.getString(R.string.image_mosaic), area = area,
+            blockSizePx = (minOf(doc.canvas.width, doc.canvas.height) * 0.025f).coerceAtLeast(2f),
+        ))
+        updateMosaicPreview()
+    }
+
+    fun editMosaic(id: String) {
+        val doc = _state.value.document ?: return
+        if (_state.value.saving || mosaicSession != null) return
+        val session = MosaicEditSession.edit(doc, id) ?: return
+        cancelAutomaticSelection()
+        mosaicSession = session
+        _state.update { it.copy(activeTool = EditTool.SELECT) }
+        updateMosaicPreview()
+    }
+
+    fun toggleMosaicArea() {
+        if (mosaicSession == null || _state.value.saving) return
+        mosaicSession?.commitSize()
+        _state.update { it.copy(mosaicSelectingArea = !it.mosaicSelectingArea) }
         refreshPreview()
     }
 
-    fun setMosaicPercent(percent: Float) {
-        val doc = _state.value.document ?: return
-        val draft = _state.value.mosaicDraft ?: return
-        if (!percent.isFinite()) return
-        val size = minOf(doc.canvas.width, doc.canvas.height) * percent.coerceIn(0.5f, 8f) / 100f
-        _state.update { it.copy(mosaicDraft = draft.copy(blockSizePx = size.coerceAtLeast(2f))) }
-        refreshPreview(debounce = true)
+    fun setMosaicBlockSize(size: Float) {
+        val session = mosaicSession ?: return
+        if (!size.isFinite() || _state.value.saving) return
+        session.setBlockSize(size.coerceIn(2f, session.maximumBlockSize))
+        updateMosaicPreview(debounce = true)
+    }
+
+    fun commitMosaicSize() {
+        mosaicSession?.commitSize()
+        _state.update { it.copy(canUndo = mosaicSession?.canUndo ?: history.canUndo) }
+    }
+
+    private fun updateMosaicPreview(debounce: Boolean = false) {
+        val session = mosaicSession ?: return
+        _state.update { it.copy(mosaicDraft = session.draft, mosaicEditingExisting = session.existing,
+            mosaicMaximumBlockSize = session.maximumBlockSize, canUndo = session.canUndo, canRedo = session.canRedo) }
+        if (!_state.value.mosaicSelectingArea) refreshPreview(debounce)
     }
 
     fun commitMosaic() {
-        if (_state.value.previewing || _state.value.previewFailed || _state.value.saving) return
+        if (_state.value.previewing || _state.value.previewFailed || _state.value.saving || _state.value.mosaicSelectingArea) return
+        val session = mosaicSession ?: return
         val doc = _state.value.document ?: return
-        val draft = _state.value.mosaicDraft ?: return
+        if (doc !== session.base) { cancelMosaic(); return }
+        val committed = session.commit()
+        if (committed == doc) { cancelMosaic(); return }
         history.record(doc)
-        _state.update { it.copy(mosaicDraft = null) }
-        applyDocument(doc.copy(layers = doc.layers + draft), recordHistory = false)
+        mosaicSession = null
+        applyDocument(committed, recordHistory = false)
+    }
+
+    fun deleteMosaic() {
+        val session = mosaicSession ?: return
+        if (!session.existing || _state.value.saving || _state.value.document !== session.base) return
+        history.record(session.base)
+        mosaicSession = null
+        applyDocument(session.delete(), recordHistory = false)
     }
 
     fun cancelMosaic() {
-        if (_state.value.mosaicDraft == null) return
-        _state.update { it.copy(mosaicDraft = null) }
+        if (mosaicSession == null) return
+        mosaicSession = null
+        _state.update { it.copy(mosaicDraft = null, mosaicSelectingArea = false, mosaicEditingExisting = false,
+            canUndo = history.canUndo, canRedo = history.canRedo) }
         refreshPreview()
     }
 
@@ -805,13 +843,21 @@ class ImageEditViewModel @Inject constructor(
      * 描き直さずに状態だけ差し替える。写真 1 枚の再レンダリングは数百 ms かかるため、
      * なぞっている間これを走らせると選択が明らかにもたつく。
      */
-    private fun updateSelection(next: SelectionSpec?) {
-        if (_state.value.mosaicDraft != null || _state.value.saving) return
-        cancelAutomaticSelection()
-        _state.update { st ->
-            val doc = st.document ?: return@update st
-            st.copy(document = doc.copy(selection = next))
+    private fun updateSelection(next: SelectionSpec?, cancelPending: Boolean = true) {
+        if (_state.value.saving) return
+        if (cancelPending) cancelAutomaticSelection()
+        val session = mosaicSession
+        if (session != null) {
+            if (!_state.value.mosaicSelectingArea) return
+            session.setArea(next)
+            updateMosaicPreview()
+            return
         }
+        val doc = _state.value.document ?: return
+        if (doc.selection == next) return
+        history.record(doc)
+        _state.update { it.copy(document = doc.copy(selection = next), dirty = true,
+            canUndo = history.canUndo, canRedo = history.canRedo) }
     }
 
     /** まだ使われていないレイヤー ID を作る。レイヤーを消した後でも衝突しない。 */
@@ -822,6 +868,7 @@ class ImageEditViewModel @Inject constructor(
     }
 
     private fun applyDocument(doc: EditDocument, recordHistory: Boolean = true) {
+        mosaicSession = null
         cancelAutomaticSelection()
         targetRetryRequest = null
         _state.update {
@@ -830,6 +877,8 @@ class ImageEditViewModel @Inject constructor(
                 targetSizeFailure = null,
                 previewTransparency = doc.transparency(),
                 mosaicDraft = null,
+                mosaicSelectingArea = false,
+                mosaicEditingExisting = false,
                 dirty = true,
                 canUndo = history.canUndo,
                 canRedo = history.canRedo,
@@ -847,8 +896,7 @@ class ImageEditViewModel @Inject constructor(
 
     private fun refreshPreview(debounce: Boolean = false) {
         val base = _state.value.document ?: return
-        val draft = _state.value.mosaicDraft
-        val doc = if (draft == null) base else base.copy(layers = base.layers + draft)
+        val doc = mosaicSession?.preview(showEffect = !_state.value.mosaicSelectingArea) ?: base
         val resolve = sourceResolver()
         previewJob?.cancel()
         _state.update { it.copy(previewing = true, previewFailed = false) }
@@ -1265,6 +1313,9 @@ data class ImageEditUiState(
     val previewing: Boolean = false,
     val previewFailed: Boolean = false,
     val mosaicDraft: Layer.Mosaic? = null,
+    val mosaicSelectingArea: Boolean = false,
+    val mosaicEditingExisting: Boolean = false,
+    val mosaicMaximumBlockSize: Float = 3f,
     val selectingObject: Boolean = false,
     val activeTool: EditTool? = null,
     val canUndo: Boolean = false,
@@ -1301,7 +1352,11 @@ data class ImageEditUiState(
         get() = document?.layers?.filterIsInstance<Layer.Text>().orEmpty()
 
     /** いま選ばれている範囲。null なら選択なし。 */
-    val selection: SelectionSpec? get() = document?.selection
+    val selection: SelectionSpec? get() = if (mosaicDraft != null && mosaicSelectingArea) {
+        mosaicDraft.area.takeUnless { it.isEmpty }
+    } else document?.selection
+
+    val mosaics: List<Layer.Mosaic> get() = document?.layers?.filterIsInstance<Layer.Mosaic>().orEmpty()
 
     /** 面積のある選択があるか (塗りつぶし等のボタンを出す判断に使う)。 */
     val hasSelection: Boolean get() = selection?.isEmpty == false

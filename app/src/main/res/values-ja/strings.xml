@@ -1072,4 +1072,24 @@
     <string name="image_draft_delete_title">下書きを削除</string>
     <string name="image_draft_delete_body">「%1$s」の下書きと内部の素材コピーを削除します。元のファイルと書き出した画像は残ります。</string>
     <string name="image_draft_delete">削除</string>
+
+    <!-- Selection brush and mosaic re-editing -->
+    <string name="image_select_brush">選択ブラシ</string>
+    <string name="image_selection_brush_size">ブラシの太さ：%1$d px</string>
+    <string name="image_selection_brush_smaller">選択ブラシを細くする</string>
+    <string name="image_selection_brush_larger">選択ブラシを太くする</string>
+    <string name="image_selection_brush_hint">緑は塗る範囲、赤は除く範囲です。一筆ずつ取り消せます。2本指で拡大・移動できます。</string>
+    <string name="image_selection_background">確認背景：%1$s</string>
+    <string name="image_selection_background_checker">市松</string>
+    <string name="image_selection_background_white">白</string>
+    <string name="image_selection_background_black">黒</string>
+    <string name="image_selection_brush_failed">選択範囲を処理できませんでした。短い範囲に分けてやり直してください。</string>
+    <string name="image_selection_path_failed">選択範囲を表示できません。「元に戻す」で修正してください。</string>
+    <string name="image_mosaic_edit_existing">適用済みモザイクを調整</string>
+    <string name="image_mosaic_entry">モザイク %1$d · %2$d px</string>
+    <string name="image_mosaic_edit_area">範囲を修正</string>
+    <string name="image_mosaic_check_effect">効果を確認</string>
+    <string name="image_mosaic_area_hint">範囲を修正する間、このモザイクを一時的に非表示にしています。</string>
+    <string name="image_mosaic_delete">モザイクを削除</string>
+    <string name="image_mosaic_delete_body">選んだモザイクを削除します。削除後も「元に戻す」で戻せます。</string>
 </resources>

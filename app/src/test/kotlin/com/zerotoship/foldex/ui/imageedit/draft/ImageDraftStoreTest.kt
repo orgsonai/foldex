@@ -106,7 +106,7 @@ class ImageDraftStoreTest {
         val draft = create(store)
         store.save(changed(draft))
         val latest = manifests(draft.id).last()
-        val bytes = latest.readBytes().dropLast(32).toByteArray().apply { this[7] = 2 }
+        val bytes = latest.readBytes().dropLast(32).toByteArray().apply { this[7] = (ImageDraftCodec.SCHEMA + 1).toByte() }
         latest.writeBytes(bytes + MessageDigest.getInstance("SHA-256").digest(bytes))
         store.close()
         assertEquals(DraftFailure.UNSUPPORTED, ImageDraftStore(root).open(draft.id).errorOrNull())
@@ -290,6 +290,25 @@ class ImageDraftStoreTest {
         val updated = changed(draft).copy(document = draft.document.copy(selection = SelectionSpec.Contours(listOf(points))))
         assertTrue(store.save(updated).isSuccess)
         store.close()
+        assertEquals(updated, open(draft.id).draft)
+    }
+
+    @Test fun `旧schemaを残しながらブラシを含む新しい世代へ更新できる`() {
+        val store = ImageDraftStore(root)
+        val draft = create(store)
+        val file = manifests(draft.id).single()
+        // schema 1 と 2 で共通の旧型。旧版の実バイト列との互換は codec の固定資料でも検証する。
+        val legacy = file.readBytes().dropLast(32).toByteArray().apply { this[7] = 1 }
+        file.writeBytes(legacy + MessageDigest.getInstance("SHA-256").digest(legacy))
+        store.close()
+        val nextStore = ImageDraftStore(root)
+        assertEquals(draft, nextStore.open(draft.id).getOrNull()!!.draft)
+        val updated = changed(draft).copy(document = draft.document.copy(selection =
+            SelectionSpec.BrushStroke(listOf(EditPoint(5f, 5f)), 4f)))
+        assertTrue(nextStore.save(updated).isSuccess)
+        assertEquals(1, manifests(draft.id).first().readBytes()[7].toInt())
+        assertEquals(ImageDraftCodec.SCHEMA, manifests(draft.id).last().readBytes()[7].toInt())
+        nextStore.close()
         assertEquals(updated, open(draft.id).draft)
     }
 

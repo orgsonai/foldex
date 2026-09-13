@@ -14,7 +14,7 @@ import java.io.OutputStream
 
 /** 明示的な version 付き DTO。Java のオブジェクト直列化や enum ordinal に依存しない。 */
 internal object ImageDraftCodec {
-    const val SCHEMA = 1
+    const val SCHEMA = 2
     const val MAX_BYTES = 16L * 1024 * 1024
     private const val MAGIC = 0x46445844 // FDXD
 
@@ -38,8 +38,9 @@ internal object ImageDraftCodec {
     fun read(input: InputStream): ImageDraft {
         val data = DataInputStream(input)
         require(data.readInt() == MAGIC)
-        if (data.readInt() != SCHEMA) throw DraftException(DraftFailure.UNSUPPORTED)
-        return with(Reader(data)) {
+        val schema = data.readInt()
+        if (schema !in 1..SCHEMA) throw DraftException(DraftFailure.UNSUPPORTED)
+        return with(Reader(data, schema)) {
             val id = string(); val revision = data.readLong(); val updated = data.readLong()
             require(ID.matches(id) && revision >= 0 && updated >= 0)
             val name = string()
@@ -96,6 +97,9 @@ internal object ImageDraftCodec {
                 is SelectionSpec.Ellipse -> { string("ellipse"); rect(s.rect) }
                 is SelectionSpec.Lasso -> { string("lasso"); list(s.points, ::point) }
                 is SelectionSpec.Contours -> { string("contours"); list(s.rings) { list(it, ::point) } }
+                is SelectionSpec.BrushStroke -> {
+                    string("brush-stroke"); list(s.points, ::point); out.writeFloat(s.radius); optional(s.clip, ::rect)
+                }
                 is SelectionSpec.Combined -> {
                     string("combined"); list(s.parts) { string(it.op.name); selection(it.spec, depth + 1) }
                 }
@@ -141,7 +145,7 @@ internal object ImageDraftCodec {
         }
     }
 
-    private class Reader(val input: DataInputStream) {
+    private class Reader(val input: DataInputStream, val schema: Int) {
         // 不正な長さ・入れ子で巨大なリストを先に確保しない。
         private var remainingItems = 2_000_000
         fun count(max: Int = 1_000_000): Int {
@@ -183,6 +187,11 @@ internal object ImageDraftCodec {
                 "ellipse" -> SelectionSpec.Ellipse(rect())
                 "lasso" -> SelectionSpec.Lasso(list(::point))
                 "contours" -> SelectionSpec.Contours(list { list(::point) })
+                "brush-stroke" -> {
+                    if (schema < 2) throw DraftException(DraftFailure.UNSUPPORTED)
+                    val points = List(count(SelectionSpec.MAX_BRUSH_POINTS)) { point() }
+                    SelectionSpec.BrushStroke(points, positive(), optional(::rect))
+                }
                 "combined" -> SelectionSpec.Combined(list { SelectionSpec.Part(enum(), selection(depth + 1)) })
                 else -> throw DraftException(DraftFailure.UNSUPPORTED)
             }

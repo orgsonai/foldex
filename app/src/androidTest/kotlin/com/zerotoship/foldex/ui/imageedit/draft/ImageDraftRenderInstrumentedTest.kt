@@ -38,7 +38,10 @@ class ImageDraftRenderInstrumentedTest {
             val source = ImageSource(original)
             val base = EditDocument.ofSingleImage("base", "original.png", original.absolutePath, source.size, ImageFormat.PNG)
             val rotated = (base.layers.single() as Layer.Image).copy(crop = EditRect(10f, 10f, 70f, 50f), quarterTurns = 1, flipH = true)
-            val area = SelectionSpec.Contours(listOf(listOf(EditPoint(2f, 2f), EditPoint(30f, 2f), EditPoint(30f, 30f))))
+            val area = requireNotNull(SelectionSpec.Contours(listOf(listOf(EditPoint(2f, 2f), EditPoint(30f, 2f), EditPoint(30f, 30f))))
+                .applying(SelectionMode.ADD, SelectionSpec.BrushStroke(
+                    listOf(EditPoint(8f, 20f), EditPoint(35f, 30f)), 5f, EditRect(0f, 0f, 40f, 60f)))
+                .applying(SelectionMode.SUBTRACT, SelectionSpec.BrushStroke(listOf(EditPoint(15f, 15f)), 3f)))
             val doc = base.copy(selection = area, layers = listOf(
                 rotated,
                 Layer.Drawing("drawing", "drawing", strokes = listOf(Stroke(listOf(EditPoint(1f, 1f), EditPoint(30f, 40f)), 4f, Color.RED))),

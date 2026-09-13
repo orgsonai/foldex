@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -29,11 +30,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.PathFillType
-import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.withTransform
+import com.zerotoship.foldex.ui.imageedit.engine.SelectionPaths
+import com.zerotoship.foldex.ui.imageedit.model.SelectionBrush
+import com.zerotoship.foldex.ui.imageedit.model.SelectionMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -46,7 +51,6 @@ import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.imageedit.model.EditPoint
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
-import com.zerotoship.foldex.ui.imageedit.model.BoolOp
 import com.zerotoship.foldex.ui.imageedit.model.SelectionShape
 import com.zerotoship.foldex.ui.imageedit.model.SelectionCoordinates
 import com.zerotoship.foldex.ui.imageedit.model.SelectionSpec
@@ -70,6 +74,8 @@ fun EditCanvas(
     /** 論理キャンバスの大きさ。画面座標との変換に使う。 */
     canvasSize: EditSize?,
     mode: CanvasMode,
+    backdrop: SelectionBackdrop = SelectionBackdrop.CHECKERBOARD,
+    highlight: SelectionSpec? = null,
     modifier: Modifier = Modifier,
 ) {
     var zoom by remember { mutableFloatStateOf(1f) }
@@ -79,6 +85,7 @@ fun EditCanvas(
     var grabbed by remember { mutableStateOf(CropGrab.NONE) }
     // 描画中のストローク (画面座標)。指を離したら論理座標へ直して確定する。
     val livePoints = remember { mutableStateListOf<Offset>() }
+    var brushOverflow by remember { mutableStateOf(false) }
 
     val handleTouchPx = with(LocalDensity.current) { HANDLE_TOUCH_DP.dp.toPx() }
     val image = remember(preview) { preview?.takeIf { !it.isRecycled }?.asImageBitmap() }
@@ -97,198 +104,307 @@ fun EditCanvas(
     val latestZoom = rememberUpdatedState(zoom)
     val latestCanvas = rememberUpdatedState(canvasSize)
 
+    val selection = when (mode) {
+        is CanvasMode.Select -> mode.current
+        is CanvasMode.ObjectSelect -> mode.current
+        is CanvasMode.SelectionBrush -> mode.current
+        else -> highlight
+    }
+    val logicalSelectionPath = remember(selection) { runCatching { selection?.let { SelectionPaths.toPath(it, 1f) } } }
+    val selectedPath = remember(logicalSelectionPath, imageRect, canvasSize) {
+        runCatching { logicalSelectionPath.getOrThrow()?.let { path ->
+            if (canvasSize != null) pathInViewport(path, imageRect, canvasSize) else null
+        } }
+    }
+    val brushMode = mode as? CanvasMode.SelectionBrush
+    val gesturePoints = livePoints.toList()
+    val liveBrushPath = remember(gesturePoints, brushMode?.diameter, imageRect, canvasSize) {
+        runCatching {
+            if (brushMode == null || canvasSize == null || gesturePoints.isEmpty()) null else {
+                SelectionBrush.fromViewport(gesturePoints.map { EditPoint(it.x, it.y) },
+                    EditRect(imageRect.left, imageRect.top, imageRect.right, imageRect.bottom), canvasSize, brushMode.diameter)
+                    ?.let { selectionPath(it, imageRect, canvasSize) }
+            }
+        }
+    }
+    val failedPath = selectedPath.isFailure || liveBrushPath.isFailure
+    LaunchedEffect(failedPath) { if (failedPath) brushMode?.onFailure?.invoke() }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { viewport = Size(it.width.toFloat(), it.height.toFloat()) }
-            .pointerInput(mode.key) {
+            .pointerInput(mode.key, viewport, canvasSize) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val startMode = latestMode.value
                     val startRect = latestRect.value
                     val startCanvas = latestCanvas.value
-
-                    grabbed = if (startMode is CanvasMode.Crop && !startRect.isEmpty) {
-                        hitTestCrop(down.position, startMode.rect, startRect, handleTouchPx)
-                    } else {
-                        CropGrab.NONE
-                    }
-                    if (startMode is CanvasMode.Brush && !startRect.isEmpty) {
+                    try {
+                        brushOverflow = false
                         livePoints.clear()
-                        livePoints.add(down.position)
-                    }
-                    if (startMode is CanvasMode.Select && !startRect.isEmpty) {
-                        livePoints.clear()
-                        livePoints.add(down.position)
-                    }
+                        grabbed = if (startMode is CanvasMode.Crop && !startRect.isEmpty) {
+                            hitTestCrop(down.position, startMode.rect, startRect, handleTouchPx)
+                        } else {
+                            CropGrab.NONE
+                        }
+                        if (startMode is CanvasMode.Brush && !startRect.isEmpty) {
+                            livePoints.clear()
+                            livePoints.add(down.position)
+                        }
+                        if ((startMode is CanvasMode.Select || startMode is CanvasMode.SelectionBrush) && !startRect.isEmpty) {
+                            livePoints.clear()
+                            livePoints.add(down.position)
+                        }
 
-                    var multiTouch = false
-                    var moved = false
-                    do {
-                        val event = awaitPointerEvent()
-                        if (event.changes.any {
-                            it.id == down.id && (it.position - down.position).getDistance() > viewConfiguration.touchSlop
-                        }) moved = true
-                        val pressed = event.changes.count { it.pressed }
-                        val rect = latestRect.value
-                        val current = latestMode.value
-                        when {
-                            pressed >= 2 -> {
-                                // 2 本指: ズーム + 移動。描きかけのストロークは捨てる
-                                // (拡大しようとして線が引かれるのを防ぐ)。
-                                multiTouch = true
+                        var multiTouch = false
+                        var consumedElsewhere = down.isConsumed
+                        var moved = false
+                        do {
+                            val event = awaitPointerEvent()
+                            if (startMode is CanvasMode.SelectionBrush && event.changes.any { it.isConsumed }) {
+                                consumedElsewhere = true
                                 livePoints.clear()
-                                grabbed = CropGrab.NONE
-                                val z = event.calculateZoom()
-                                val pan = event.calculatePan()
-                                if (z != 1f || pan != Offset.Zero) {
-                                    zoom = (zoom * z).coerceIn(MIN_ZOOM, MAX_ZOOM)
-                                    panX += pan.x
-                                    panY += pan.y
-                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                            if (event.changes.any {
+                                it.id == down.id && (it.position - down.position).getDistance() > viewConfiguration.touchSlop
+                            }) moved = true
+                            val pressed = event.changes.count { it.pressed }
+                            val rect = latestRect.value
+                            val current = latestMode.value
+                            if (pressed == 0 && current is CanvasMode.SelectionBrush && !multiTouch && !consumedElsewhere && !brushOverflow) {
+                                val end = event.changes.firstOrNull { it.id == down.id }?.position
+                                if (end != null && livePoints.isNotEmpty() && end != livePoints.last()) {
+                                    if (livePoints.size >= SelectionSpec.MAX_BRUSH_POINTS) { brushOverflow = true; livePoints.clear() }
+                                    else livePoints.add(end)
                                 }
                             }
-                            pressed == 1 && !multiTouch -> when (current) {
-                                is CanvasMode.Crop -> {
+                            when {
+                                pressed >= 2 -> {
+                                    // 2 本指: ズーム + 移動。描きかけのストロークは捨てる
+                                    // (拡大しようとして線が引かれるのを防ぐ)。
+                                    multiTouch = true
+                                    livePoints.clear()
+                                    grabbed = CropGrab.NONE
+                                    val z = event.calculateZoom()
                                     val pan = event.calculatePan()
-                                    if (grabbed != CropGrab.NONE && pan != Offset.Zero && !rect.isEmpty) {
-                                        current.onChange(
-                                            dragCrop(
-                                                current.rect,
-                                                grabbed,
-                                                pan.x / rect.width,
-                                                pan.y / rect.height,
-                                            ),
-                                        )
+                                    if (z != 1f || pan != Offset.Zero) {
+                                        zoom = (zoom * z).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                                        panX += pan.x
+                                        panY += pan.y
                                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                                     }
                                 }
-                                is CanvasMode.Brush -> {
-                                    val pos = event.changes.firstOrNull { it.pressed }?.position
-                                    if (pos != null) {
-                                        val last = livePoints.lastOrNull()
-                                        if (last == null ||
-                                            abs(pos.x - last.x) + abs(pos.y - last.y) >= MIN_POINT_DISTANCE_PX
-                                        ) {
-                                            livePoints.add(pos)
-                                        }
-                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
-                                    }
-                                }
-                                is CanvasMode.Select -> {
-                                    val pos = event.changes.firstOrNull { it.pressed }?.position
-                                    if (pos != null && livePoints.isNotEmpty()) {
-                                        if (current.shape == SelectionShape.LASSO) {
-                                            // 投げ縄は軌跡そのものが形になるので点を積む。
-                                            val last = livePoints.last()
-                                            if (abs(pos.x - last.x) + abs(pos.y - last.y) >=
-                                                MIN_POINT_DISTANCE_PX
-                                            ) {
-                                                livePoints.add(pos)
-                                            }
-                                        } else {
-                                            // 矩形と楕円は「始点と今の指」の 2 点で決まる。
-                                            if (livePoints.size < 2) {
-                                                livePoints.add(pos)
-                                            } else {
-                                                livePoints[1] = pos
-                                            }
-                                        }
-                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
-                                    }
-                                }
-                                is CanvasMode.ObjectSelect -> Unit
-                                is CanvasMode.TextMove -> {
-                                    val pan = event.calculatePan()
-                                    val canvas = latestCanvas.value
-                                    if (pan != Offset.Zero && !rect.isEmpty && canvas != null) {
-                                        current.onDrag(
-                                            pan.x / rect.width * canvas.width,
-                                            pan.y / rect.height * canvas.height,
-                                        )
-                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
-                                    }
-                                }
-                                is CanvasMode.View -> {
-                                    if (latestZoom.value > 1f) {
+                                pressed == 1 && !multiTouch -> when (current) {
+                                    is CanvasMode.Crop -> {
                                         val pan = event.calculatePan()
-                                        if (pan != Offset.Zero) {
-                                            panX += pan.x
-                                            panY += pan.y
+                                        if (grabbed != CropGrab.NONE && pan != Offset.Zero && !rect.isEmpty) {
+                                            current.onChange(
+                                                dragCrop(
+                                                    current.rect,
+                                                    grabbed,
+                                                    pan.x / rect.width,
+                                                    pan.y / rect.height,
+                                                ),
+                                            )
                                             event.changes.forEach { if (it.positionChanged()) it.consume() }
                                         }
                                     }
+                                    is CanvasMode.Brush -> {
+                                        val pos = event.changes.firstOrNull { it.pressed }?.position
+                                        if (pos != null) {
+                                            val last = livePoints.lastOrNull()
+                                            if (last == null ||
+                                                abs(pos.x - last.x) + abs(pos.y - last.y) >= MIN_POINT_DISTANCE_PX
+                                            ) {
+                                                livePoints.add(pos)
+                                            }
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        }
+                                    }
+                                    is CanvasMode.SelectionBrush -> {
+                                        val pos = event.changes.firstOrNull { it.id == down.id }?.position
+                                        if (!consumedElsewhere && !brushOverflow && pos != null && livePoints.isNotEmpty()) {
+                                            if ((pos - livePoints.last()).getDistance() >= MIN_POINT_DISTANCE_PX) {
+                                                if (livePoints.size >= SelectionSpec.MAX_BRUSH_POINTS) {
+                                                    brushOverflow = true
+                                                    livePoints.clear()
+                                                } else livePoints.add(pos)
+                                            }
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        }
+                                    }
+                                    is CanvasMode.Select -> {
+                                        val pos = event.changes.firstOrNull { it.pressed }?.position
+                                        if (pos != null && livePoints.isNotEmpty()) {
+                                            if (current.shape == SelectionShape.LASSO) {
+                                                // 投げ縄は軌跡そのものが形になるので点を積む。
+                                                val last = livePoints.last()
+                                                if (abs(pos.x - last.x) + abs(pos.y - last.y) >=
+                                                    MIN_POINT_DISTANCE_PX
+                                                ) {
+                                                    livePoints.add(pos)
+                                                }
+                                            } else {
+                                                // 矩形と楕円は「始点と今の指」の 2 点で決まる。
+                                                if (livePoints.size < 2) {
+                                                    livePoints.add(pos)
+                                                } else {
+                                                    livePoints[1] = pos
+                                                }
+                                            }
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        }
+                                    }
+                                    is CanvasMode.ObjectSelect -> Unit
+                                    is CanvasMode.TextMove -> {
+                                        val pan = event.calculatePan()
+                                        val canvas = latestCanvas.value
+                                        if (pan != Offset.Zero && !rect.isEmpty && canvas != null) {
+                                            current.onDrag(
+                                                pan.x / rect.width * canvas.width,
+                                                pan.y / rect.height * canvas.height,
+                                            )
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        }
+                                    }
+                                    is CanvasMode.View -> {
+                                        if (latestZoom.value > 1f) {
+                                            val pan = event.calculatePan()
+                                            if (pan != Offset.Zero) {
+                                                panX += pan.x
+                                                panY += pan.y
+                                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    } while (event.changes.any { it.pressed })
+                        } while (event.changes.any { it.pressed })
 
-                    // 指を離した。ツールごとの後始末。
-                    val finished = latestMode.value
-                    if (finished is CanvasMode.ObjectSelect && !multiTouch && !moved) {
-                        // 前の推論の完了でパネルの高さが変わっても、触れた瞬間の写真位置を使う。
-                        if (startCanvas != null) {
-                            SelectionCoordinates.fromViewport(
-                                EditPoint(down.position.x, down.position.y),
-                                EditRect(startRect.left, startRect.top, startRect.right, startRect.bottom),
-                                startCanvas,
-                            )?.let(finished.onTap)
+                        // 指を離した。ツールごとの後始末。
+                        val finished = latestMode.value
+                        if (finished is CanvasMode.ObjectSelect && !multiTouch && !moved) {
+                            // 前の推論の完了でパネルの高さが変わっても、触れた瞬間の写真位置を使う。
+                            if (startCanvas != null) {
+                                SelectionCoordinates.fromViewport(
+                                    EditPoint(down.position.x, down.position.y),
+                                    EditRect(startRect.left, startRect.top, startRect.right, startRect.bottom),
+                                    startCanvas,
+                                )?.let(finished.onTap)
+                            }
                         }
-                    }
-                    if (finished is CanvasMode.Brush && livePoints.isNotEmpty() && !multiTouch) {
-                        val canvas = latestCanvas.value
-                        val rect = latestRect.value
-                        if (canvas != null && !rect.isEmpty) {
-                            finished.onStroke(
-                                buildStroke(livePoints.toList(), rect, canvas, finished.settings),
-                            )
+                        if (finished is CanvasMode.Brush && livePoints.isNotEmpty() && !multiTouch) {
+                            val canvas = latestCanvas.value
+                            val rect = latestRect.value
+                            if (canvas != null && !rect.isEmpty) {
+                                finished.onStroke(
+                                    buildStroke(livePoints.toList(), rect, canvas, finished.settings),
+                                )
+                            }
                         }
-                    }
-                    if (finished is CanvasMode.Select && !multiTouch) {
-                        val canvas = latestCanvas.value
-                        val rect = latestRect.value
-                        if (canvas != null && !rect.isEmpty) {
-                            // 動かさずに離した (タップ) と判定したら null が返り、選択解除になる。
-                            finished.onSelected(
-                                buildSelection(livePoints.toList(), rect, canvas, finished.shape),
-                            )
+                        if (finished is CanvasMode.SelectionBrush && !multiTouch && !consumedElsewhere) {
+                            if (brushOverflow) finished.onFailure()
+                            else if (startCanvas != null && !startRect.isEmpty) {
+                                SelectionBrush.fromViewport(livePoints.map { EditPoint(it.x, it.y) },
+                                    EditRect(startRect.left, startRect.top, startRect.right, startRect.bottom),
+                                    startCanvas, (startMode as? CanvasMode.SelectionBrush)?.diameter ?: finished.diameter)
+                                    ?.let(finished.onStroke)
+                            }
                         }
+                        if (finished is CanvasMode.Select && !multiTouch) {
+                            val canvas = latestCanvas.value
+                            val rect = latestRect.value
+                            if (canvas != null && !rect.isEmpty) {
+                                // 動かさずに離した (タップ) と判定したら null が返り、選択解除になる。
+                                finished.onSelected(
+                                    buildSelection(livePoints.toList(), rect, canvas, finished.shape),
+                                )
+                            }
+                        }
+                        if (finished is CanvasMode.TextMove) finished.onDragEnd()
+                    } finally {
+                        livePoints.clear()
+                        brushOverflow = false
+                        grabbed = CropGrab.NONE
                     }
-                    if (finished is CanvasMode.TextMove) finished.onDragEnd()
-                    livePoints.clear()
-                    grabbed = CropGrab.NONE
                 }
             },
     ) {
         Canvas(Modifier.fillMaxSize()) {
             if (image == null || imageRect.isEmpty) return@Canvas
-            // 透明部分が分かるように市松模様を敷く。
-            drawCheckerboard(imageRect)
-            drawImage(
-                image = image,
-                dstOffset = IntOffset(imageRect.left.roundToInt(), imageRect.top.roundToInt()),
-                dstSize = IntSize(
-                    imageRect.width.roundToInt().coerceAtLeast(1),
-                    imageRect.height.roundToInt().coerceAtLeast(1),
-                ),
-                filterQuality = FilterQuality.Medium,
-            )
-            when (mode) {
-                is CanvasMode.Crop -> drawCropOverlay(imageRect, mode.rect)
-                is CanvasMode.Brush -> drawLiveStroke(livePoints, mode.settings)
-                is CanvasMode.Select -> canvasSize?.let { size ->
-                    mode.current?.let { drawSelection(imageRect, size, it) }
-                    drawLiveSelection(imageRect, livePoints, mode.shape)
+            fun DrawScope.drawContent(visible: Rect) {
+                when (backdrop) {
+                    SelectionBackdrop.CHECKERBOARD -> drawCheckerboard(imageRect, visible)
+                    SelectionBackdrop.WHITE -> drawRect(Color.White, imageRect.topLeft, imageRect.size)
+                    SelectionBackdrop.BLACK -> drawRect(Color.Black, imageRect.topLeft, imageRect.size)
                 }
-                is CanvasMode.ObjectSelect -> canvasSize?.let { size ->
-                    mode.current?.let { drawSelection(imageRect, size, it) }
+                drawImage(
+                    image = image,
+                    dstOffset = IntOffset(imageRect.left.roundToInt(), imageRect.top.roundToInt()),
+                    dstSize = IntSize(
+                        imageRect.width.roundToInt().coerceAtLeast(1),
+                        imageRect.height.roundToInt().coerceAtLeast(1),
+                    ),
+                    filterQuality = FilterQuality.Medium,
+                )
+                when (mode) {
+                    is CanvasMode.Crop -> drawCropOverlay(imageRect, mode.rect)
+                    is CanvasMode.Brush -> drawLiveStroke(livePoints, mode.settings)
+                    is CanvasMode.Select -> canvasSize?.let {
+                        selectedPath.getOrNull()?.let { drawSelection(it) }
+                        drawLiveSelection(imageRect, livePoints, mode.shape)
+                    }
+                    is CanvasMode.ObjectSelect -> canvasSize?.let {
+                        selectedPath.getOrNull()?.let { drawSelection(it) }
+                    }
+                    is CanvasMode.SelectionBrush -> {
+                        selectedPath.getOrNull()?.let { drawSelection(it) }
+                        liveBrushPath.getOrNull()?.let { path ->
+                            clipRect(imageRect.left, imageRect.top, imageRect.right, imageRect.bottom) {
+                                drawPath(path, if (mode.operation == SelectionMode.SUBTRACT) Color(0x80F25D5D) else Color(0x804AC88A))
+                            }
+                        }
+                        gesturePoints.lastOrNull()?.let { point ->
+                            val width = mode.diameter * imageRect.width / (canvasSize?.width ?: 1)
+                            val height = mode.diameter * imageRect.height / (canvasSize?.height ?: 1)
+                            val corner = Offset(point.x - width / 2, point.y - height / 2)
+                            drawOval(Color.Black, corner, Size(width, height), style = DrawStroke(3f))
+                            drawOval(Color.White, corner, Size(width, height), style = DrawStroke(1.5f))
+                        }
+                    }
+                    is CanvasMode.TextMove -> mode.bounds?.let { bounds ->
+                        canvasSize?.let { drawTextFrame(imageRect, bounds, it) }
+                    }
+                    is CanvasMode.View -> selectedPath.getOrNull()?.let { drawSelection(it) }
                 }
-                is CanvasMode.TextMove -> mode.bounds?.let { bounds ->
-                    canvasSize?.let { drawTextFrame(imageRect, bounds, it) }
+            }
+            drawContent(Rect(0f, 0f, size.width, size.height))
+            // 指と反対側の隅に同じ描画を拡大する。別の画像や輪郭を使わない。
+            if (mode is CanvasMode.SelectionBrush && gesturePoints.isNotEmpty() && !brushOverflow) {
+                val point = gesturePoints.last()
+                val side = minOf(120.dp.toPx(), size.width * .38f, size.height * .45f)
+                val padding = 8.dp.toPx()
+                val left = if (point.x < size.width / 2) size.width - side - padding else padding
+                val top = padding
+                val factor = 2f
+                val source = Rect(point.x - side / (2 * factor), point.y - side / (2 * factor),
+                    point.x + side / (2 * factor), point.y + side / (2 * factor))
+                clipRect(left, top, left + side, top + side) {
+                    drawRect(Color(0xFF222222))
+                    withTransform({
+                        translate(left + side / 2, top + side / 2)
+                        scale(factor, factor, pivot = Offset.Zero)
+                        translate(-point.x, -point.y)
+                    }) { drawContent(source) }
                 }
-                is CanvasMode.View -> Unit
+                drawRect(Color.White, Offset(left, top), Size(side, side), style = DrawStroke(2.dp.toPx()))
             }
         }
+        if (failedPath) androidx.compose.material3.Text(
+            androidx.compose.ui.res.stringResource(com.zerotoship.foldex.R.string.image_selection_path_failed),
+            color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+        )
     }
 }
 
@@ -331,6 +447,16 @@ sealed interface CanvasMode {
         override val key: String get() = "select-" + shape.name
     }
 
+    data class SelectionBrush(
+        val current: SelectionSpec?,
+        val diameter: Float,
+        val operation: SelectionMode,
+        val onStroke: (SelectionSpec.BrushStroke) -> Unit,
+        val onFailure: () -> Unit,
+    ) : CanvasMode {
+        override val key: String get() = "selection-brush-$diameter-${operation.name}"
+    }
+
     data class ObjectSelect(
         val current: SelectionSpec?,
         val onTap: (EditPoint) -> Unit,
@@ -348,6 +474,8 @@ sealed interface CanvasMode {
         override val key: String get() = "textmove"
     }
 }
+
+enum class SelectionBackdrop { CHECKERBOARD, WHITE, BLACK }
 
 /** ブラシの設定。太さは**画面上の px** で持つ (見たままの太さで描けるように)。 */
 data class BrushSettings(
@@ -437,7 +565,7 @@ private fun buildSelection(
     if (abs(last.x - first.x) + abs(last.y - first.y) < MIN_SELECTION_DRAG_PX) return null
 
     return when (shape) {
-        SelectionShape.OBJECT -> null
+        SelectionShape.OBJECT, SelectionShape.BRUSH -> null
         SelectionShape.LASSO -> {
             if (screenPoints.size < MIN_LASSO_POINTS) return null
             SelectionSpec.Lasso(screenPoints.map(::toLogical))
@@ -464,27 +592,21 @@ private fun withAlpha(color: Int, alpha: Float): Int {
 
 // ---- 描画 ----
 
-private fun DrawScope.drawCheckerboard(area: Rect) {
+private fun DrawScope.drawCheckerboard(area: Rect, visible: Rect) {
     val cell = CHECKER_CELL_PX
     val light = Color(0xFF3A3A3A)
     val dark = Color(0xFF2E2E2E)
-    drawRect(color = dark, topLeft = area.topLeft, size = area.size)
-    var row = 0
-    var y = area.top
-    while (y < area.bottom) {
-        var col = 0
-        var x = area.left
-        while (x < area.right) {
-            if ((row + col) % 2 == 0) {
-                val w = min(cell, area.right - x)
-                val h = min(cell, area.bottom - y)
-                drawRect(color = light, topLeft = Offset(x, y), size = Size(w, h))
-            }
-            x += cell
-            col++
+    val region = area.intersect(visible)
+    if (region.isEmpty) return
+    drawRect(color = dark, topLeft = region.topLeft, size = region.size)
+    val firstRow = kotlin.math.floor((region.top - area.top) / cell).toInt()
+    val lastRow = kotlin.math.ceil((region.bottom - area.top) / cell).toInt()
+    val firstCol = kotlin.math.floor((region.left - area.left) / cell).toInt()
+    val lastCol = kotlin.math.ceil((region.right - area.left) / cell).toInt()
+    clipRect(region.left, region.top, region.right, region.bottom) {
+        for (row in firstRow until lastRow) for (col in firstCol until lastCol) {
+            if ((row + col) % 2 == 0) drawRect(light, Offset(area.left + col * cell, area.top + row * cell), Size(cell, cell))
         }
-        y += cell
-        row++
     }
 }
 
@@ -543,8 +665,7 @@ private fun DrawScope.drawTextFrame(area: Rect, bounds: EditRect, canvas: EditSi
  * 動く点線 (marching ants) は使わない。1 フレームごとに位置をずらす描き直しが必要で、
  * 大きい写真を載せたまま常時再描画すると目に見えて重くなるため。
  */
-private fun DrawScope.drawSelection(area: Rect, canvas: EditSize, spec: SelectionSpec) {
-    val path = selectionPath(spec, area, canvas) ?: return
+private fun DrawScope.drawSelection(path: Path) {
     drawPath(path, color = SELECTION_FILL)
     drawPath(path, color = SELECTION_EDGE, style = DrawStroke(width = 2f))
 }
@@ -554,7 +675,7 @@ private fun DrawScope.drawLiveSelection(area: Rect, points: List<Offset>, shape:
     if (points.size < 2 || area.isEmpty) return
     val dash = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
     when (shape) {
-        SelectionShape.OBJECT -> Unit
+        SelectionShape.OBJECT, SelectionShape.BRUSH -> Unit
         SelectionShape.LASSO -> {
             val path = Path()
             path.moveTo(points[0].x, points[0].y)
@@ -587,56 +708,18 @@ private fun DrawScope.drawLiveSelection(area: Rect, points: List<Offset>, shape:
     }
 }
 
-/**
- * [SelectionSpec] を画面座標の Path にする。engine 側の [SelectionPaths] と同じ組み立てを
- * Compose の Path で行う (描画とレンダリングで形が食い違わないよう手順を揃えてある)。
- */
+/** 保存と同じ Path を画面の枠へ写す。合成失敗は呼び出し元へ伝える。 */
 private fun selectionPath(spec: SelectionSpec, area: Rect, canvas: EditSize): Path? {
+    return pathInViewport(SelectionPaths.toPath(spec, 1f), area, canvas)
+}
+
+private fun pathInViewport(path: android.graphics.Path, area: Rect, canvas: EditSize): Path? {
     if (area.isEmpty) return null
-    val sx = area.width / canvas.width
-    val sy = area.height / canvas.height
-    fun mapRect(r: EditRect) = Rect(
-        area.left + r.left * sx,
-        area.top + r.top * sy,
-        area.left + r.right * sx,
-        area.top + r.bottom * sy,
-    )
-    return when (spec) {
-        is SelectionSpec.Rect -> Path().apply { addRect(mapRect(spec.rect)) }
-        is SelectionSpec.Ellipse -> Path().apply { addOval(mapRect(spec.rect)) }
-        is SelectionSpec.Lasso -> {
-            val pts = spec.points
-            if (pts.size < 2) return null
-            Path().apply {
-                fillType = PathFillType.EvenOdd
-                moveTo(area.left + pts[0].x * sx, area.top + pts[0].y * sy)
-                for (i in 1 until pts.size) {
-                    lineTo(area.left + pts[i].x * sx, area.top + pts[i].y * sy)
-                }
-                close()
-            }
-        }
-        is SelectionSpec.Contours -> Path().apply {
-            fillType = PathFillType.EvenOdd
-            for (ring in spec.rings) {
-                if (ring.size < 3) continue
-                moveTo(area.left + ring[0].x * sx, area.top + ring[0].y * sy)
-                for (i in 1 until ring.size) lineTo(area.left + ring[i].x * sx, area.top + ring[i].y * sy)
-                close()
-            }
-        }
-        is SelectionSpec.Combined -> {
-            var acc = Path()
-            for (part in spec.parts) {
-                val piece = selectionPath(part.spec, area, canvas) ?: continue
-                val merged = Path()
-                val op = if (part.op == BoolOp.ADD) PathOperation.Union else PathOperation.Difference
-                merged.op(acc, piece, op)
-                acc = merged
-            }
-            acc
-        }
+    val matrix = android.graphics.Matrix().apply {
+        setScale(area.width / canvas.width, area.height / canvas.height)
+        postTranslate(area.left, area.top)
     }
+    return android.graphics.Path(path).apply { transform(matrix) }.asComposePath()
 }
 
 private fun DrawScope.drawCropOverlay(area: Rect, crop: EditRect) {

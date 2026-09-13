@@ -1082,4 +1082,24 @@
     <string name="image_draft_delete_title">Delete draft</string>
     <string name="image_draft_delete_body">Delete the draft and its internal source copy for %1$s. Original files and exported images are kept.</string>
     <string name="image_draft_delete">Delete</string>
+
+    <!-- Selection brush and mosaic re-editing -->
+    <string name="image_select_brush">Selection brush</string>
+    <string name="image_selection_brush_size">Brush diameter: %1$d px</string>
+    <string name="image_selection_brush_smaller">Decrease selection brush size</string>
+    <string name="image_selection_brush_larger">Increase selection brush size</string>
+    <string name="image_selection_brush_hint">Green marks the area to paint; red marks the area to remove. Undo each stroke separately. Use two fingers to zoom and pan.</string>
+    <string name="image_selection_background">Preview background: %1$s</string>
+    <string name="image_selection_background_checker">Checkerboard</string>
+    <string name="image_selection_background_white">White</string>
+    <string name="image_selection_background_black">Black</string>
+    <string name="image_selection_brush_failed">Could not process the selection. Try again with shorter strokes.</string>
+    <string name="image_selection_path_failed">Could not display the selection. Use Undo to correct it.</string>
+    <string name="image_mosaic_edit_existing">Adjust an applied mosaic</string>
+    <string name="image_mosaic_entry">Mosaic %1$d · %2$d px</string>
+    <string name="image_mosaic_edit_area">Edit area</string>
+    <string name="image_mosaic_check_effect">Preview effect</string>
+    <string name="image_mosaic_area_hint">This mosaic is temporarily hidden while you edit its area.</string>
+    <string name="image_mosaic_delete">Delete mosaic</string>
+    <string name="image_mosaic_delete_body">Delete the selected mosaic. You can restore it with Undo.</string>
 </resources>

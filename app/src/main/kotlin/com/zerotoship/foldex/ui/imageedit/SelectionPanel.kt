@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,8 +23,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.Slider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.tooling.preview.Preview
+import com.zerotoship.foldex.ui.imageedit.model.Layer
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,9 +47,9 @@ import com.zerotoship.foldex.ui.imageedit.model.SelectionShape
 import com.zerotoship.foldex.R
 
 /**
- * 選択範囲ツールの設定行 (v3)。
+ * 選択範囲と、適用済みモザイクの修正操作。
  *
- * 形 (矩形 / 楕円 / 投げ縄) と積み方 (新規 / 追加 / 除外) を選び、選んだ範囲に対して
+ * 自動選択・ブラシ・図形と積み方 (新規 / 追加 / 除外) を選び、選んだ範囲に対して
  * 塗りつぶし・透明化・反転・解除を行う。
  *
  * 塗る色は**ペンと共有する**。エディタの中に「ペンの色」と「塗りの色」が別々にあると、
@@ -52,6 +62,14 @@ fun SelectionPanel(
     color: Int,
     hasSelection: Boolean,
     selectingObject: Boolean,
+    brushDiameter: Float,
+    brushLimit: Float,
+    backdrop: SelectionBackdrop,
+    onBrushDiameterChange: (Float) -> Unit,
+    onBackdropChange: (SelectionBackdrop) -> Unit,
+    mosaics: List<Layer.Mosaic>,
+    onEditMosaic: (String) -> Unit,
+    editingMosaicArea: Boolean = false,
     onCancelObjectSelection: () -> Unit,
     onShapeChange: (SelectionShape) -> Unit,
     onModeChange: (SelectionMode) -> Unit,
@@ -71,21 +89,45 @@ fun SelectionPanel(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ShapeChip(SelectionShape.OBJECT, shape, R.string.image_select_object, onShapeChange)
+                ShapeChip(SelectionShape.BRUSH, shape, R.string.image_select_brush, onShapeChange)
+                if (!editingMosaicArea) ShapeChip(SelectionShape.OBJECT, shape, R.string.image_select_object, onShapeChange)
                 ShapeChip(SelectionShape.RECT, shape, R.string.image_select_rect, onShapeChange)
                 ShapeChip(SelectionShape.ELLIPSE, shape, R.string.image_select_ellipse, onShapeChange)
                 ShapeChip(SelectionShape.LASSO, shape, R.string.image_select_lasso, onShapeChange)
 
-                VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
-
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 ModeChip(SelectionMode.REPLACE, mode, R.string.image_select_new, onModeChange)
                 ModeChip(SelectionMode.ADD, mode, R.string.image_select_add, onModeChange)
                 ModeChip(SelectionMode.SUBTRACT, mode, R.string.image_select_subtract, onModeChange)
             }
 
-            Spacer(Modifier.size(6.dp))
+            if (shape == SelectionShape.BRUSH) {
+                val widthLabel = stringResource(R.string.image_selection_brush_size, brushDiameter.roundToInt())
+                Text(widthLabel, style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val decrease = stringResource(R.string.image_selection_brush_smaller)
+                    val increase = stringResource(R.string.image_selection_brush_larger)
+                    TextButton(onClick = { onBrushDiameterChange((brushDiameter - 1f).coerceAtLeast(1f)) },
+                        modifier = Modifier.semantics { contentDescription = decrease }) { Text("−") }
+                    Slider(value = brushDiameter.coerceIn(1f, brushLimit),
+                        onValueChange = { onBrushDiameterChange(it.roundToInt().toFloat()) }, valueRange = 1f..brushLimit,
+                        modifier = Modifier.weight(1f).semantics { contentDescription = widthLabel })
+                    TextButton(onClick = { onBrushDiameterChange((brushDiameter + 1f).coerceAtMost(brushLimit)) },
+                        modifier = Modifier.semantics { contentDescription = increase }) { Text("+") }
+                }
+                Text(stringResource(R.string.image_selection_brush_hint), style = MaterialTheme.typography.bodySmall)
+            }
+            TextButton(onClick = { onBackdropChange(SelectionBackdrop.entries[(backdrop.ordinal + 1) % SelectionBackdrop.entries.size]) }) {
+                Text(stringResource(R.string.image_selection_background, stringResource(when (backdrop) {
+                    SelectionBackdrop.CHECKERBOARD -> R.string.image_selection_background_checker
+                    SelectionBackdrop.WHITE -> R.string.image_selection_background_white
+                    SelectionBackdrop.BLACK -> R.string.image_selection_background_black
+                })))
+            }
 
-            Row(
+            if (!editingMosaicArea) Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -104,13 +146,13 @@ fun SelectionPanel(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onMosaic, enabled = hasSelection && !selectingObject) {
+                if (!editingMosaicArea) TextButton(onClick = onMosaic, enabled = hasSelection && !selectingObject) {
                     Text(stringResource(R.string.image_mosaic))
                 }
-                TextButton(onClick = onFill, enabled = hasSelection && !selectingObject) {
+                if (!editingMosaicArea) TextButton(onClick = onFill, enabled = hasSelection && !selectingObject) {
                     Text(stringResource(R.string.image_select_fill))
                 }
-                TextButton(onClick = onErase, enabled = hasSelection && !selectingObject) {
+                if (!editingMosaicArea) TextButton(onClick = onErase, enabled = hasSelection && !selectingObject) {
                     Text(stringResource(R.string.image_select_erase))
                 }
                 TextButton(onClick = onInvert) {
@@ -118,6 +160,22 @@ fun SelectionPanel(
                 }
                 TextButton(onClick = onDeselect, enabled = hasSelection) {
                     Text(stringResource(R.string.image_select_none))
+                }
+            }
+
+            if (!editingMosaicArea && mosaics.isNotEmpty()) {
+                var showMosaics by remember { mutableStateOf(false) }
+                Box {
+                    TextButton(onClick = { showMosaics = true }, enabled = !selectingObject) {
+                        Text(stringResource(R.string.image_mosaic_edit_existing))
+                    }
+                    DropdownMenu(expanded = showMosaics, onDismissRequest = { showMosaics = false }) {
+                        mosaics.forEachIndexed { index, mosaic ->
+                            DropdownMenuItem(text = {
+                                Text(stringResource(R.string.image_mosaic_entry, index + 1, mosaic.blockSizePx.roundToInt()))
+                            }, onClick = { showMosaics = false; onEditMosaic(mosaic.id) })
+                        }
+                    }
                 }
             }
 
@@ -182,4 +240,16 @@ private fun ColorSwatch(color: Int, selected: Boolean, onClick: () -> Unit) {
             )
             .clickable(onClick = onClick),
     )
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SelectionBrushPanelPreview() {
+    MaterialTheme {
+        SelectionPanel(shape = SelectionShape.BRUSH, mode = SelectionMode.ADD, color = -1,
+            hasSelection = true, selectingObject = false, brushDiameter = 32f, brushLimit = 512f,
+            backdrop = SelectionBackdrop.CHECKERBOARD, onBrushDiameterChange = {}, onBackdropChange = {},
+            mosaics = emptyList(), onEditMosaic = {}, onCancelObjectSelection = {}, onShapeChange = {},
+            onModeChange = {}, onColorChange = {}, onFill = {}, onErase = {}, onMosaic = {}, onInvert = {}, onDeselect = {})
+    }
 }
