@@ -12,6 +12,15 @@ object SaveNaming {
 
     const val EDITED_SUFFIX: String = "_edited"
 
+    /** 拡張子が既知かつ同形式のときだけ原本を置換する。JPEG を .bmp 等へ保存しない。 */
+    fun canOverwrite(originalName: String, format: ImageFormat): Boolean =
+        when (originalName.substringAfterLast('.', "").lowercase()) {
+            "jpg", "jpeg" -> format == ImageFormat.JPEG
+            "png" -> format == ImageFormat.PNG
+            "webp" -> format == ImageFormat.WEBP
+            else -> false
+        }
+
     /** 編集後の既定ファイル名。拡張子は出力形式に合わせて付け替える。 */
     fun editedName(originalName: String, format: ImageFormat): String {
         val base = originalName.substringBeforeLast('.', originalName)

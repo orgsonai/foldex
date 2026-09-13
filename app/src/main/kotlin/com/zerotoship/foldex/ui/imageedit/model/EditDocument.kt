@@ -131,6 +131,12 @@ enum class ImageFormat(val displayName: String, val extension: String, val suppo
     WEBP("WebP", "webp", supportsAlpha = true, hasQuality = true),
     ;
 
+    val mimeType: String get() = when (this) {
+        JPEG -> "image/jpeg"
+        PNG -> "image/png"
+        WEBP -> "image/webp"
+    }
+
     companion object {
         const val DEFAULT_QUALITY: Int = 90
 

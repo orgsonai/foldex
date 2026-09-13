@@ -11,6 +11,12 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.LaunchedEffect
@@ -65,6 +71,11 @@ class ImageEditActivity : ComponentActivity() {
                 val viewModel: ImageEditViewModel = hiltViewModel()
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 val snackbar = remember { SnackbarHostState() }
+                val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                    viewModel.destinationSelected(
+                        result.data?.data?.toString().takeIf { result.resultCode == Activity.RESULT_OK },
+                    )
+                }
 
                 LaunchedEffect(Unit) { viewModel.load(file, name, sourceUri) }
 
@@ -75,11 +86,25 @@ class ImageEditActivity : ComponentActivity() {
                             is ImageEditEvent.Saved -> {
                                 Toast.makeText(
                                     this@ImageEditActivity,
-                                    getString(R.string.image_saved_path, event.displayPath.substringAfterLast('/')),
-                                    Toast.LENGTH_SHORT,
+                                    getString(R.string.image_saved_path, event.displayPath.substringAfterLast('/')) +
+                                        if (event.metadataWarning) "\n" + getString(R.string.image_export_metadata_warning) else "",
+                                    if (event.metadataWarning) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
                                 ).show()
                                 setResult(Activity.RESULT_OK)
                                 finish()
+                            }
+                            is ImageEditEvent.ChooseDestination -> {
+                                try {
+                                    createDocument.launch(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                        addCategory(Intent.CATEGORY_OPENABLE)
+                                        type = event.mimeType
+                                        putExtra(Intent.EXTRA_TITLE, event.name)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                    })
+                                } catch (_: android.content.ActivityNotFoundException) {
+                                    viewModel.destinationSelected(null)
+                                    snackbar.showSnackbar(getString(R.string.image_export_picker_unavailable))
+                                }
                             }
                         }
                     }
@@ -123,6 +148,23 @@ class ImageEditActivity : ComponentActivity() {
                     onCancelObjectSelection = viewModel::cancelAutomaticSelection,
                     onSave = viewModel::save,
                 )
+                state.unconfirmedSave?.let { name ->
+                    AlertDialog(
+                        onDismissRequest = viewModel::dismissSaveVerification,
+                        title = { Text(stringResource(R.string.image_export_unconfirmed_title)) },
+                        text = { Text(stringResource(R.string.image_export_unconfirmed_body, name)) },
+                        confirmButton = {
+                            TextButton(enabled = !state.saving, onClick = viewModel::verifySavedImage) {
+                                Text(stringResource(R.string.image_export_verify_again))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(enabled = !state.saving, onClick = viewModel::dismissSaveVerification) {
+                                Text(stringResource(R.string.image_export_back_to_edit))
+                            }
+                        },
+                    )
+                }
             }
         }
     }

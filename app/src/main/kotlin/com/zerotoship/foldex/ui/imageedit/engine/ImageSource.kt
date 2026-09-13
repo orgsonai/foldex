@@ -55,8 +55,10 @@ class ImageSource(private val file: File) {
 
     /** 描画が終わるまで、別の解像度要求によるキャッシュの recycle を防ぐ。 */
     @Synchronized
-    fun withBitmap(maxLongEdge: Int, draw: (Bitmap) -> Unit) {
-        load(maxLongEdge)?.let(draw)
+    fun withBitmap(maxLongEdge: Int, draw: (Bitmap) -> Unit): Boolean {
+        val bitmap = load(maxLongEdge) ?: return false
+        draw(bitmap)
+        return true
     }
 
     private fun decode(maxLongEdge: Int): Bitmap? {
@@ -125,9 +127,13 @@ class ImageSource(private val file: File) {
             ExifInterface.ORIENTATION_TRANSVERSE -> { m.setRotate(270f); m.postScale(-1f, 1f) }
             else -> return src
         }
-        val out = runCatching {
+        // 向きの変換失敗時に未変換の画像を成功として返すと、選択の位置も保存結果も変わる。
+        val out = try {
             Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
-        }.getOrNull() ?: return src
+        } catch (error: Throwable) {
+            src.recycle()
+            throw error
+        }
         if (out !== src) src.recycle()
         return out
     }

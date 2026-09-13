@@ -1018,4 +1018,19 @@
     <string name="image_fill_layer_clear">Transparent area</string>
     <string name="settings_log_frame_perf">Record display performance</string>
     <string name="settings_log_frame_perf_sub">Writes dropped frames to the app log so slowness can be traced. Turn off once you are done.</string>
+    <string name="image_export_source_changed">The source image changed. Reopen it before saving.</string>
+    <string name="image_export_source_unreadable">The source image cannot be read. The original has not been overwritten.</string>
+    <string name="image_export_invalid">The exported image could not be validated. The original has not been overwritten.</string>
+    <string name="image_export_target_small">The image exceeds the target size. Reduce its dimensions or increase the target size.</string>
+    <string name="image_export_replace_unavailable">This location cannot safely replace the original. Use Save as or choose another location.</string>
+    <string name="image_export_conflict">The original cannot be replaced with this format or destination. Use Save as.</string>
+    <string name="image_export_verify_failed">The saved copy does not match the exported image. The original is unchanged; the copy may be incomplete.</string>
+    <string name="image_export_keep_original">Save a new copy and keep the original.</string>
+    <string name="image_export_choose_location">Choose save location…</string>
+    <string name="image_export_metadata_warning">Image saved, but some photo metadata could not be retained.</string>
+    <string name="image_export_picker_unavailable">No document picker is available.</string>
+    <string name="image_export_unconfirmed_title">Save not yet verified</string>
+    <string name="image_export_unconfirmed_body">Could not read back %1$s. The original is unchanged. Check again to verify this copy without uploading it again. If you return to editing and save again, a separate copy will be created.</string>
+    <string name="image_export_verify_again">Check again</string>
+    <string name="image_export_back_to_edit">Return to editing</string>
 </resources>

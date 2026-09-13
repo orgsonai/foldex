@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.ui.imageedit.model.ImageFormat
+import com.zerotoship.foldex.ui.imageedit.model.SaveNaming
 import com.zerotoship.foldex.R
 import kotlin.math.roundToInt
 
@@ -62,6 +63,7 @@ fun SaveDialog(
 
     // 背景が透明なときだけでなく、選択範囲を「透明にする」で抜いたときも警告する (v3)。
     val transparentWarning = format == ImageFormat.JPEG && doc.hasTransparentArea
+    val canOverwrite = state.canOverwrite && SaveNaming.canOverwrite(state.originalName, format)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -150,11 +152,17 @@ fun SaveDialog(
                         Text(stringResource(R.string.image_remove_location), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
+                if (!canOverwrite) {
+                    Text(stringResource(R.string.image_export_keep_original), style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = {
+                    onSave(buildRequest(false, keepLocation, useTargetSize, targetKbText).copy(chooseLocation = true))
+                }) { Text(stringResource(R.string.image_export_choose_location)) }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = state.canSaveAs,
+                enabled = !state.saving,
                 onClick = {
                     onSave(
                         buildRequest(
@@ -170,7 +178,7 @@ fun SaveDialog(
         dismissButton = {
             Row {
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-                TextButton(onClick = {
+                if (canOverwrite) TextButton(onClick = {
                     onSave(
                         buildRequest(
                             overwrite = true,

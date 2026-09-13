@@ -9,12 +9,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.model.FileUri
-import com.zerotoship.foldex.core.model.WriteMode
 import com.zerotoship.foldex.storage.StorageProviderRouter
 import com.zerotoship.foldex.ui.imageedit.engine.DocumentRenderer
 import com.zerotoship.foldex.ui.imageedit.engine.ExifTransfer
 import com.zerotoship.foldex.ui.imageedit.engine.ImageEncoder
 import com.zerotoship.foldex.ui.imageedit.engine.ImageSource
+import com.zerotoship.foldex.ui.imageedit.engine.ExportFailure
+import com.zerotoship.foldex.ui.imageedit.engine.ExportReceipt
+import com.zerotoship.foldex.ui.imageedit.engine.ExternalImageExport
+import com.zerotoship.foldex.ui.imageedit.engine.FileFingerprint
+import com.zerotoship.foldex.ui.imageedit.engine.ImageExportCoordinator
+import com.zerotoship.foldex.ui.imageedit.engine.ImageExportResult
+import com.zerotoship.foldex.ui.imageedit.engine.LocalImageExport
+import com.zerotoship.foldex.ui.imageedit.engine.PreparedImage
 import com.zerotoship.foldex.ui.imageedit.engine.ObjectSelectionEngine
 import com.zerotoship.foldex.ui.imageedit.engine.ObjectSelectionResult
 import com.zerotoship.foldex.ui.imageedit.model.CanvasTransforms
@@ -41,6 +48,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -85,8 +94,15 @@ class ImageEditViewModel @Inject constructor(
     private var sourceUri: FileUri? = null
 
     private var imageSource: ImageSource? = null
+    private var sourceFingerprint: FileFingerprint? = null
+    private var preparedForPicker: PreparedImage? = null
+    private var unconfirmedReceipt: ExportReceipt? = null
+    private var exportMetadataWarning = false
+    private val exportCoordinator = ImageExportCoordinator(File(appContext.cacheDir, "image-exports"))
+    private val externalExport = ExternalImageExport(storage)
     private var previewJob: Job? = null
     private var estimateJob: Job? = null
+    private var estimateRequest = 0L
     private val previewMutex = Mutex()
     private val selectionMutex = Mutex()
     private var selectionJob: Job? = null
@@ -98,10 +114,20 @@ class ImageEditViewModel @Inject constructor(
         if (sourceFile != null) return // 再入防止 (Composable の再構成で二重に呼ばれても無視)
         sourceFile = file
         sourceUri = sourceUriString?.let { FileUri.fromStorageStringOrNull(it) }
+        if (!sourceUriString.isNullOrBlank() && sourceUri == null) {
+            _state.update { it.copy(error = appContext.getString(R.string.image_open_failed)) }
+            return
+        }
         _state.update { it.copy(loading = true, fileName = displayName) }
 
         viewModelScope.launch {
             val prepared = withContext(Dispatchers.Default) {
+                val fingerprint = try {
+                    FileFingerprint.read(file)
+                } catch (_: Exception) {
+                    return@withContext null
+                }
+                sourceFingerprint = fingerprint
                 val src = ImageSource(file)
                 val size = src.size
                 if (size.width <= 1 && size.height <= 1) return@withContext null
@@ -134,8 +160,8 @@ class ImageEditViewModel @Inject constructor(
                     document = doc,
                     originalBytes = file.length(),
                     hasLocation = hasLocation,
-                    // SAF は開いた document URI から親フォルダを辿れないため別名保存できない。
-                    canSaveAs = sourceUri !is FileUri.Saf,
+                    canOverwrite = sourceUri == null || sourceUri is FileUri.Local,
+                    originalName = (sourceUri as? FileUri.Local)?.absolutePath?.substringAfterLast('/') ?: file.name,
                 )
             }
             if (doc.output.scale < 1f) {
@@ -438,7 +464,7 @@ class ImageEditViewModel @Inject constructor(
                         // UI の Bitmap を推論側で解放しないよう、専用の縮小画像を作る。
                         val bitmap = DocumentRenderer.render(doc, resolve, targetLongEdge = 1024) {
                             context.ensureActive()
-                        } ?: return@withLock ObjectSelectionResult.Failed
+                        }.getOrNull() ?: return@withLock ObjectSelectionResult.Failed
                         try {
                             ObjectSelectionEngine.select(appContext, bitmap, point, doc.canvasSize) {
                                 context.ensureActive()
@@ -628,7 +654,7 @@ class ImageEditViewModel @Inject constructor(
                         context.ensureActive()
                         DocumentRenderer.render(doc, resolve, targetLongEdge = PREVIEW_LONG_EDGE) {
                             context.ensureActive()
-                        }
+                        }.getOrNull()
                     }
                 }
                 if (bitmap == null) {
@@ -654,20 +680,36 @@ class ImageEditViewModel @Inject constructor(
      */
     fun requestEstimate() {
         val doc = _state.value.document ?: return
+        if (_state.value.saving) return
         val resolve = sourceResolver()
         estimateJob?.cancel()
-        _state.update { it.copy(estimating = true) }
+        val request = ++estimateRequest
+        _state.update { it.copy(estimating = true, estimatedBytes = null) }
         estimateJob = viewModelScope.launch {
-            val bytes = withContext(Dispatchers.Default) {
-                val bitmap = DocumentRenderer.render(doc, resolve) ?: return@withContext -1
-                val size = ImageEncoder.encodedSize(bitmap, doc.output.format, doc.output.quality)
-                bitmap.recycle()
-                // 原寸を抱えたままにせず、プレビュー解像度へ戻してメモリを返す。
-                imageSource?.load(PREVIEW_LONG_EDGE)
-                size
-            }
-            _state.update {
-                it.copy(estimating = false, estimatedBytes = bytes.takeIf { b -> b >= 0 })
+            try {
+                val bytes = withContext(Dispatchers.Default) {
+                    previewMutex.withLock {
+                        val context = currentCoroutineContext()
+                        val bitmap = DocumentRenderer.render(doc, resolve) { context.ensureActive() }
+                            .getOrNull() ?: return@withLock null
+                        try {
+                            ImageEncoder.encodedSize(bitmap, doc.output.format, doc.output.quality)
+                                .takeIf { it >= 0 }
+                        } finally {
+                            bitmap.recycle()
+                            imageSource?.release()
+                        }
+                    }
+                }
+                if (request == estimateRequest && _state.value.document === doc) {
+                    _state.update { it.copy(estimatedBytes = bytes) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // 見積もれなくても編集データは保持する。保存側で失敗理由を表示する。
+            } finally {
+                if (request == estimateRequest) _state.update { it.copy(estimating = false) }
             }
         }
     }
@@ -677,125 +719,166 @@ class ImageEditViewModel @Inject constructor(
     fun save(request: SaveRequest) {
         val doc = _state.value.document ?: return
         val file = sourceFile ?: return
-        if (_state.value.saving || _state.value.mosaicDraft != null) return
+        val fingerprint = sourceFingerprint ?: return
+        if (_state.value.saving || _state.value.mosaicDraft != null || unconfirmedReceipt != null) return
+        if (request.overwrite && (!_state.value.canOverwrite ||
+                !SaveNaming.canOverwrite(_state.value.originalName, doc.output.format))
+        ) {
+            showExportFailure(ExportFailure.DESTINATION_EXISTS)
+            return
+        }
+        val previousSelection = selectionJob
         cancelAutomaticSelection()
-        _state.update { it.copy(saving = true) }
-
+        estimateRequest++
+        _state.update { it.copy(saving = true, estimating = false) }
         viewModelScope.launch {
-            val outcome = runCatching {
-                withContext(Dispatchers.Default) { performSave(doc, file, request) }
-            }.getOrElse { t -> SaveOutcome.Failure(t.message ?: appContext.getString(R.string.unknown_error)) }
-
-            _state.update {
-                it.copy(saving = false, dirty = outcome !is SaveOutcome.Success)
-            }
-            when (outcome) {
-                is SaveOutcome.Success -> _events.trySend(ImageEditEvent.Saved(outcome.displayPath))
-                is SaveOutcome.Failure ->
-                    _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_save_failed_reason, outcome.reason)))
+            // Dispatcher を戻る瞬間のキャンセルでも、一時ファイルの所有者を失わない。
+            var ownedPrepared: PreparedImage? = null
+            try {
+                estimateJob?.cancelAndJoin()
+                previewJob?.cancelAndJoin()
+                previousSelection?.cancelAndJoin()
+                val prepared = withContext(Dispatchers.Default) {
+                    previewMutex.withLock {
+                        val context = currentCoroutineContext()
+                        try {
+                            exportCoordinator.prepare(
+                                doc, sourceResolver(), file, fingerprint, request.keepLocation, request.targetBytes,
+                            ) { context.ensureActive() }.also { ownedPrepared = it.getOrNull() }
+                        } finally {
+                            imageSource?.release()
+                        }
+                    }
+                }
+                when (prepared) {
+                    is Result.Failure -> {
+                        _state.update { it.copy(saving = false, previewing = false) }
+                        showExportFailure(prepared.error)
+                        refreshPreview()
+                    }
+                    is Result.Success -> {
+                        exportMetadataWarning = prepared.value.metadataWarning
+                        if (request.chooseLocation || sourceUri is FileUri.Saf) {
+                            preparedForPicker = prepared.value
+                            ownedPrepared = null
+                            _events.send(ImageEditEvent.ChooseDestination(
+                                SaveNaming.editedName(_state.value.fileName, doc.output.format),
+                                doc.output.format.mimeType,
+                            ))
+                        } else {
+                            prepared.value.use { image ->
+                                // 最終配置に入ったらキャンセルで完了結果を失わない。
+                                withContext(NonCancellable) {
+                                    val outcome = withContext(Dispatchers.IO) {
+                                        when (val source = sourceUri) {
+                                            is FileUri.Remote -> externalExport.deliver(
+                                                image, ExternalImageExport.newSibling(source, _state.value.fileName, doc.output.format), source,
+                                            )
+                                            else -> LocalImageExport().deliver(
+                                                image,
+                                                (source as? FileUri.Local)?.let { File(it.absolutePath) } ?: file,
+                                                fingerprint, doc.output.format, request.overwrite,
+                                            )
+                                        }
+                                    }
+                                    finishExport(outcome)
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                _state.update { it.copy(saving = false, previewing = false) }
+                throw cancelled
+            } catch (_: Exception) {
+                preparedForPicker?.close()
+                preparedForPicker = null
+                _state.update { it.copy(saving = false, previewing = false) }
+                showExportFailure(ExportFailure.WRITE_FAILED)
+            } finally {
+                ownedPrepared?.close()
             }
         }
     }
 
-    private suspend fun performSave(
-        doc: EditDocument,
-        original: File,
-        request: SaveRequest,
-    ): SaveOutcome {
-        // 1) 原寸で描く。プレビューと同じ render() に解像度だけ変えて通す。
-        val bitmap = DocumentRenderer.render(doc, sourceResolver())
-            ?: return SaveOutcome.Failure(appContext.getString(R.string.image_not_enough_memory))
-        try {
-            val format = doc.output.format
-            // 2) 目標容量の指定があれば、そこに収まる最大の品質を探す。
-            val quality = if (request.targetBytes != null && format.hasQuality) {
-                ImageEncoder.findQualityForTarget(request.targetBytes) { q ->
-                    ImageEncoder.encodedSize(bitmap, format, q)
-                }.quality
-            } else {
-                doc.output.quality
+    /** ACTION_CREATE_DOCUMENT が返した新規出力だけを受け取る。null は取消。 */
+    fun destinationSelected(uri: String?) {
+        val prepared = preparedForPicker ?: return
+        preparedForPicker = null
+        if (uri == null) {
+            prepared.close()
+            _state.update { it.copy(saving = false, previewing = false) }
+            refreshPreview()
+            return
+        }
+        viewModelScope.launch {
+            prepared.use { image ->
+                withContext(NonCancellable) {
+                    val outcome = withContext(Dispatchers.IO) {
+                        externalExport.deliver(image, FileUri.Saf(uri), sourceUri)
+                    }
+                    finishExport(outcome)
+                }
             }
-            // 3) 一時ファイルへ書き出す (EXIF の書き戻しが File を要求するため)。
-            val temp = File(appContext.cacheDir, "$TEMP_NAME.${format.extension}")
-            temp.parentFile?.mkdirs()
-            val encoded = temp.outputStream().use { out ->
-                ImageEncoder.encode(bitmap, format, quality, out)
+        }.invokeOnCompletion { prepared.close() }
+    }
+
+    fun verifySavedImage() {
+        val receipt = unconfirmedReceipt ?: return
+        if (_state.value.saving) return
+        _state.update { it.copy(saving = true) }
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                val outcome = withContext(Dispatchers.IO) { externalExport.verify(receipt) }
+                finishExport(outcome)
             }
-            if (!encoded) return SaveOutcome.Failure(appContext.getString(R.string.image_encode_failed))
-
-            // 4) EXIF を引き継ぐ (Orientation は正規化、位置情報は要求どおり)。
-            ExifTransfer.copy(from = original, to = temp, keepLocation = request.keepLocation)
-
-            // 5) 目的地へ置く。
-            return withContext(Dispatchers.IO) { deliver(temp, original, format, request) }
-        } finally {
-            bitmap.recycle()
-            imageSource?.load(PREVIEW_LONG_EDGE)
         }
     }
 
-    private suspend fun deliver(
-        temp: File,
-        original: File,
-        format: ImageFormat,
-        request: SaveRequest,
-    ): SaveOutcome {
-        val remote = sourceUri
-        if (remote == null) {
-            // ローカルの実ファイルを直接編集していた場合。
-            val dir = original.parentFile ?: return SaveOutcome.Failure(appContext.getString(R.string.image_destination_missing))
-            val name = if (request.overwrite) {
-                SaveNaming.sameNameWithFormat(original.name, format)
-            } else {
-                SaveNaming.uniqueName(SaveNaming.editedName(original.name, format)) {
-                    File(dir, it).exists()
-                }
-            }
-            val dest = File(dir, name)
-            return runCatching {
-                temp.inputStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
-                SaveOutcome.Success(dest.absolutePath)
-            }.getOrElse { SaveOutcome.Failure(it.message ?: appContext.getString(R.string.write_error)) }
-        }
-
-        // リモート / SAF から開いていた場合は元 URI (別名なら兄弟の URI) へ書き戻す。
-        val targetUri = if (request.overwrite) {
-            remote
-        } else {
-            siblingUri(remote, format) ?: return SaveOutcome.Failure(appContext.getString(R.string.image_save_as_unsupported))
-        }
-        val mode = if (request.overwrite) WriteMode.OVERWRITE else WriteMode.CREATE_NEW
-        return runCatching {
-            when (val r = storage.openOutput(targetUri, mode)) {
-                is Result.Success -> r.value.use { out ->
-                    temp.inputStream().use { it.copyTo(out) }
-                }
-                is Result.Failure ->
-                    return SaveOutcome.Failure(r.error.message ?: appContext.getString(R.string.write_failed))
-            }
-            // 上書きしたときは、次に開いたときに編集後が出るようキャッシュ実体も更新する。
-            if (request.overwrite) {
-                temp.inputStream().use { input ->
-                    original.outputStream().use { input.copyTo(it) }
-                }
-            }
-            SaveOutcome.Success(targetUri.displayName())
-        }.getOrElse { SaveOutcome.Failure(it.message ?: appContext.getString(R.string.write_error)) }
+    fun dismissSaveVerification() {
+        if (_state.value.saving) return
+        unconfirmedReceipt = null
+        _state.update { it.copy(unconfirmedSave = null) }
+        refreshPreview()
     }
 
-    /** 元 URI と同じフォルダに、編集後の名前で作る URI。SAF は親を辿れないので null。 */
-    private fun siblingUri(source: FileUri, format: ImageFormat): FileUri? = when (source) {
-        is FileUri.Remote -> {
-            val name = SaveNaming.editedName(source.path.substringAfterLast('/'), format)
-            val parent = source.path.substringBeforeLast('/', "")
-            source.copy(path = if (parent.isEmpty()) name else "$parent/$name")
+    private fun finishExport(result: ImageExportResult) {
+        unconfirmedReceipt = (result as? ImageExportResult.Unconfirmed)?.receipt
+        _state.update {
+            it.copy(
+                saving = false, previewing = false,
+                dirty = if (result is ImageExportResult.Saved) false else it.dirty,
+                unconfirmedSave = unconfirmedReceipt?.destination?.displayName(),
+            )
         }
-        is FileUri.Local -> {
-            val name = SaveNaming.editedName(source.absolutePath.substringAfterLast('/'), format)
-            val parent = source.absolutePath.substringBeforeLast('/', "")
-            FileUri.Local(if (parent.isEmpty()) name else "$parent/$name")
+        when (result) {
+            is ImageExportResult.Saved -> _events.trySend(ImageEditEvent.Saved(result.displayPath, exportMetadataWarning))
+            is ImageExportResult.Unconfirmed -> Unit // 画面の確認ダイアログから同じ URI を再検証する。
+            is ImageExportResult.Failed -> {
+                showExportFailure(result.reason, result.displayPath)
+                refreshPreview()
+            }
         }
-        is FileUri.Saf -> null
+    }
+
+    private fun showExportFailure(reason: ExportFailure, displayPath: String? = null) {
+        val text = appContext.getString(when (reason) {
+            ExportFailure.SOURCE_CHANGED -> R.string.image_export_source_changed
+            ExportFailure.SOURCE_UNREADABLE -> R.string.image_export_source_unreadable
+            ExportFailure.NOT_ENOUGH_MEMORY -> R.string.image_not_enough_memory
+            ExportFailure.RENDER_FAILED -> R.string.image_preview_failed
+            ExportFailure.ENCODE_FAILED -> R.string.image_encode_failed
+            ExportFailure.INVALID_OUTPUT -> R.string.image_export_invalid
+            ExportFailure.TARGET_TOO_SMALL -> R.string.image_export_target_small
+            ExportFailure.ATOMIC_REPLACE_UNAVAILABLE -> R.string.image_export_replace_unavailable
+            ExportFailure.DESTINATION_EXISTS -> R.string.image_export_conflict
+            ExportFailure.VERIFICATION_FAILED -> R.string.image_export_verify_failed
+            ExportFailure.WRITE_FAILED -> R.string.write_failed
+        })
+        _events.trySend(ImageEditEvent.Message(
+            appContext.getString(R.string.image_save_failed_reason, text) +
+                if (displayPath == null) "" else "\n$displayPath",
+        ))
     }
 
     override fun onCleared() {
@@ -803,6 +886,8 @@ class ImageEditViewModel @Inject constructor(
         previewJob?.cancel()
         estimateJob?.cancel()
         imageSource?.release()
+        preparedForPicker?.close()
+        preparedForPicker = null
         super.onCleared()
     }
 
@@ -874,7 +959,6 @@ class ImageEditViewModel @Inject constructor(
         const val MIN_OUTPUT_LONG_EDGE: Int = 16
 
         private const val LAYER_ID = "layer-0"
-        private const val TEMP_NAME = "image-edit-out"
     }
 }
 
@@ -900,8 +984,10 @@ data class ImageEditUiState(
     val originalBytes: Long = 0,
     /** 元画像が位置情報を持っているか (保存ダイアログの表示判断に使う)。 */
     val hasLocation: Boolean = false,
-    /** 別名保存ができるか (SAF 経由では不可)。 */
-    val canSaveAs: Boolean = true,
+    /** 原子的なローカル置換を試せるか。形式変更は別名保存する。 */
+    val canOverwrite: Boolean = false,
+    val originalName: String = "",
+    val unconfirmedSave: String? = null,
     /** 編集中のテキストレイヤー ID。null なら文字を触っていない。 */
     val editingTextId: String? = null,
 ) {
@@ -931,16 +1017,13 @@ enum class EditTool { CROP, RESIZE, SELECT, BRUSH, TEXT }
 data class SaveRequest(
     val overwrite: Boolean,
     val keepLocation: Boolean,
+    val chooseLocation: Boolean = false,
     /** 目標ファイルサイズ (バイト)。指定すると品質を自動調整する。 */
     val targetBytes: Int? = null,
 )
 
-private sealed interface SaveOutcome {
-    data class Success(val displayPath: String) : SaveOutcome
-    data class Failure(val reason: String) : SaveOutcome
-}
-
 sealed interface ImageEditEvent {
     data class Message(val text: String) : ImageEditEvent
-    data class Saved(val displayPath: String) : ImageEditEvent
+    data class Saved(val displayPath: String, val metadataWarning: Boolean = false) : ImageEditEvent
+    data class ChooseDestination(val name: String, val mimeType: String) : ImageEditEvent
 }

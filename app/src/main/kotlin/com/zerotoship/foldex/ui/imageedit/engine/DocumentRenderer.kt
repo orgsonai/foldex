@@ -14,6 +14,8 @@ import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import com.zerotoship.foldex.core.common.Result
+import kotlinx.coroutines.CancellationException
 import com.zerotoship.foldex.ui.imageedit.model.Background
 import com.zerotoship.foldex.ui.imageedit.model.EditDocument
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
@@ -39,53 +41,74 @@ object DocumentRenderer {
     /**
      * @param sources レイヤーの `sourceKey` から画素を引くための解決関数。
      * @param targetLongEdge null なら [EditDocument.outputSize]、指定するとその長辺に収める。
-     * @return 描画結果。メモリを確保できなければ null。
+     * @return 描画結果、または失敗理由。素材を描けない場合は不完全な画像を返さない。
      */
     fun render(
         doc: EditDocument,
         sources: (String) -> ImageSource?,
         targetLongEdge: Int? = null,
         checkCancelled: () -> Unit = {},
-    ): Bitmap? {
+    ): Result<Bitmap, RenderFailure> {
+        checkCancelled()
+        if (doc.canvas.width <= 0 || doc.canvas.height <= 0 ||
+            !doc.output.scale.isFinite() || doc.output.scale <= 0f
+        ) return Result.Failure(RenderFailure.InvalidGeometry)
+        // 素材の解決は確保前に行い、描画中も同じ参照を使う。
+        val resolved = mutableMapOf<String, ImageSource>()
+        for (layer in doc.layers.filterIsInstance<Layer.Image>()) {
+            if (!layer.visible || layer.alpha <= 0f) continue
+            resolved[layer.sourceKey] = sources(layer.sourceKey)
+                ?: return Result.Failure(RenderFailure.MissingSource(layer.sourceKey))
+        }
         val outSize = outputSizeFor(doc, targetLongEdge)
-        val out = BitmapOps.createCanvasBitmap(outSize) ?: return null
-        val canvas = Canvas(out)
-
-        // 論理キャンバス座標 → 出力画素へのスケール。
-        val s = outSize.width.toFloat() / doc.canvas.width
-
-        when (val bg = doc.canvas.background) {
-            is Background.Transparent -> Unit // Bitmap は透明で初期化済み
-            is Background.Solid -> canvas.drawColor(bg.color)
-        }
-
-        val paint = Paint().apply {
-            isAntiAlias = true
-            isFilterBitmap = true
-            isDither = true
-        }
-
+        val out = BitmapOps.createCanvasBitmap(outSize)
+            ?: return Result.Failure(RenderFailure.NotEnoughMemory)
         try {
+            val canvas = Canvas(out)
+
+            // 論理キャンバス座標 → 出力画素へのスケール。
+            val s = outSize.width.toFloat() / doc.canvas.width
+
+            when (val bg = doc.canvas.background) {
+                is Background.Transparent -> Unit // Bitmap は透明で初期化済み
+                is Background.Solid -> canvas.drawColor(bg.color)
+            }
+
+            val paint = Paint().apply {
+                isAntiAlias = true
+                isFilterBitmap = true
+                isDither = true
+            }
+
             for (layer in doc.layers) {
                 checkCancelled()
                 if (!layer.visible || layer.alpha <= 0f) continue
                 when (layer) {
-                    is Layer.Image -> drawImageLayer(canvas, paint, layer, sources, s)
+                    is Layer.Image -> drawImageLayer(canvas, paint, layer, resolved::get, s)
                     is Layer.Drawing -> drawStrokes(canvas, layer, s, outSize)
                     is Layer.Fill -> drawFill(canvas, layer, s)
                     is Layer.Mosaic -> MosaicRenderer.draw(out, canvas, layer, s, checkCancelled)
                     is Layer.Text -> drawText(canvas, layer, s)
                 }
             }
+            checkCancelled()
+            return Result.Success(out)
+        } catch (cancelled: CancellationException) {
+            out.recycle()
+            throw cancelled
+        } catch (failure: RenderAbort) {
+            out.recycle()
+            return Result.Failure(failure.reason)
         } catch (_: OutOfMemoryError) {
             out.recycle()
-            return null
-        } catch (error: Exception) {
+            return Result.Failure(RenderFailure.NotEnoughMemory)
+        } catch (_: Exception) {
             out.recycle()
-            throw error
+            return Result.Failure(RenderFailure.DrawingFailed)
         }
-        return out
     }
+
+    private class RenderAbort(val reason: RenderFailure) : RuntimeException()
 
     /** [render] が返すサイズ。ダイアログの「予想サイズ」表示でも使う。 */
     fun outputSizeFor(doc: EditDocument, targetLongEdge: Int?): EditSize =
@@ -103,14 +126,19 @@ object DocumentRenderer {
         sources: (String) -> ImageSource?,
         s: Float,
     ) {
-        val source = sources(layer.sourceKey) ?: return
+        val source = sources(layer.sourceKey)
+            ?: throw RenderAbort(RenderFailure.MissingSource(layer.sourceKey))
+        if (!layer.transform.scale.isFinite() || layer.transform.scale <= 0f ||
+            !layer.transform.rotationDeg.isFinite() || !layer.transform.offsetX.isFinite() ||
+            !layer.transform.offsetY.isFinite()
+        ) throw RenderAbort(RenderFailure.InvalidGeometry)
 
         // 元画像 1px が出力上で何 px になるか。これが必要な解像度をそのまま決める。
         // (切り抜きや回転は倍率を変えないので、レイヤーの拡大率と出力スケールの積でよい)
         val pixelRatio = layer.transform.scale * s
         val neededLongEdge = (layer.sourceSize.longEdge * pixelRatio).roundToInt().coerceAtLeast(1)
-        source.withBitmap(neededLongEdge) { bitmap ->
-            if (bitmap.isRecycled) return@withBitmap
+        val drawn = source.withBitmap(neededLongEdge) { bitmap ->
+            if (bitmap.isRecycled) throw RenderAbort(RenderFailure.UnreadableSource(layer.sourceKey))
 
             // 読み込んだ Bitmap は元画像の縮小版かもしれないので、切り抜き範囲を Bitmap 座標へ移す。
             val bmpScale = bitmap.width.toFloat() / layer.sourceSize.width
@@ -121,7 +149,7 @@ object DocumentRenderer {
                 (crop.right * bmpScale).roundToInt().coerceIn(0, bitmap.width),
                 (crop.bottom * bmpScale).roundToInt().coerceIn(0, bitmap.height),
             )
-            if (src.width() <= 0 || src.height() <= 0) return@withBitmap
+            if (src.width() <= 0 || src.height() <= 0) throw RenderAbort(RenderFailure.InvalidGeometry)
 
             // 回転後の論理サイズ (90°/270° で幅と高さが入れ替わる) を出力座標へ。
             val logical = layer.logicalSize
@@ -148,6 +176,7 @@ object DocumentRenderer {
 
             paint.alpha = 255
         }
+        if (!drawn) throw RenderAbort(RenderFailure.UnreadableSource(layer.sourceKey))
     }
 
     /**
@@ -359,7 +388,7 @@ object DocumentRenderer {
     private const val SAMPLE_GRID = 64
 
     /** 消しゴム。saveLayer の内側で使うので、下のレイヤーには影響しない。 */
-    private val ERASE_MODE = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+    private val ERASE_MODE by lazy { PorterDuffXfermode(PorterDuff.Mode.CLEAR) }
 
     /** 縁取りの太さ (フォントサイズに対する比)。 */
     private const val OUTLINE_WIDTH_RATIO = 0.14f

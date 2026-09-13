@@ -1009,4 +1009,19 @@
     <string name="image_fill_layer_clear">透明にした範囲</string>
     <string name="settings_log_frame_perf">動作の重さを記録する</string>
     <string name="settings_log_frame_perf_sub">描画の遅れをアプリ内ログに残します。原因を調べるための機能です。調べ終わったらオフに戻してください。</string>
+    <string name="image_export_source_changed">元画像が変更されています。画像を開き直してから保存してください。</string>
+    <string name="image_export_source_unreadable">元画像を読み込めません。原本は上書きしていません。</string>
+    <string name="image_export_invalid">出力画像を正しく検証できませんでした。原本は上書きしていません。</string>
+    <string name="image_export_target_small">指定容量に収まりません。画像の寸法を小さくするか、指定容量を増やしてください。</string>
+    <string name="image_export_replace_unavailable">この保存先では原本を安全に置き換えられません。別名保存または保存先の選択を使ってください。</string>
+    <string name="image_export_conflict">この形式または保存先では原本を上書きできません。別名保存を使ってください。</string>
+    <string name="image_export_verify_failed">保存したコピーの内容が出力画像と一致しません。原本は変更していませんが、コピーは不完全な可能性があります。</string>
+    <string name="image_export_keep_original">原本を残して別名で保存します。</string>
+    <string name="image_export_choose_location">保存先を選んで保存…</string>
+    <string name="image_export_metadata_warning">画像は保存しましたが、撮影情報の一部を引き継げませんでした。</string>
+    <string name="image_export_picker_unavailable">保存先を選択するアプリが見つかりません。</string>
+    <string name="image_export_unconfirmed_title">保存結果を確認できません</string>
+    <string name="image_export_unconfirmed_body">%1$s を読み戻せませんでした。原本は変更していません。「再確認」で再送せずにこのコピーを確認できます。編集に戻って保存し直す場合は別のコピーを作成します。</string>
+    <string name="image_export_verify_again">再確認</string>
+    <string name="image_export_back_to_edit">編集に戻る</string>
 </resources>
