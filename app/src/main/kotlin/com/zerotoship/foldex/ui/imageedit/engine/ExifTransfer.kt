@@ -4,21 +4,14 @@
 package com.zerotoship.foldex.ui.imageedit.engine
 
 import androidx.exifinterface.media.ExifInterface
+import com.zerotoship.foldex.ui.imageedit.model.EditSize
+import com.zerotoship.foldex.ui.imageedit.model.MetadataPolicy
 import java.io.File
 
-/**
- * 元画像の EXIF を編集後のファイルへ引き継ぐ。
- *
- * Bitmap を経由すると EXIF は消えるので、保存後に書き戻す。方針:
- *  - 撮影情報 (日時・機種・レンズ・露出) は**引き継ぐ** — ユーザーのデータを黙って捨てない
- *  - GPS も既定で引き継ぐ。落としたいときは [keepLocation] = false (保存ダイアログのチェック)
- *  - Orientation は **1 に正規化**する。回転はすでに画素へ適用済みなので、
- *    元の向き情報を残すと二重に回ってしまう
- */
-object ExifTransfer {
-
+/** 新しく符号化した画像に、選んだ撮影情報だけを書き戻す。 */
+internal object ExifTransfer {
     /** 引き継ぐ撮影情報。GPS は [LOCATION_TAGS] で別に扱う。 */
-    private val CAPTURE_TAGS = arrayOf(
+    val CAPTURE_TAGS = arrayOf(
         ExifInterface.TAG_DATETIME,
         ExifInterface.TAG_DATETIME_ORIGINAL,
         ExifInterface.TAG_DATETIME_DIGITIZED,
@@ -43,7 +36,7 @@ object ExifTransfer {
         ExifInterface.TAG_SCENE_CAPTURE_TYPE,
     )
 
-    private val LOCATION_TAGS = arrayOf(
+    val LOCATION_TAGS = arrayOf(
         ExifInterface.TAG_GPS_LATITUDE,
         ExifInterface.TAG_GPS_LATITUDE_REF,
         ExifInterface.TAG_GPS_LONGITUDE,
@@ -53,37 +46,76 @@ object ExifTransfer {
         ExifInterface.TAG_GPS_TIMESTAMP,
         ExifInterface.TAG_GPS_DATESTAMP,
         ExifInterface.TAG_GPS_PROCESSING_METHOD,
+        ExifInterface.TAG_GPS_VERSION_ID,
+        ExifInterface.TAG_GPS_SATELLITES,
+        ExifInterface.TAG_GPS_STATUS,
+        ExifInterface.TAG_GPS_MEASURE_MODE,
+        ExifInterface.TAG_GPS_DOP,
+        ExifInterface.TAG_GPS_SPEED_REF,
+        ExifInterface.TAG_GPS_SPEED,
+        ExifInterface.TAG_GPS_TRACK_REF,
+        ExifInterface.TAG_GPS_TRACK,
+        ExifInterface.TAG_GPS_IMG_DIRECTION_REF,
+        ExifInterface.TAG_GPS_IMG_DIRECTION,
+        ExifInterface.TAG_GPS_MAP_DATUM,
+        ExifInterface.TAG_GPS_DEST_LATITUDE_REF,
+        ExifInterface.TAG_GPS_DEST_LATITUDE,
+        ExifInterface.TAG_GPS_DEST_LONGITUDE_REF,
+        ExifInterface.TAG_GPS_DEST_LONGITUDE,
+        ExifInterface.TAG_GPS_DEST_BEARING_REF,
+        ExifInterface.TAG_GPS_DEST_BEARING,
+        ExifInterface.TAG_GPS_DEST_DISTANCE_REF,
+        ExifInterface.TAG_GPS_DEST_DISTANCE,
+        ExifInterface.TAG_GPS_AREA_INFORMATION,
+        ExifInterface.TAG_GPS_DIFFERENTIAL,
+        ExifInterface.TAG_GPS_H_POSITIONING_ERROR,
     )
 
-    /**
-     * [from] の EXIF を [to] へ書き戻す。失敗しても保存自体は成功扱いにしたいので
-     * 例外は握りつぶす (PNG など書き込めない形式もあるため)。
-     *
-     * @return 書き戻せたら true
-     */
-    fun copy(from: File, to: File, keepLocation: Boolean): Boolean = runCatching {
-        if (!from.exists() || !to.exists()) return false
-        val src = ExifInterface(from.absolutePath)
-        val dst = ExifInterface(to.absolutePath)
 
-        CAPTURE_TAGS.forEach { tag ->
-            src.getAttribute(tag)?.let { dst.setAttribute(tag, it) }
-        }
-        if (keepLocation) {
-            LOCATION_TAGS.forEach { tag ->
-                src.getAttribute(tag)?.let { dst.setAttribute(tag, it) }
-            }
-        }
-        // 回転は画素に適用済み。ここを引き継ぐと二重に回る。
-        dst.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
-        dst.saveAttributes()
-        true
-    }.getOrDefault(false)
+    /** ICC・XMP・MakerNote・サムネイル・古い寸法等を元ファイルからコピーしない。 */
+    fun selectAttributes(policy: MetadataPolicy, read: (String) -> String?): Map<String, String> {
+        if (policy == MetadataPolicy.SHARE) return emptyMap()
+        val tags = if (policy == MetadataPolicy.KEEP_CAPTURE) CAPTURE_TAGS + LOCATION_TAGS else CAPTURE_TAGS
+        return tags.mapNotNull { tag -> read(tag)?.let { tag to it } }.toMap()
+    }
 
-    /** 元画像が位置情報を持っているか (保存ダイアログでチェックを出すかの判定)。 */
-    fun hasLocation(file: File): Boolean = runCatching {
-        if (!file.exists()) return false
+    data class Capture(val attributes: Map<String, String>, val readable: Boolean)
+
+    fun read(from: File, policy: MetadataPolicy): Capture {
+        if (policy == MetadataPolicy.SHARE) return Capture(emptyMap(), true)
+        return try {
+            val source = ExifInterface(from.absolutePath)
+            Capture(selectAttributes(policy, source::getAttribute), true)
+        } catch (_: Exception) {
+            Capture(emptyMap(), false)
+        }
+    }
+
+    /** 引数 to は必ず Bitmap から新たに符号化した一時出力。元ファイルへは適用しない。 */
+    fun apply(capture: Capture, to: File, policy: MetadataPolicy, size: EditSize): Boolean = try {
+        val destination = ExifInterface(to.absolutePath)
+        val selected = selectAttributes(policy, capture.attributes::get)
+        selected.forEach { (tag, value) -> destination.setAttribute(tag, value) }
+        destination.setAttribute(ExifInterface.TAG_ORIENTATION, "1")
+        destination.setAttribute(ExifInterface.TAG_COLOR_SPACE, "1") // sRGB で描画済み。
+        destination.setAttribute(ExifInterface.TAG_IMAGE_WIDTH, size.width.toString())
+        destination.setAttribute(ExifInterface.TAG_IMAGE_LENGTH, size.height.toString())
+        destination.setAttribute(ExifInterface.TAG_PIXEL_X_DIMENSION, size.width.toString())
+        destination.setAttribute(ExifInterface.TAG_PIXEL_Y_DIMENSION, size.height.toString())
+        destination.saveAttributes()
+        val verified = ExifInterface(to.absolutePath)
+        capture.readable && selected.all { (tag, value) -> verified.getAttribute(tag) == value } &&
+            verified.getAttributeInt(ExifInterface.TAG_ORIENTATION, 0) == 1 &&
+            (policy == MetadataPolicy.KEEP_CAPTURE || LOCATION_TAGS.none { verified.getAttribute(it) != null }) &&
+            (policy != MetadataPolicy.SHARE || CAPTURE_TAGS.none { verified.getAttribute(it) != null })
+    } catch (_: Exception) {
+        false
+    }
+
+    fun hasLocation(file: File): Boolean = try {
         val exif = ExifInterface(file.absolutePath)
         LOCATION_TAGS.any { exif.getAttribute(it) != null }
-    }.getOrDefault(false)
+    } catch (_: Exception) {
+        false
+    }
 }

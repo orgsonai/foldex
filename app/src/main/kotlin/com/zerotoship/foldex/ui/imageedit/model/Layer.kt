@@ -38,6 +38,7 @@ sealed interface Layer {
         val sourceKey: String,
         /** 元画像の画素サイズ (EXIF の向きを適用した後の値)。 */
         val sourceSize: EditSize,
+        val sourceTransparency: Transparency = Transparency.UNKNOWN,
         /** 元画像座標での切り抜き範囲。null なら全体。 */
         val crop: EditRect? = null,
         /** 90° 単位の回転 (0..3)。切り抜き後の内容に適用される。 */

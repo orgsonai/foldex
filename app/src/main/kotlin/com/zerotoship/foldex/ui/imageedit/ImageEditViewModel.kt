@@ -12,7 +12,6 @@ import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.storage.StorageProviderRouter
 import com.zerotoship.foldex.ui.imageedit.engine.DocumentRenderer
 import com.zerotoship.foldex.ui.imageedit.engine.ExifTransfer
-import com.zerotoship.foldex.ui.imageedit.engine.ImageEncoder
 import com.zerotoship.foldex.ui.imageedit.engine.ImageRenderResources
 import com.zerotoship.foldex.ui.imageedit.engine.ImageWork
 import com.zerotoship.foldex.ui.imageedit.engine.ImageWorkResult
@@ -35,6 +34,10 @@ import com.zerotoship.foldex.ui.imageedit.model.EditPoint
 import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
 import com.zerotoship.foldex.ui.imageedit.model.FillMode
+import com.zerotoship.foldex.ui.imageedit.model.MetadataPolicy
+import com.zerotoship.foldex.ui.imageedit.model.Transparency
+import com.zerotoship.foldex.ui.imageedit.model.transparency
+import com.zerotoship.foldex.ui.imageedit.model.OutputSpec
 import com.zerotoship.foldex.ui.imageedit.model.ImageFormat
 import com.zerotoship.foldex.ui.imageedit.model.Layer
 import com.zerotoship.foldex.ui.imageedit.model.LayerTransform
@@ -100,6 +103,7 @@ class ImageEditViewModel @Inject constructor(
     private var preparedForPicker: PreparedImage? = null
     private var unconfirmedReceipt: ExportReceipt? = null
     private var exportMetadataWarning = false
+    private var targetRetryRequest: SaveRequest? = null
     private val exportCoordinator = ImageExportCoordinator(File(appContext.cacheDir, "image-exports"))
     private val externalExport = ExternalImageExport(storage)
     private var previewJob: Job? = null
@@ -137,6 +141,7 @@ class ImageEditViewModel @Inject constructor(
                     sourceKey = file.absolutePath,
                     sourceSize = size,
                     format = ImageFormat.fromFileName(displayName),
+                    sourceTransparency = src.transparency,
                 )
                 // 出力の上限を超える画像は、出力倍率を下げた状態で開く。
                 // (論理キャンバスは元の画素数のまま = 情報を捨てない)
@@ -308,6 +313,34 @@ class ImageEditViewModel @Inject constructor(
         val q = quality.coerceIn(1, 100)
         if (doc.output.quality == q) return
         applyDocument(doc.copy(output = doc.output.copy(quality = q)), recordHistory = false)
+    }
+
+    fun setJpegBackground(color: Int) {
+        val doc = _state.value.document ?: return
+        setOutputPolicy(doc.output.copy(jpegBackground = color or (0xff shl 24)))
+    }
+
+    fun setMetadataPolicy(policy: MetadataPolicy) {
+        val doc = _state.value.document ?: return
+        setOutputPolicy(doc.output.copy(metadata = policy))
+    }
+
+    fun setTargetBytes(bytes: Int?) {
+        val doc = _state.value.document ?: return
+        if (bytes != null && bytes <= 0) return
+        setOutputPolicy(doc.output.copy(targetBytes = bytes))
+    }
+
+    /** 出力設定だけなら表示画像と選択を描き直す必要はない。 */
+    private fun setOutputPolicy(output: OutputSpec) {
+        val doc = _state.value.document ?: return
+        if (_state.value.saving || output == doc.output) return
+        targetRetryRequest = null
+        _state.update { it.copy(
+            document = doc.copy(output = output), dirty = true, estimatedBytes = null,
+            targetSizeFailure = null, memorySuggestion = null,
+        ) }
+        requestEstimate()
     }
 
     fun undo() {
@@ -626,9 +659,12 @@ class ImageEditViewModel @Inject constructor(
 
     private fun applyDocument(doc: EditDocument, recordHistory: Boolean = true) {
         cancelAutomaticSelection()
+        targetRetryRequest = null
         _state.update {
             it.copy(
                 document = doc,
+                targetSizeFailure = null,
+                previewTransparency = doc.transparency(),
                 mosaicDraft = null,
                 dirty = true,
                 canUndo = history.canUndo,
@@ -655,6 +691,7 @@ class ImageEditViewModel @Inject constructor(
         previewJob = viewModelScope.launch {
             // UI へ渡す前にキャンセルされた画像は、この所有者が必ず解放する。
             var ownedBitmap: Bitmap? = null
+            var transparency = doc.transparency()
             try {
                 if (debounce) delay(100)
                 val work = withContext(Dispatchers.Default) {
@@ -665,6 +702,9 @@ class ImageEditViewModel @Inject constructor(
                             context.ensureActive()
                         }.getOrNull()?.also {
                             ownedBitmap = it
+                            if (transparency != Transparency.OPAQUE && DocumentRenderer.hasTransparency(it) { context.ensureActive() }) {
+                                transparency = Transparency.HAS_ALPHA
+                            }
                             ImageRenderResources.retainPreview(it)
                         }
                     }
@@ -676,7 +716,7 @@ class ImageEditViewModel @Inject constructor(
                     _events.trySend(ImageEditEvent.Message(appContext.getString(message)))
                 } else {
                     // Compose の前フレームが参照する旧画像も、GC まで共通予算に数える。
-                    _state.update { it.copy(preview = bitmap) }
+                    _state.update { it.copy(preview = bitmap, previewTransparency = transparency) }
                     ownedBitmap = null
                 }
                 _state.update { it.copy(previewing = false, previewFailed = bitmap == null) }
@@ -699,23 +739,23 @@ class ImageEditViewModel @Inject constructor(
     fun requestEstimate() {
         val doc = _state.value.document ?: return
         if (_state.value.saving) return
-        val resolve = sourceResolver()
+        val file = sourceFile ?: return
+        val fingerprint = sourceFingerprint ?: return
         estimateJob?.cancel()
         val request = ++estimateRequest
         _state.update { it.copy(estimating = true, estimatedBytes = null, estimateMemoryLimited = false) }
         estimateJob = viewModelScope.launch {
             try {
+                delay(250)
                 val work = withContext(Dispatchers.Default) {
                     val context = currentCoroutineContext()
                     ImageRenderResources.run(appContext, doc, ImageWork.EXPORT) {
-                        val bitmap = DocumentRenderer.render(doc, resolve) { context.ensureActive() }
-                            .getOrNull() ?: return@run null
-                        try {
-                            ImageEncoder.encodedSize(bitmap, doc.output.format, doc.output.quality) { context.ensureActive() }
-                                .takeIf { it >= 0 }
-                        } finally {
-                            bitmap.recycle()
-                            imageSource?.release()
+                        // 容量計測も同じ JPEG 背景と撮影情報を適用し、最終ファイルを測る。
+                        val measurement = doc.copy(output = doc.output.copy(targetBytes = null))
+                        exportCoordinator.prepare(measurement, sourceResolver(), file, fingerprint) {
+                            context.ensureActive()
+                        }.getOrNull()?.use { image ->
+                            image.fingerprint.size.takeIf { it <= Int.MAX_VALUE }?.toInt()
                         }
                     }
                 }
@@ -764,7 +804,7 @@ class ImageEditViewModel @Inject constructor(
                     ImageRenderResources.run(appContext, doc, ImageWork.EXPORT) {
                         try {
                             exportCoordinator.prepare(
-                                doc, sourceResolver(), file, fingerprint, request.keepLocation, request.targetBytes,
+                                doc, sourceResolver(), file, fingerprint,
                             ) { context.ensureActive() }.also { ownedPrepared = it.getOrNull() }
                         } finally {
                             imageSource?.release()
@@ -788,7 +828,15 @@ class ImageEditViewModel @Inject constructor(
                 when (prepared) {
                     is Result.Failure -> {
                         _state.update { it.copy(saving = false, previewing = false) }
-                        showExportFailure(prepared.error)
+                        val failure = prepared.error
+                        if (failure.reason == ExportFailure.TARGET_TOO_SMALL && doc.output.targetBytes != null) {
+                            targetRetryRequest = request
+                            _state.update { it.copy(targetSizeFailure = TargetSizeFailure(
+                                doc.output.targetBytes,
+                                failure.actualBytes ?: 0,
+                                failure.suggestedLongEdge?.let { edge -> doc.withOutputLongEdge(edge).outputSize },
+                            )) }
+                        } else showExportFailure(failure.reason)
                         refreshPreview()
                     }
                     is Result.Success -> {
@@ -834,6 +882,25 @@ class ImageEditViewModel @Inject constructor(
                 ownedPrepared?.close()
             }
         }
+    }
+
+    fun dismissTargetSizeFailure() {
+        targetRetryRequest = null
+        _state.update { it.copy(targetSizeFailure = null) }
+    }
+
+    fun applyTargetSizeSuggestion() {
+        val size = _state.value.targetSizeFailure?.suggestedSize ?: return
+        dismissTargetSizeFailure()
+        setOutputLongEdge(size.longEdge)
+        selectTool(EditTool.RESIZE)
+    }
+
+    fun saveWithoutTarget() {
+        val request = targetRetryRequest ?: return
+        dismissTargetSizeFailure()
+        setTargetBytes(null)
+        save(request)
     }
 
     fun dismissMemorySuggestion() {
@@ -1026,6 +1093,8 @@ data class ImageEditUiState(
     val estimatedBytes: Int? = null,
     val estimateMemoryLimited: Boolean = false,
     val memorySuggestion: EditSize? = null,
+    val previewTransparency: Transparency = Transparency.UNKNOWN,
+    val targetSizeFailure: TargetSizeFailure? = null,
     val originalBytes: Long = 0,
     /** 元画像が位置情報を持っているか (保存ダイアログの表示判断に使う)。 */
     val hasLocation: Boolean = false,
@@ -1061,11 +1130,10 @@ enum class EditTool { CROP, RESIZE, SELECT, BRUSH, TEXT }
 /** 保存の指定。 */
 data class SaveRequest(
     val overwrite: Boolean,
-    val keepLocation: Boolean,
     val chooseLocation: Boolean = false,
-    /** 目標ファイルサイズ (バイト)。指定すると品質を自動調整する。 */
-    val targetBytes: Int? = null,
 )
+
+data class TargetSizeFailure(val targetBytes: Int, val actualBytes: Long, val suggestedSize: EditSize?)
 
 sealed interface ImageEditEvent {
     data class Message(val text: String) : ImageEditEvent

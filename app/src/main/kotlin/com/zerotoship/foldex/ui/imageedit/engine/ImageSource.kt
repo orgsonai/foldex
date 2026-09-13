@@ -6,8 +6,11 @@ package com.zerotoship.foldex.ui.imageedit.engine
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.graphics.ColorSpace
+import android.os.Build
 import androidx.exifinterface.media.ExifInterface
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
+import com.zerotoship.foldex.ui.imageedit.model.Transparency
 import java.io.File
 import kotlin.math.max
 
@@ -19,6 +22,12 @@ import kotlin.math.max
  * 貸出中だけ保持し、描画が終われば原寸・縮小版とも解放する。
  */
 class ImageSource(private val file: File) {
+
+    val transparency: Transparency by lazy {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, options)
+        if (options.outMimeType == "image/jpeg") Transparency.OPAQUE else Transparency.UNKNOWN
+    }
 
     private val rawSize: EditSize? by lazy { readRawBounds() }
 
@@ -72,11 +81,15 @@ class ImageSource(private val file: File) {
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sampleSizeFor(max(bounds.width, bounds.height), maxLongEdge)
             inPreferredConfig = Bitmap.Config.ARGB_8888
+            inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB)
         }
         val raw = runCatching { BitmapFactory.decodeFile(file.absolutePath, opts) }.getOrNull()
             ?: return null
         // EXIF の向きを画素へ適用しておく。以降の処理は「見たままの向き」だけを考えればよくなる。
-        val rotated = applyExifOrientation(raw)
+        // HDR gainmap を次の描画へ暗黙に持ち込まず、標準画質のベース画像を使う。
+        if (Build.VERSION.SDK_INT >= 34 && raw.hasGainmap()) raw.setGainmap(null)
+        val normalized = BitmapOps.toSrgb(raw)
+        val rotated = applyExifOrientation(normalized)
         // inSampleSize は 2 のべき乗でしか間引けないので、まだ大きいことがある。
         // ここで目標の長辺へきっちり合わせる (拡大はしない)。
         val longEdge = max(rotated.width, rotated.height)

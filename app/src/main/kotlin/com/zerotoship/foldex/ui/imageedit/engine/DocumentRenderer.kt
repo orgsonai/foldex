@@ -366,25 +366,14 @@ object DocumentRenderer {
         return EditRect(left, top, left + width, top + height)
     }
 
-    /** 透明部分を持つか (JPEG で保存してよいかの判定に使う)。大きい画像でも間引いて調べる。 */
-    fun hasTransparency(bitmap: Bitmap): Boolean {
+    /** 検査した Bitmap 内の透明画素を、一行ずつ全て確認する。 */
+    fun hasTransparency(bitmap: Bitmap, checkCancelled: () -> Unit = {}): Boolean {
         if (!bitmap.hasAlpha()) return false
-        val stepX = (bitmap.width / SAMPLE_GRID).coerceAtLeast(1)
-        val stepY = (bitmap.height / SAMPLE_GRID).coerceAtLeast(1)
-        var y = 0
-        while (y < bitmap.height) {
-            var x = 0
-            while (x < bitmap.width) {
-                if (Color.alpha(bitmap.getPixel(x, y)) < 255) return true
-                x += stepX
-            }
-            y += stepY
+        return TransparencyScan.hasAlpha(bitmap.width, bitmap.height) { y, row ->
+            checkCancelled()
+            bitmap.getPixels(row, 0, bitmap.width, 0, y, bitmap.width, 1)
         }
-        return false
     }
-
-    /** 透明の判定に使う 1 辺あたりのサンプル数 (64x64 = 4096 点)。 */
-    private const val SAMPLE_GRID = 64
 
     /** 消しゴム。saveLayer の内側で使うので、下のレイヤーには影響しない。 */
     private val ERASE_MODE by lazy { PorterDuffXfermode(PorterDuff.Mode.CLEAR) }

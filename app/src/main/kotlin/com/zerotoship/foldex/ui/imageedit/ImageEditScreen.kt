@@ -92,6 +92,9 @@ fun ImageEditScreen(
     onSetPercent: (Int) -> Unit,
     onSetFormat: (com.zerotoship.foldex.ui.imageedit.model.ImageFormat) -> Unit,
     onSetQuality: (Int) -> Unit,
+    onSetBackground: (Int) -> Unit,
+    onSetMetadata: (com.zerotoship.foldex.ui.imageedit.model.MetadataPolicy) -> Unit,
+    onSetTarget: (Int?) -> Unit,
     onRequestEstimate: () -> Unit,
     onAddStroke: (com.zerotoship.foldex.ui.imageedit.model.Stroke) -> Unit,
     onAddText: (Float, Int) -> Unit,
@@ -379,6 +382,9 @@ fun ImageEditScreen(
             state = state,
             onFormatChange = onSetFormat,
             onQualityChange = onSetQuality,
+            onBackgroundChange = onSetBackground,
+            onMetadataChange = onSetMetadata,
+            onTargetChange = onSetTarget,
             onDismiss = { showSaveDialog = false },
             onSave = { request ->
                 showSaveDialog = false

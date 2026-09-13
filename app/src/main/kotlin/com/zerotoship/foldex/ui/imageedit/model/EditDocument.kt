@@ -42,14 +42,6 @@ data class EditDocument(
     /** 論理キャンバス全体を表す大きさ。選択範囲の反転などで使う。 */
     val canvasSize: EditSize get() = EditSize(canvas.width, canvas.height)
 
-    /**
-     * 透明な部分を持ちうるか。JPEG で保存すると白く潰れる部分があるかの判定に使う。
-     * 実画素を見るより早く、保存ダイアログを開いた瞬間に判定できる。
-     */
-    val hasTransparentArea: Boolean
-        get() = canvas.background is Background.Transparent ||
-            layers.any { it is Layer.Fill && it.visible && it.mode == FillMode.CLEAR }
-
     fun updateLayer(id: String, block: (Layer) -> Layer): EditDocument =
         copy(layers = layers.map { if (it.id == id) block(it) else it })
 
@@ -82,12 +74,14 @@ data class EditDocument(
             sourceSize: EditSize,
             format: ImageFormat,
             quality: Int = ImageFormat.DEFAULT_QUALITY,
+            sourceTransparency: Transparency = Transparency.UNKNOWN,
         ): EditDocument {
             val layer = Layer.Image(
                 id = layerId,
                 name = name,
                 sourceKey = sourceKey,
                 sourceSize = sourceSize,
+                sourceTransparency = sourceTransparency,
             )
             return EditDocument(
                 canvas = CanvasSpec(sourceSize.width, sourceSize.height, Background.Transparent),
@@ -122,6 +116,9 @@ data class OutputSpec(
     val scale: Float,
     val format: ImageFormat,
     val quality: Int,
+    val jpegBackground: Int = -1,
+    val metadata: MetadataPolicy = MetadataPolicy.KEEP_CAPTURE,
+    val targetBytes: Int? = null,
 )
 
 /** 出力形式。透明を保持できるかどうかがここでの本質。 */

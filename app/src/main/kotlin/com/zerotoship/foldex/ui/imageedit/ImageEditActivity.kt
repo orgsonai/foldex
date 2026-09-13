@@ -127,6 +127,9 @@ class ImageEditActivity : ComponentActivity() {
                     onSetPercent = viewModel::setOutputPercent,
                     onSetFormat = viewModel::setFormat,
                     onSetQuality = viewModel::setQuality,
+                    onSetBackground = viewModel::setJpegBackground,
+                    onSetMetadata = viewModel::setMetadataPolicy,
+                    onSetTarget = viewModel::setTargetBytes,
                     onRequestEstimate = viewModel::requestEstimate,
                     onAddStroke = viewModel::addStroke,
                     onAddText = viewModel::addText,
@@ -148,6 +151,38 @@ class ImageEditActivity : ComponentActivity() {
                     onCancelObjectSelection = viewModel::cancelAutomaticSelection,
                     onSave = viewModel::save,
                 )
+                state.targetSizeFailure?.let { failure ->
+                    AlertDialog(
+                        onDismissRequest = viewModel::dismissTargetSizeFailure,
+                        title = { Text(stringResource(R.string.image_target_failed_title)) },
+                        text = {
+                            androidx.compose.foundation.layout.Column {
+                                Text(stringResource(R.string.image_target_failed_body,
+                                    formatBytes(failure.targetBytes.toLong()), formatBytes(failure.actualBytes)))
+                                failure.suggestedSize?.let { size ->
+                                    Text(stringResource(R.string.image_target_suggestion, size.width, size.height))
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            failure.suggestedSize?.let {
+                                TextButton(onClick = viewModel::applyTargetSizeSuggestion) {
+                                    Text(stringResource(R.string.image_memory_apply))
+                                }
+                            }
+                        },
+                        dismissButton = {
+                            androidx.compose.foundation.layout.Column {
+                                TextButton(onClick = viewModel::saveWithoutTarget) {
+                                    Text(stringResource(R.string.image_target_remove_save))
+                                }
+                                TextButton(onClick = viewModel::dismissTargetSizeFailure) {
+                                    Text(stringResource(R.string.image_export_back_to_edit))
+                                }
+                            }
+                        },
+                    )
+                }
                 state.memorySuggestion?.let { size ->
                     AlertDialog(
                         onDismissRequest = viewModel::dismissMemorySuggestion,

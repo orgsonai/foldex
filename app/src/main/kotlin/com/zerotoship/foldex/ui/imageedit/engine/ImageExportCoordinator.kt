@@ -19,52 +19,67 @@ internal class ImageExportCoordinator(private val cacheDirectory: File) {
         sources: (String) -> ImageSource?,
         original: File,
         expectedOriginal: FileFingerprint,
-        keepLocation: Boolean,
-        targetBytes: Int?,
         checkCancelled: () -> Unit,
-    ): Result<PreparedImage, ExportFailure> {
+    ): Result<PreparedImage, ExportPreparationFailure> {
         var bitmap: Bitmap? = null
         var temp: File? = null
+        val targetBytes = doc.output.targetBytes
+        fun failure(reason: ExportFailure) = Result.Failure(ExportPreparationFailure(reason))
         try {
             checkCancelled()
-            if (!original.isFile) return Result.Failure(ExportFailure.SOURCE_UNREADABLE)
+            if (!original.isFile) return failure(ExportFailure.SOURCE_UNREADABLE)
             if (FileFingerprint.read(original, checkCancelled) != expectedOriginal) {
-                return Result.Failure(ExportFailure.SOURCE_CHANGED)
+                return failure(ExportFailure.SOURCE_CHANGED)
             }
             val rendered = DocumentRenderer.render(doc, sources, checkCancelled = checkCancelled)
             bitmap = when (rendered) {
                 is Result.Success -> rendered.value
-                is Result.Failure -> return Result.Failure(when (rendered.error) {
+                is Result.Failure -> return failure(when (rendered.error) {
                     is RenderFailure.MissingSource, is RenderFailure.UnreadableSource -> ExportFailure.SOURCE_UNREADABLE
                     RenderFailure.NotEnoughMemory -> ExportFailure.NOT_ENOUGH_MEMORY
                     else -> ExportFailure.RENDER_FAILED
                 })
             }
             val pixels = bitmap
+            ExportPixels.apply(pixels, doc.output)
             val format = doc.output.format
-            val quality = if (targetBytes != null && format.hasQuality) {
-                val found = ImageEncoder.findQualityForTarget(targetBytes) { q ->
-                    checkCancelled()
-                    ImageEncoder.encodedSize(pixels, format, q, checkCancelled)
+            val metadata = ExifTransfer.read(original, doc.output.metadata)
+            cacheDirectory.mkdirs()
+            val outputFile = File.createTempFile("image-export-", ".${format.extension}", cacheDirectory)
+            temp = outputFile
+            var metadataWarning = false
+            var lastBytes = 0L
+            var lastQuality: Int? = null
+            fun writeCandidate(quality: Int): Int {
+                checkCancelled()
+                val encoded = FileOutputStream(outputFile).use { output ->
+                    val result = ImageEncoder.encode(pixels, format, quality, output)
+                    output.flush()
+                    output.fd.sync()
+                    result
                 }
-                if (!found.withinTarget) return Result.Failure(ExportFailure.TARGET_TOO_SMALL)
+                if (!encoded) throw PreparationAbort(ExportFailure.ENCODE_FAILED)
+                metadataWarning = !ExifTransfer.apply(metadata, outputFile, doc.output.metadata, doc.outputSize)
+                checkCancelled()
+                lastBytes = outputFile.length()
+                lastQuality = quality
+                if (lastBytes <= 0) throw PreparationAbort(ExportFailure.INVALID_OUTPUT)
+                return if (lastBytes <= Int.MAX_VALUE) lastBytes.toInt() else -1
+            }
+            val quality = if (targetBytes != null && format.hasQuality) {
+                val found = ImageEncoder.findQualityForTarget(targetBytes, measure = ::writeCandidate)
+                if (!found.withinTarget) return Result.Failure(ExportPreparationFailure(
+                    ExportFailure.TARGET_TOO_SMALL, lastBytes,
+                    OutputSizeAdvice.suggest(doc.outputSize, lastBytes, targetBytes),
+                ))
                 found.quality
             } else doc.output.quality
-            cacheDirectory.mkdirs()
-            temp = File.createTempFile("image-export-", ".${format.extension}", cacheDirectory)
-            val encoded = FileOutputStream(temp).use { output ->
-                val result = ImageEncoder.encode(pixels, format, quality, output)
-                output.flush()
-                output.fd.sync()
-                result
-            }
-            if (!encoded) return Result.Failure(ExportFailure.ENCODE_FAILED)
+            if (lastQuality != quality) writeCandidate(quality)
             bitmap.recycle()
             bitmap = null
-            val metadataWarning = !ExifTransfer.copy(original, temp, keepLocation)
             checkCancelled()
             if (FileFingerprint.read(original, checkCancelled) != expectedOriginal) {
-                return Result.Failure(ExportFailure.SOURCE_CHANGED)
+                return failure(ExportFailure.SOURCE_CHANGED)
             }
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(temp.absolutePath, bounds)
@@ -75,29 +90,36 @@ internal class ImageExportCoordinator(private val cacheDirectory: File) {
             }
             if (bounds.outWidth != doc.outputSize.width || bounds.outHeight != doc.outputSize.height ||
                 bounds.outMimeType != mime
-            ) return Result.Failure(ExportFailure.INVALID_OUTPUT)
+            ) return failure(ExportFailure.INVALID_OUTPUT)
             // ヘッダーだけでなくデコーダーを通す。出力全体の Bitmap を再確保しない。
             val options = BitmapFactory.Options().apply {
                 inSampleSize = ImageSource.sampleSizeFor(doc.outputSize.longEdge, 512)
             }
             val verified = BitmapFactory.decodeFile(temp.absolutePath, options)
-                ?: return Result.Failure(ExportFailure.INVALID_OUTPUT)
+                ?: return failure(ExportFailure.INVALID_OUTPUT)
             verified.recycle()
             val fingerprint = FileFingerprint.read(temp, checkCancelled)
-            if (fingerprint.size <= 0) return Result.Failure(ExportFailure.INVALID_OUTPUT)
+            if (fingerprint.size <= 0) return failure(ExportFailure.INVALID_OUTPUT)
             if (targetBytes != null && fingerprint.size > targetBytes) {
-                return Result.Failure(ExportFailure.TARGET_TOO_SMALL)
+                return Result.Failure(ExportPreparationFailure(
+                    ExportFailure.TARGET_TOO_SMALL, fingerprint.size,
+                    OutputSizeAdvice.suggest(doc.outputSize, fingerprint.size, targetBytes),
+                ))
             }
             return Result.Success(PreparedImage(temp, fingerprint, metadataWarning)).also { temp = null }
+        } catch (abort: PreparationAbort) {
+            return failure(abort.reason)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: OutOfMemoryError) {
-            return Result.Failure(ExportFailure.NOT_ENOUGH_MEMORY)
+            return failure(ExportFailure.NOT_ENOUGH_MEMORY)
         } catch (_: Exception) {
-            return Result.Failure(ExportFailure.WRITE_FAILED)
+            return failure(ExportFailure.WRITE_FAILED)
         } finally {
             bitmap?.recycle()
             temp?.delete()
         }
     }
+
+    private class PreparationAbort(val reason: ExportFailure) : RuntimeException()
 }

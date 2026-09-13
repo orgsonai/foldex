@@ -40,20 +40,29 @@ class EditHistory(private val limit: Int = DEFAULT_LIMIT) {
     fun undo(current: EditDocument): EditDocument? {
         val previous = past.removeLastOrNull() ?: return null
         future.addLast(current)
-        return previous
+        return previous.withSavePolicyFrom(current)
     }
 
     /** [current] を「元に戻す」側へ戻し、1 つ先の状態を返す。進めなければ null。 */
     fun redo(current: EditDocument): EditDocument? {
         val next = future.removeLastOrNull() ?: return null
         past.addLast(current)
-        return next
+        return next.withSavePolicyFrom(current)
     }
 
     fun clear() {
         past.clear()
         future.clear()
     }
+
+    /** 画素の Undo で、利用者が選んだ位置情報の除外や容量上限を取り消さない。 */
+    private fun EditDocument.withSavePolicyFrom(current: EditDocument): EditDocument = copy(
+        output = output.copy(
+            metadata = current.output.metadata,
+            jpegBackground = current.output.jpegBackground,
+            targetBytes = current.output.targetBytes,
+        ),
+    )
 
     private companion object {
         const val DEFAULT_LIMIT = 50

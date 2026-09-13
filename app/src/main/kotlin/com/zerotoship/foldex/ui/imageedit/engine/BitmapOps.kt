@@ -4,11 +4,32 @@
 package com.zerotoship.foldex.ui.imageedit.engine
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorSpace
+import android.graphics.Paint
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
 import kotlin.math.max
 
 /** Bitmap に対する素朴な操作。UI からは独立させ、engine 内で完結させる。 */
 object BitmapOps {
+
+    /** 入力の色空間をラベルだけ変更せず、sRGB の画素へ描き直す。src の所有権を引き取る。 */
+    fun toSrgb(src: Bitmap): Bitmap {
+        if (src.config == Bitmap.Config.ARGB_8888 && src.colorSpace?.isSrgb == true) return src
+        var converted: Bitmap? = null
+        try {
+            val result = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888, true,
+                ColorSpace.get(ColorSpace.Named.SRGB))
+            converted = result
+            Canvas(result).drawBitmap(src, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+            return result
+        } catch (error: Throwable) {
+            converted?.recycle()
+            throw error
+        } finally {
+            src.recycle()
+        }
+    }
 
     /**
      * [target] へ拡大縮小する。
@@ -39,7 +60,8 @@ object BitmapOps {
 
     /** ARGB_8888 の空キャンバスを作る。確保できなければ null (呼び出し側で握る)。 */
     fun createCanvasBitmap(size: EditSize): Bitmap? = runCatching {
-        Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
+        Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888, true,
+            ColorSpace.get(ColorSpace.Named.SRGB))
     }.getOrNull()
 
     /** [bitmap] が占めるおおよそのバイト数。 */
