@@ -43,6 +43,7 @@ object CanvasTransforms {
         is Layer.Image -> layer
         is Layer.Drawing -> layer.mapPoints(translateMap(dx, dy))
         is Layer.Fill -> layer.mapArea(translateMap(dx, dy))
+        is Layer.Mosaic -> layer.copy(area = layer.area.mapPoints(translateMap(dx, dy)))
         is Layer.Text -> layer.movedBy(dx, dy)
     }
 
@@ -55,6 +56,7 @@ object CanvasTransforms {
             is Layer.Image -> layer
             is Layer.Drawing -> layer.mapPoints(rotateRightMap(canvas))
             is Layer.Fill -> layer.mapArea(rotateRightMap(canvas))
+            is Layer.Mosaic -> layer.copy(area = layer.area.mapPoints(rotateRightMap(canvas)))
             is Layer.Text -> layer.recentered(textSize(layer), rotationDelta = 90f) { cx, cy ->
                 (canvas.height - cy) to cx
             }
@@ -66,6 +68,7 @@ object CanvasTransforms {
             is Layer.Image -> layer
             is Layer.Drawing -> layer.mapPoints(rotateLeftMap(canvas))
             is Layer.Fill -> layer.mapArea(rotateLeftMap(canvas))
+            is Layer.Mosaic -> layer.copy(area = layer.area.mapPoints(rotateLeftMap(canvas)))
             is Layer.Text -> layer.recentered(textSize(layer), rotationDelta = -90f) { cx, cy ->
                 cy to (canvas.width - cx)
             }
@@ -82,6 +85,7 @@ object CanvasTransforms {
             is Layer.Image -> layer
             is Layer.Drawing -> layer.mapPoints(flipHorizontalMap(canvas))
             is Layer.Fill -> layer.mapArea(flipHorizontalMap(canvas))
+            is Layer.Mosaic -> layer.copy(area = layer.area.mapPoints(flipHorizontalMap(canvas)))
             is Layer.Text -> layer.recenteredMirrored(textSize(layer)) { cx, cy ->
                 (canvas.width - cx) to cy
             }
@@ -93,6 +97,7 @@ object CanvasTransforms {
             is Layer.Image -> layer
             is Layer.Drawing -> layer.mapPoints(flipVerticalMap(canvas))
             is Layer.Fill -> layer.mapArea(flipVerticalMap(canvas))
+            is Layer.Mosaic -> layer.copy(area = layer.area.mapPoints(flipVerticalMap(canvas)))
             is Layer.Text -> layer.recenteredMirrored(textSize(layer)) { cx, cy ->
                 cx to (canvas.height - cy)
             }

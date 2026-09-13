@@ -37,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -107,6 +108,10 @@ fun ImageEditScreen(
     onInvertSelection: () -> Unit,
     onFillSelection: (Int) -> Unit,
     onEraseSelection: () -> Unit,
+    onBeginMosaic: () -> Unit,
+    onMosaicPercent: (Float) -> Unit,
+    onCommitMosaic: () -> Unit,
+    onCancelMosaic: () -> Unit,
     onSave: (SaveRequest) -> Unit,
 ) {
     val doc = state.document
@@ -129,7 +134,9 @@ fun ImageEditScreen(
 
     BackHandler(enabled = true) {
         when {
+            state.saving -> Unit
             showSaveDialog -> showSaveDialog = false
+            state.mosaicDraft != null -> onCancelMosaic()
             state.activeTool != null -> onSelectTool(null)
             state.dirty -> showDiscardDialog = true
             else -> onBack()
@@ -156,15 +163,18 @@ fun ImageEditScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { if (state.dirty) showDiscardDialog = true else onBack() }) {
+                    IconButton(onClick = {
+                        if (state.mosaicDraft != null) onCancelMosaic()
+                        else if (state.dirty) showDiscardDialog = true else onBack()
+                    }, enabled = !state.saving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
                 actions = {
-                    IconButton(onClick = onUndo, enabled = state.canUndo) {
+                    IconButton(onClick = onUndo, enabled = !state.saving && (state.canUndo || state.mosaicDraft != null)) {
                         Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.action_undo))
                     }
-                    IconButton(onClick = onRedo, enabled = state.canRedo) {
+                    IconButton(onClick = onRedo, enabled = state.canRedo && !state.saving && state.mosaicDraft == null) {
                         Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.action_redo))
                     }
                     TextButton(
@@ -172,7 +182,7 @@ fun ImageEditScreen(
                             onRequestEstimate()
                             showSaveDialog = true
                         },
-                        enabled = doc != null && !state.saving,
+                        enabled = doc != null && !state.saving && state.mosaicDraft == null,
                     ) { Text(stringResource(R.string.action_save)) }
                 },
             )
@@ -188,6 +198,7 @@ fun ImageEditScreen(
                             preview = state.preview,
                             canvasSize = doc?.let { EditSize(it.canvas.width, it.canvas.height) },
                             mode = when {
+                                state.mosaicDraft != null || state.saving -> CanvasMode.View
                                 state.activeTool == EditTool.CROP -> CanvasMode.Crop(
                                     rect = cropRect,
                                     onChange = { next ->
@@ -241,97 +252,111 @@ fun ImageEditScreen(
                 }
 
                 // 選択中ツールの設定行。
-                when (state.activeTool) {
-                    EditTool.CROP -> {
-                        HorizontalDivider()
-                        CropPanel(
-                            aspect = cropAspect,
-                            onAspectChange = { picked ->
-                                cropAspect = picked
-                                val ratio = picked.effectiveRatio(
-                                    doc?.canvas?.width ?: 1,
-                                    doc?.canvas?.height ?: 1,
-                                )
-                                if (ratio != null) {
-                                    cropRect = fitCropToRatio(
-                                        cropRect,
-                                        ratio,
+                if (state.previewing) LinearProgressIndicator(Modifier.fillMaxWidth())
+                val mosaic = state.mosaicDraft
+                if (mosaic != null && doc != null) {
+                    MosaicPanel(
+                        blockSizePx = mosaic.blockSizePx,
+                        shortEdge = minOf(doc.canvas.width, doc.canvas.height),
+                        previewing = state.previewing || state.previewFailed,
+                        onPercentChange = onMosaicPercent,
+                        onApply = onCommitMosaic,
+                        onCancel = onCancelMosaic,
+                    )
+                } else {
+                    when (state.activeTool) {
+                        EditTool.CROP -> {
+                            HorizontalDivider()
+                            CropPanel(
+                                aspect = cropAspect,
+                                onAspectChange = { picked ->
+                                    cropAspect = picked
+                                    val ratio = picked.effectiveRatio(
                                         doc?.canvas?.width ?: 1,
                                         doc?.canvas?.height ?: 1,
                                     )
-                                }
-                            },
-                            onApply = {
-                                val canvas = doc?.canvas ?: return@CropPanel
-                                onApplyCrop(
-                                    EditRect(
-                                        left = cropRect.left * canvas.width,
-                                        top = cropRect.top * canvas.height,
-                                        right = cropRect.right * canvas.width,
-                                        bottom = cropRect.bottom * canvas.height,
-                                    ),
-                                )
-                                onSelectTool(null)
-                            },
-                            onReset = {
-                                cropRect = FULL_CROP
-                                onResetCrop()
-                            },
-                            onRotateLeft = onRotateLeft,
-                            onRotateRight = onRotateRight,
-                            onFlipHorizontal = onFlipHorizontal,
-                            onFlipVertical = onFlipVertical,
-                        )
+                                    if (ratio != null) {
+                                        cropRect = fitCropToRatio(
+                                            cropRect,
+                                            ratio,
+                                            doc?.canvas?.width ?: 1,
+                                            doc?.canvas?.height ?: 1,
+                                        )
+                                    }
+                                },
+                                onApply = {
+                                    val canvas = doc?.canvas ?: return@CropPanel
+                                    onApplyCrop(
+                                        EditRect(
+                                            left = cropRect.left * canvas.width,
+                                            top = cropRect.top * canvas.height,
+                                            right = cropRect.right * canvas.width,
+                                            bottom = cropRect.bottom * canvas.height,
+                                        ),
+                                    )
+                                    onSelectTool(null)
+                                },
+                                onReset = {
+                                    cropRect = FULL_CROP
+                                    onResetCrop()
+                                },
+                                onRotateLeft = onRotateLeft,
+                                onRotateRight = onRotateRight,
+                                onFlipHorizontal = onFlipHorizontal,
+                                onFlipVertical = onFlipVertical,
+                            )
+                        }
+                        EditTool.RESIZE -> {
+                            HorizontalDivider()
+                            ResizePanel(
+                                state = state,
+                                onSetLongEdge = onSetLongEdge,
+                                onSetPercent = onSetPercent,
+                            )
+                        }
+                        EditTool.SELECT -> {
+                            HorizontalDivider()
+                            SelectionPanel(
+                                shape = selectShape,
+                                mode = selectMode,
+                                color = brush.color,
+                                hasSelection = state.hasSelection,
+                                onShapeChange = { selectShape = it },
+                                onModeChange = { selectMode = it },
+                                // 塗る色はペンと共有する (色の概念を 2 つ持たせない)。
+                                onColorChange = { brush = brush.copy(color = it) },
+                                onFill = { onFillSelection(brush.color) },
+                                onErase = onEraseSelection,
+                                onMosaic = onBeginMosaic,
+                                onInvert = onInvertSelection,
+                                onDeselect = onClearSelection,
+                            )
+                        }
+                        EditTool.BRUSH -> {
+                            HorizontalDivider()
+                            BrushPanel(settings = brush, onSettingsChange = { brush = it })
+                        }
+                        EditTool.TEXT -> {
+                            HorizontalDivider()
+                            val canvasSize = doc?.let { EditSize(it.canvas.width, it.canvas.height) }
+                            TextPanel(
+                                editing = state.editingText,
+                                others = state.textLayers,
+                                canvasSize = canvasSize,
+                                onAdd = { onAddText(defaultTextSize(canvasSize), brush.color) },
+                                onSelect = onSelectText,
+                                onChange = onChangeText,
+                                onDelete = onDeleteText,
+                            )
+                        }
+                        null -> Unit
                     }
-                    EditTool.RESIZE -> {
-                        HorizontalDivider()
-                        ResizePanel(
-                            state = state,
-                            onSetLongEdge = onSetLongEdge,
-                            onSetPercent = onSetPercent,
-                        )
-                    }
-                    EditTool.SELECT -> {
-                        HorizontalDivider()
-                        SelectionPanel(
-                            shape = selectShape,
-                            mode = selectMode,
-                            color = brush.color,
-                            hasSelection = state.hasSelection,
-                            onShapeChange = { selectShape = it },
-                            onModeChange = { selectMode = it },
-                            // 塗る色はペンと共有する (色の概念を 2 つ持たせない)。
-                            onColorChange = { brush = brush.copy(color = it) },
-                            onFill = { onFillSelection(brush.color) },
-                            onErase = onEraseSelection,
-                            onInvert = onInvertSelection,
-                            onDeselect = onClearSelection,
-                        )
-                    }
-                    EditTool.BRUSH -> {
-                        HorizontalDivider()
-                        BrushPanel(settings = brush, onSettingsChange = { brush = it })
-                    }
-                    EditTool.TEXT -> {
-                        HorizontalDivider()
-                        val canvasSize = doc?.let { EditSize(it.canvas.width, it.canvas.height) }
-                        TextPanel(
-                            editing = state.editingText,
-                            others = state.textLayers,
-                            canvasSize = canvasSize,
-                            onAdd = { onAddText(defaultTextSize(canvasSize), brush.color) },
-                            onSelect = onSelectText,
-                            onChange = onChangeText,
-                            onDelete = onDeleteText,
-                        )
-                    }
-                    null -> Unit
                 }
 
                 HorizontalDivider()
                 EditToolbar(
                     activeTool = state.activeTool,
-                    enabled = doc != null && !state.saving,
+                    enabled = doc != null && !state.saving && state.mosaicDraft == null,
                     onSelectTool = onSelectTool,
                 )
             }

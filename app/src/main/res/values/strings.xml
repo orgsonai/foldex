@@ -991,6 +991,10 @@
     <string name="storage_error_unknown">An error occurred</string>
     <!-- 選択範囲ツール (v3) -->
     <string name="image_tool_select">Select</string>
+    <string name="image_mosaic">Mosaic</string>
+    <string name="image_mosaic_size">Block size: %1$d px</string>
+    <string name="image_mosaic_hint">Adjust the blocks, check the selected area, then apply.</string>
+    <string name="image_preview_failed">Could not update the preview. Reduce the edited area and try again.</string>
     <string name="image_select_rect">Rectangle</string>
     <string name="image_select_ellipse">Ellipse</string>
     <string name="image_select_lasso">Lasso</string>

@@ -37,7 +37,13 @@ import com.zerotoship.foldex.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +85,7 @@ class ImageEditViewModel @Inject constructor(
     private var imageSource: ImageSource? = null
     private var previewJob: Job? = null
     private var estimateJob: Job? = null
+    private val previewMutex = Mutex()
 
     // ---- 読み込み ----
 
@@ -165,6 +172,7 @@ class ImageEditViewModel @Inject constructor(
 
     /** 切り抜きを確定する。[rect] は現在の論理キャンバス座標 (見たままの向き)。 */
     fun applyCrop(rect: EditRect) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val layer = doc.activeLayer as? Layer.Image ?: return
         val sourceRect = canvasRectToSourceRect(layer, rect) ?: return
@@ -185,6 +193,7 @@ class ImageEditViewModel @Inject constructor(
 
     /** 切り抜きを解除して元の範囲に戻す。 */
     fun resetCrop() {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val layer = doc.activeLayer as? Layer.Image ?: return
         val crop = layer.crop ?: return
@@ -213,6 +222,7 @@ class ImageEditViewModel @Inject constructor(
         pointMap: (EditSize) -> (EditPoint) -> EditPoint,
         transformImage: (Layer.Image) -> Layer.Image,
     ) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val image = doc.activeLayer as? Layer.Image ?: return
         history.record(doc)
@@ -238,6 +248,7 @@ class ImageEditViewModel @Inject constructor(
 
     /** 出力の長辺を [longEdge] px にする (解像度の変更)。 */
     fun setOutputLongEdge(longEdge: Int) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val max = maxOf(doc.canvas.width, doc.canvas.height)
         val clamped = longEdge.coerceIn(MIN_OUTPUT_LONG_EDGE, minOf(max, MAX_OUTPUT_LONG_EDGE))
@@ -254,12 +265,14 @@ class ImageEditViewModel @Inject constructor(
     }
 
     fun setFormat(format: ImageFormat) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         if (doc.output.format == format) return
         applyDocument(doc.copy(output = doc.output.copy(format = format)), recordHistory = false)
     }
 
     fun setQuality(quality: Int) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val q = quality.coerceIn(1, 100)
         if (doc.output.quality == q) return
@@ -267,18 +280,24 @@ class ImageEditViewModel @Inject constructor(
     }
 
     fun undo() {
+        if (_state.value.saving) return
+        if (_state.value.mosaicDraft != null) { cancelMosaic(); return }
         val current = _state.value.document ?: return
         val previous = history.undo(current) ?: return
         applyDocument(previous, recordHistory = false)
     }
 
     fun redo() {
+        if (_state.value.saving) return
+        if (_state.value.mosaicDraft != null) return
         val current = _state.value.document ?: return
         val next = history.redo(current) ?: return
         applyDocument(next, recordHistory = false)
     }
 
     fun selectTool(tool: EditTool?) {
+        if (_state.value.saving) return
+        cancelMosaic()
         _state.update { it.copy(activeTool = if (it.activeTool == tool) null else tool) }
         if (_state.value.activeTool == EditTool.RESIZE) requestEstimate()
     }
@@ -287,6 +306,7 @@ class ImageEditViewModel @Inject constructor(
 
     /** 1 本描き終わったときに呼ぶ。ストロークは点列のまま積む (画素には焼かない)。 */
     fun addStroke(stroke: Stroke) {
+        if (_state.value.saving) return
         if (stroke.points.isEmpty()) return
         val doc = _state.value.document ?: return
         history.record(doc)
@@ -310,6 +330,7 @@ class ImageEditViewModel @Inject constructor(
 
     /** キャンバス中央に新しいテキストを置き、それを編集対象にする。 */
     fun addText(initialSizePx: Float, color: Int) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         history.record(doc)
         val id = "text-${doc.layers.size}"
@@ -333,6 +354,7 @@ class ImageEditViewModel @Inject constructor(
      * 1 文字ごとに Undo 履歴が伸びる方が邪魔になる。
      */
     fun updateText(block: (Layer.Text) -> Layer.Text) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val id = _state.value.editingTextId ?: return
         val current = doc.layers.firstOrNull { it.id == id } as? Layer.Text ?: return
@@ -341,6 +363,7 @@ class ImageEditViewModel @Inject constructor(
 
     /** テキストを指で動かす。指を離したとき ([commitTextMove]) に履歴へ積む。 */
     fun moveEditingText(dx: Float, dy: Float) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val id = _state.value.editingTextId ?: return
         if (!textMoveInProgress) {
@@ -359,6 +382,7 @@ class ImageEditViewModel @Inject constructor(
 
     /** 編集中のテキストを消す。空のまま完了したときも呼ばれる。 */
     fun deleteEditingText() {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val id = _state.value.editingTextId ?: return
         history.record(doc)
@@ -368,6 +392,7 @@ class ImageEditViewModel @Inject constructor(
 
     /** 編集対象を切り替える (null で編集をやめる)。中身が空のテキストは残さず消す。 */
     fun selectText(id: String?) {
+        if (_state.value.saving) return
         val doc = _state.value.document
         val current = _state.value.editingTextId
         if (doc != null && current != null && current != id) {
@@ -412,11 +437,51 @@ class ImageEditViewModel @Inject constructor(
     /** 選択範囲を透明にする (下の写真ごとくり抜く)。 */
     fun eraseSelection() = addFill(FillMode.CLEAR, 0)
 
+    fun beginMosaic() {
+        val doc = _state.value.document ?: return
+        val area = doc.selection?.takeUnless { it.isEmpty } ?: return
+        if (_state.value.saving) return
+        _state.update {
+            it.copy(mosaicDraft = Layer.Mosaic(
+                id = doc.freshLayerId("mosaic"),
+                name = appContext.getString(R.string.image_mosaic),
+                area = area,
+                blockSizePx = (minOf(doc.canvas.width, doc.canvas.height) * 0.025f).coerceAtLeast(2f),
+            ))
+        }
+        refreshPreview()
+    }
+
+    fun setMosaicPercent(percent: Float) {
+        val doc = _state.value.document ?: return
+        val draft = _state.value.mosaicDraft ?: return
+        if (!percent.isFinite()) return
+        val size = minOf(doc.canvas.width, doc.canvas.height) * percent.coerceIn(0.5f, 8f) / 100f
+        _state.update { it.copy(mosaicDraft = draft.copy(blockSizePx = size.coerceAtLeast(2f))) }
+        refreshPreview(debounce = true)
+    }
+
+    fun commitMosaic() {
+        if (_state.value.previewing || _state.value.previewFailed || _state.value.saving) return
+        val doc = _state.value.document ?: return
+        val draft = _state.value.mosaicDraft ?: return
+        history.record(doc)
+        _state.update { it.copy(mosaicDraft = null) }
+        applyDocument(doc.copy(layers = doc.layers + draft), recordHistory = false)
+    }
+
+    fun cancelMosaic() {
+        if (_state.value.mosaicDraft == null) return
+        _state.update { it.copy(mosaicDraft = null) }
+        refreshPreview()
+    }
+
     /**
      * 塗り / 透明化をレイヤーとして積む。画素は書き換えないので、Undo で完全に戻せるし
      * 保存時には原寸で描き直される。
      */
     private fun addFill(mode: FillMode, color: Int) {
+        if (_state.value.saving) return
         val doc = _state.value.document ?: return
         val area = doc.selection ?: return
         if (area.isEmpty) return
@@ -444,6 +509,7 @@ class ImageEditViewModel @Inject constructor(
      * なぞっている間これを走らせると選択が明らかにもたつく。
      */
     private fun updateSelection(next: SelectionSpec?) {
+        if (_state.value.mosaicDraft != null || _state.value.saving) return
         _state.update { st ->
             val doc = st.document ?: return@update st
             st.copy(document = doc.copy(selection = next))
@@ -461,6 +527,7 @@ class ImageEditViewModel @Inject constructor(
         _state.update {
             it.copy(
                 document = doc,
+                mosaicDraft = null,
                 dirty = true,
                 canUndo = history.canUndo,
                 canRedo = history.canRedo,
@@ -474,17 +541,38 @@ class ImageEditViewModel @Inject constructor(
 
     // ---- プレビュー ----
 
-    private fun refreshPreview() {
-        val doc = _state.value.document ?: return
+    private fun refreshPreview(debounce: Boolean = false) {
+        val base = _state.value.document ?: return
+        val draft = _state.value.mosaicDraft
+        val doc = if (draft == null) base else base.copy(layers = base.layers + draft)
         val resolve = sourceResolver()
         previewJob?.cancel()
+        _state.update { it.copy(previewing = true, previewFailed = false) }
         previewJob = viewModelScope.launch {
-            val bitmap = withContext(Dispatchers.Default) {
-                DocumentRenderer.render(doc, resolve, targetLongEdge = PREVIEW_LONG_EDGE)
-            } ?: return@launch
-            val old = _state.value.preview
-            _state.update { it.copy(preview = bitmap) }
-            old?.takeIf { it !== bitmap && !it.isRecycled }?.recycle()
+            try {
+                if (debounce) delay(100)
+                val bitmap = withContext(Dispatchers.Default) {
+                    previewMutex.withLock {
+                        val context = currentCoroutineContext()
+                        context.ensureActive()
+                        DocumentRenderer.render(doc, resolve, targetLongEdge = PREVIEW_LONG_EDGE) {
+                            context.ensureActive()
+                        }
+                    }
+                }
+                if (bitmap == null) {
+                    _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_preview_failed)))
+                } else {
+                    // Compose の前フレームがまだ旧 Bitmap を参照しうるため、明示 recycle しない。
+                    _state.update { it.copy(preview = bitmap) }
+                }
+                _state.update { it.copy(previewing = false, previewFailed = bitmap == null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.update { it.copy(previewing = false, previewFailed = true) }
+                _events.trySend(ImageEditEvent.Message(appContext.getString(R.string.image_preview_failed)))
+            }
         }
     }
 
@@ -518,7 +606,7 @@ class ImageEditViewModel @Inject constructor(
     fun save(request: SaveRequest) {
         val doc = _state.value.document ?: return
         val file = sourceFile ?: return
-        if (_state.value.saving) return
+        if (_state.value.saving || _state.value.mosaicDraft != null) return
         _state.update { it.copy(saving = true) }
 
         viewModelScope.launch {
@@ -642,7 +730,6 @@ class ImageEditViewModel @Inject constructor(
         previewJob?.cancel()
         estimateJob?.cancel()
         imageSource?.release()
-        _state.value.preview?.takeIf { !it.isRecycled }?.recycle()
         super.onCleared()
     }
 
@@ -725,6 +812,9 @@ data class ImageEditUiState(
     val fileName: String = "",
     val document: EditDocument? = null,
     val preview: Bitmap? = null,
+    val previewing: Boolean = false,
+    val previewFailed: Boolean = false,
+    val mosaicDraft: Layer.Mosaic? = null,
     val activeTool: EditTool? = null,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,

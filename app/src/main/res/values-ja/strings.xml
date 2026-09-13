@@ -982,6 +982,10 @@
     <string name="storage_error_unknown">エラーが発生しました</string>
     <!-- 選択範囲ツール (v3) -->
     <string name="image_tool_select">選択</string>
+    <string name="image_mosaic">モザイク</string>
+    <string name="image_mosaic_size">粒の大きさ: %1$d px</string>
+    <string name="image_mosaic_hint">粒の大きさを調整し、隠したい範囲を確認して適用します。</string>
+    <string name="image_preview_failed">プレビューを更新できませんでした。編集範囲を小さくして再試行してください。</string>
     <string name="image_select_rect">矩形</string>
     <string name="image_select_ellipse">楕円</string>
     <string name="image_select_lasso">投げ縄</string>

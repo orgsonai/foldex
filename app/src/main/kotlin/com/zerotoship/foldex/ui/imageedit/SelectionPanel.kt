@@ -55,6 +55,7 @@ fun SelectionPanel(
     onColorChange: (Int) -> Unit,
     onFill: () -> Unit,
     onErase: () -> Unit,
+    onMosaic: () -> Unit,
     onInvert: () -> Unit,
     onDeselect: () -> Unit,
 ) {
@@ -99,6 +100,9 @@ fun SelectionPanel(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                TextButton(onClick = onMosaic, enabled = hasSelection) {
+                    Text(stringResource(R.string.image_mosaic))
+                }
                 TextButton(onClick = onFill, enabled = hasSelection) {
                     Text(stringResource(R.string.image_select_fill))
                 }

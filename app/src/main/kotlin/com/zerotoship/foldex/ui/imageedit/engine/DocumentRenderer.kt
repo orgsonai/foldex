@@ -45,6 +45,7 @@ object DocumentRenderer {
         doc: EditDocument,
         sources: (String) -> ImageSource?,
         targetLongEdge: Int? = null,
+        checkCancelled: () -> Unit = {},
     ): Bitmap? {
         val outSize = outputSizeFor(doc, targetLongEdge)
         val out = BitmapOps.createCanvasBitmap(outSize) ?: return null
@@ -64,14 +65,24 @@ object DocumentRenderer {
             isDither = true
         }
 
-        for (layer in doc.layers) {
-            if (!layer.visible || layer.alpha <= 0f) continue
-            when (layer) {
-                is Layer.Image -> drawImageLayer(canvas, paint, layer, sources, s)
-                is Layer.Drawing -> drawStrokes(canvas, layer, s, outSize)
-                is Layer.Fill -> drawFill(canvas, layer, s)
-                is Layer.Text -> drawText(canvas, layer, s)
+        try {
+            for (layer in doc.layers) {
+                checkCancelled()
+                if (!layer.visible || layer.alpha <= 0f) continue
+                when (layer) {
+                    is Layer.Image -> drawImageLayer(canvas, paint, layer, sources, s)
+                    is Layer.Drawing -> drawStrokes(canvas, layer, s, outSize)
+                    is Layer.Fill -> drawFill(canvas, layer, s)
+                    is Layer.Mosaic -> MosaicRenderer.draw(out, canvas, layer, s, checkCancelled)
+                    is Layer.Text -> drawText(canvas, layer, s)
+                }
             }
+        } catch (_: OutOfMemoryError) {
+            out.recycle()
+            return null
+        } catch (error: Exception) {
+            out.recycle()
+            throw error
         }
         return out
     }
@@ -98,44 +109,45 @@ object DocumentRenderer {
         // (切り抜きや回転は倍率を変えないので、レイヤーの拡大率と出力スケールの積でよい)
         val pixelRatio = layer.transform.scale * s
         val neededLongEdge = (layer.sourceSize.longEdge * pixelRatio).roundToInt().coerceAtLeast(1)
-        val bitmap = source.load(neededLongEdge) ?: return
-        if (bitmap.isRecycled) return
+        source.withBitmap(neededLongEdge) { bitmap ->
+            if (bitmap.isRecycled) return@withBitmap
 
-        // 読み込んだ Bitmap は元画像の縮小版かもしれないので、切り抜き範囲を Bitmap 座標へ移す。
-        val bmpScale = bitmap.width.toFloat() / layer.sourceSize.width
-        val crop = layer.cropRect
-        val src = Rect(
-            (crop.left * bmpScale).roundToInt().coerceIn(0, bitmap.width),
-            (crop.top * bmpScale).roundToInt().coerceIn(0, bitmap.height),
-            (crop.right * bmpScale).roundToInt().coerceIn(0, bitmap.width),
-            (crop.bottom * bmpScale).roundToInt().coerceIn(0, bitmap.height),
-        )
-        if (src.width() <= 0 || src.height() <= 0) return
+            // 読み込んだ Bitmap は元画像の縮小版かもしれないので、切り抜き範囲を Bitmap 座標へ移す。
+            val bmpScale = bitmap.width.toFloat() / layer.sourceSize.width
+            val crop = layer.cropRect
+            val src = Rect(
+                (crop.left * bmpScale).roundToInt().coerceIn(0, bitmap.width),
+                (crop.top * bmpScale).roundToInt().coerceIn(0, bitmap.height),
+                (crop.right * bmpScale).roundToInt().coerceIn(0, bitmap.width),
+                (crop.bottom * bmpScale).roundToInt().coerceIn(0, bitmap.height),
+            )
+            if (src.width() <= 0 || src.height() <= 0) return@withBitmap
 
-        // 回転後の論理サイズ (90°/270° で幅と高さが入れ替わる) を出力座標へ。
-        val logical = layer.logicalSize
-        val dw = logical.width * layer.transform.scale * s
-        val dh = logical.height * layer.transform.scale * s
-        // 回転前 (= 切り抜いた素の向き) のサイズ。中心そろえで描くのに使う。
-        val rw = crop.width * layer.transform.scale * s
-        val rh = crop.height * layer.transform.scale * s
+            // 回転後の論理サイズ (90°/270° で幅と高さが入れ替わる) を出力座標へ。
+            val logical = layer.logicalSize
+            val dw = logical.width * layer.transform.scale * s
+            val dh = logical.height * layer.transform.scale * s
+            // 回転前 (= 切り抜いた素の向き) のサイズ。中心そろえで描くのに使う。
+            val rw = crop.width * layer.transform.scale * s
+            val rh = crop.height * layer.transform.scale * s
 
-        val left = layer.transform.offsetX * s
-        val top = layer.transform.offsetY * s
+            val left = layer.transform.offsetX * s
+            val top = layer.transform.offsetY * s
 
-        paint.alpha = (layer.alpha.coerceIn(0f, 1f) * 255).roundToInt()
+            paint.alpha = (layer.alpha.coerceIn(0f, 1f) * 255).roundToInt()
 
-        canvas.save()
-        // 配置先の中心へ移動してから、画面座標系で 反転 → 回転 の順に効かせる。
-        // (反転を回転の外側に置くことで、90° 回した状態で「左右反転」を押しても
-        //  画面上の左右が入れ替わる = 押した見た目どおりに動く)
-        canvas.translate(left + dw / 2f, top + dh / 2f)
-        canvas.scale(if (layer.flipH) -1f else 1f, if (layer.flipV) -1f else 1f)
-        canvas.rotate(layer.quarterTurns * 90f + layer.transform.rotationDeg)
-        canvas.drawBitmap(bitmap, src, RectF(-rw / 2f, -rh / 2f, rw / 2f, rh / 2f), paint)
-        canvas.restore()
+            canvas.save()
+            // 配置先の中心へ移動してから、画面座標系で 反転 → 回転 の順に効かせる。
+            // (反転を回転の外側に置くことで、90° 回した状態で「左右反転」を押しても
+            //  画面上の左右が入れ替わる = 押した見た目どおりに動く)
+            canvas.translate(left + dw / 2f, top + dh / 2f)
+            canvas.scale(if (layer.flipH) -1f else 1f, if (layer.flipV) -1f else 1f)
+            canvas.rotate(layer.quarterTurns * 90f + layer.transform.rotationDeg)
+            canvas.drawBitmap(bitmap, src, RectF(-rw / 2f, -rh / 2f, rw / 2f, rh / 2f), paint)
+            canvas.restore()
 
-        paint.alpha = 255
+            paint.alpha = 255
+        }
     }
 
     /**

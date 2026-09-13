@@ -34,6 +34,7 @@ class ImageSource(private val file: File) {
      *
      * 返した Bitmap は内部でキャッシュされる。呼び出し側で recycle しないこと。
      */
+    @Synchronized
     fun load(maxLongEdge: Int?): Bitmap? {
         val want = maxLongEdge ?: size.longEdge
         cached?.let { if (cachedLongEdge >= want && !it.isRecycled) return it }
@@ -45,10 +46,17 @@ class ImageSource(private val file: File) {
     }
 
     /** キャッシュを解放する。原寸を読んだ後など、メモリを戻したいときに呼ぶ。 */
+    @Synchronized
     fun release() {
         cached?.takeIf { !it.isRecycled }?.recycle()
         cached = null
         cachedLongEdge = 0
+    }
+
+    /** 描画が終わるまで、別の解像度要求によるキャッシュの recycle を防ぐ。 */
+    @Synchronized
+    fun withBitmap(maxLongEdge: Int, draw: (Bitmap) -> Unit) {
+        load(maxLongEdge)?.let(draw)
     }
 
     private fun decode(maxLongEdge: Int): Bitmap? {

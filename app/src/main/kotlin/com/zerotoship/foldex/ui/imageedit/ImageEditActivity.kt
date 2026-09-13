@@ -115,6 +115,10 @@ class ImageEditActivity : ComponentActivity() {
                     onInvertSelection = viewModel::invertSelection,
                     onFillSelection = viewModel::fillSelection,
                     onEraseSelection = viewModel::eraseSelection,
+                    onBeginMosaic = viewModel::beginMosaic,
+                    onMosaicPercent = viewModel::setMosaicPercent,
+                    onCommitMosaic = viewModel::commitMosaic,
+                    onCancelMosaic = viewModel::cancelMosaic,
                     onSave = viewModel::save,
                 )
             }

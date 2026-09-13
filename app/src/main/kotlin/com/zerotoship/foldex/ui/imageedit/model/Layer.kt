@@ -118,6 +118,21 @@ sealed interface Layer {
         val mode: FillMode,
     ) : Layer
 
+    /** 選択範囲の下にある合成結果をモザイク化する。粒度は論理座標の px。 */
+    data class Mosaic(
+        override val id: String,
+        override val name: String,
+        override val visible: Boolean = true,
+        override val alpha: Float = 1f,
+        override val transform: LayerTransform = LayerTransform(),
+        val area: SelectionSpec,
+        val blockSizePx: Float,
+    ) : Layer {
+        init {
+            require(blockSizePx.isFinite() && blockSizePx >= 2f)
+        }
+    }
+
     /**
      * テキスト。**確定しても文字列のまま持ち続ける**ので、保存するまで何度でも打ち直せる。
      * 画素へ焼き込まれるのは保存時の描画 1 回だけ。
