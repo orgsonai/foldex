@@ -1,0 +1,7 @@
+1.9.1
+- Added mosaic and on-device AI selection of people and objects by tapping
+- Added selection brushes, undo/redo, and re-editing of mosaic areas and block size
+- Added autosaved drafts and recovery even after the original image moves
+- Improved original-file protection, memory checks, file-size limits, JPEG backgrounds, and metadata handling
+- Fixed icons in small display areas
+- Stacked editor exit actions vertically with wrapping labels and scrolling
