@@ -47,6 +47,16 @@ object SelectionPaths {
             fillType = Path.FillType.EVEN_ODD
         }
 
+        is SelectionSpec.Contours -> Path().apply {
+            fillType = Path.FillType.EVEN_ODD
+            for (ring in spec.rings) {
+                if (ring.size < 3) continue
+                moveTo(ring[0].x * scale, ring[0].y * scale)
+                for (i in 1 until ring.size) lineTo(ring[i].x * scale, ring[i].y * scale)
+                close()
+            }
+        }
+
         is SelectionSpec.Combined -> {
             val out = Path()
             for (part in spec.parts) {
@@ -55,8 +65,8 @@ object SelectionPaths {
                     BoolOp.ADD -> Path.Op.UNION
                     BoolOp.SUBTRACT -> Path.Op.DIFFERENCE
                 }
-                // Path.op は結果を this に書き戻す。失敗しても例外は投げず false を返す。
-                out.op(piece, op)
+                // 合成失敗を無視すると、モザイクなどの保存範囲が欠落する。
+                check(out.op(piece, op)) { "Could not combine selection paths" }
             }
             out
         }

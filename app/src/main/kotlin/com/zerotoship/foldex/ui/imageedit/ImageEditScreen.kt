@@ -112,6 +112,8 @@ fun ImageEditScreen(
     onMosaicPercent: (Float) -> Unit,
     onCommitMosaic: () -> Unit,
     onCancelMosaic: () -> Unit,
+    onSelectObject: (com.zerotoship.foldex.ui.imageedit.model.EditPoint, SelectionMode) -> Unit,
+    onCancelObjectSelection: () -> Unit,
     onSave: (SaveRequest) -> Unit,
 ) {
     val doc = state.document
@@ -119,7 +121,7 @@ fun ImageEditScreen(
     var cropRect by remember { mutableStateOf(FULL_CROP) }
     var cropAspect by remember { mutableStateOf(CropAspect.FREE) }
     var brush by remember { mutableStateOf(DEFAULT_BRUSH) }
-    var selectShape by remember { mutableStateOf(SelectionShape.RECT) }
+    var selectShape by remember { mutableStateOf(SelectionShape.OBJECT) }
     var selectMode by remember { mutableStateOf(SelectionMode.REPLACE) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
@@ -135,6 +137,7 @@ fun ImageEditScreen(
     BackHandler(enabled = true) {
         when {
             state.saving -> Unit
+            state.selectingObject -> onCancelObjectSelection()
             showSaveDialog -> showSaveDialog = false
             state.mosaicDraft != null -> onCancelMosaic()
             state.activeTool != null -> onSelectTool(null)
@@ -164,7 +167,8 @@ fun ImageEditScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (state.mosaicDraft != null) onCancelMosaic()
+                        if (state.selectingObject) onCancelObjectSelection()
+                        else if (state.mosaicDraft != null) onCancelMosaic()
                         else if (state.dirty) showDiscardDialog = true else onBack()
                     }, enabled = !state.saving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
@@ -218,6 +222,11 @@ fun ImageEditScreen(
                                         }
                                     },
                                 )
+                                state.activeTool == EditTool.SELECT && selectShape == SelectionShape.OBJECT ->
+                                    CanvasMode.ObjectSelect(
+                                        current = state.selection,
+                                        onTap = { onSelectObject(it, selectMode) },
+                                    )
                                 state.activeTool == EditTool.SELECT -> CanvasMode.Select(
                                     shape = selectShape,
                                     current = state.selection,
@@ -321,8 +330,10 @@ fun ImageEditScreen(
                                 mode = selectMode,
                                 color = brush.color,
                                 hasSelection = state.hasSelection,
-                                onShapeChange = { selectShape = it },
-                                onModeChange = { selectMode = it },
+                                onShapeChange = { onCancelObjectSelection(); selectShape = it },
+                                onModeChange = { onCancelObjectSelection(); selectMode = it },
+                                selectingObject = state.selectingObject,
+                                onCancelObjectSelection = onCancelObjectSelection,
                                 // 塗る色はペンと共有する (色の概念を 2 つ持たせない)。
                                 onColorChange = { brush = brush.copy(color = it) },
                                 onFill = { onFillSelection(brush.color) },

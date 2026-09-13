@@ -34,8 +34,10 @@ markwon             = "4.6.2"
 zip4j               = "2.11.5"
 sora-editor         = "0.23.5"
 reorderable         = "2.4.2"
+litert              = "1.4.2"
 
 [libraries]
+litert                     = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
 # AndroidX Core
 core-ktx                    = { group = "androidx.core",           name = "core-ktx",               version.ref = "core-ktx" }
 lifecycle-runtime-ktx       = { group = "androidx.lifecycle",      name = "lifecycle-runtime-ktx",  version.ref = "lifecycle" }

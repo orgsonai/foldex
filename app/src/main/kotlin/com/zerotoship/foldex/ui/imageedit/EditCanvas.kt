@@ -48,6 +48,7 @@ import com.zerotoship.foldex.ui.imageedit.model.EditRect
 import com.zerotoship.foldex.ui.imageedit.model.EditSize
 import com.zerotoship.foldex.ui.imageedit.model.BoolOp
 import com.zerotoship.foldex.ui.imageedit.model.SelectionShape
+import com.zerotoship.foldex.ui.imageedit.model.SelectionCoordinates
 import com.zerotoship.foldex.ui.imageedit.model.SelectionSpec
 import com.zerotoship.foldex.ui.imageedit.model.Stroke
 import com.zerotoship.foldex.ui.imageedit.model.StrokeMode
@@ -105,6 +106,7 @@ fun EditCanvas(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val startMode = latestMode.value
                     val startRect = latestRect.value
+                    val startCanvas = latestCanvas.value
 
                     grabbed = if (startMode is CanvasMode.Crop && !startRect.isEmpty) {
                         hitTestCrop(down.position, startMode.rect, startRect, handleTouchPx)
@@ -121,8 +123,12 @@ fun EditCanvas(
                     }
 
                     var multiTouch = false
+                    var moved = false
                     do {
                         val event = awaitPointerEvent()
+                        if (event.changes.any {
+                            it.id == down.id && (it.position - down.position).getDistance() > viewConfiguration.touchSlop
+                        }) moved = true
                         val pressed = event.changes.count { it.pressed }
                         val rect = latestRect.value
                         val current = latestMode.value
@@ -191,6 +197,7 @@ fun EditCanvas(
                                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                                     }
                                 }
+                                is CanvasMode.ObjectSelect -> Unit
                                 is CanvasMode.TextMove -> {
                                     val pan = event.calculatePan()
                                     val canvas = latestCanvas.value
@@ -218,6 +225,16 @@ fun EditCanvas(
 
                     // 指を離した。ツールごとの後始末。
                     val finished = latestMode.value
+                    if (finished is CanvasMode.ObjectSelect && !multiTouch && !moved) {
+                        // 前の推論の完了でパネルの高さが変わっても、触れた瞬間の写真位置を使う。
+                        if (startCanvas != null) {
+                            SelectionCoordinates.fromViewport(
+                                EditPoint(down.position.x, down.position.y),
+                                EditRect(startRect.left, startRect.top, startRect.right, startRect.bottom),
+                                startCanvas,
+                            )?.let(finished.onTap)
+                        }
+                    }
                     if (finished is CanvasMode.Brush && livePoints.isNotEmpty() && !multiTouch) {
                         val canvas = latestCanvas.value
                         val rect = latestRect.value
@@ -262,6 +279,9 @@ fun EditCanvas(
                 is CanvasMode.Select -> canvasSize?.let { size ->
                     mode.current?.let { drawSelection(imageRect, size, it) }
                     drawLiveSelection(imageRect, livePoints, mode.shape)
+                }
+                is CanvasMode.ObjectSelect -> canvasSize?.let { size ->
+                    mode.current?.let { drawSelection(imageRect, size, it) }
                 }
                 is CanvasMode.TextMove -> mode.bounds?.let { bounds ->
                     canvasSize?.let { drawTextFrame(imageRect, bounds, it) }
@@ -309,6 +329,13 @@ sealed interface CanvasMode {
     ) : CanvasMode {
         // 形が変わったらジェスチャを張り替える (積み方が変わるため)。
         override val key: String get() = "select-" + shape.name
+    }
+
+    data class ObjectSelect(
+        val current: SelectionSpec?,
+        val onTap: (EditPoint) -> Unit,
+    ) : CanvasMode {
+        override val key: String get() = "select-object"
     }
 
     data class TextMove(
@@ -410,6 +437,7 @@ private fun buildSelection(
     if (abs(last.x - first.x) + abs(last.y - first.y) < MIN_SELECTION_DRAG_PX) return null
 
     return when (shape) {
+        SelectionShape.OBJECT -> null
         SelectionShape.LASSO -> {
             if (screenPoints.size < MIN_LASSO_POINTS) return null
             SelectionSpec.Lasso(screenPoints.map(::toLogical))
@@ -526,6 +554,7 @@ private fun DrawScope.drawLiveSelection(area: Rect, points: List<Offset>, shape:
     if (points.size < 2 || area.isEmpty) return
     val dash = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
     when (shape) {
+        SelectionShape.OBJECT -> Unit
         SelectionShape.LASSO -> {
             val path = Path()
             path.moveTo(points[0].x, points[0].y)
@@ -584,6 +613,15 @@ private fun selectionPath(spec: SelectionSpec, area: Rect, canvas: EditSize): Pa
                 for (i in 1 until pts.size) {
                     lineTo(area.left + pts[i].x * sx, area.top + pts[i].y * sy)
                 }
+                close()
+            }
+        }
+        is SelectionSpec.Contours -> Path().apply {
+            fillType = PathFillType.EvenOdd
+            for (ring in spec.rings) {
+                if (ring.size < 3) continue
+                moveTo(area.left + ring[0].x * sx, area.top + ring[0].y * sy)
+                for (i in 1 until ring.size) lineTo(area.left + ring[i].x * sx, area.top + ring[i].y * sy)
                 close()
             }
         }

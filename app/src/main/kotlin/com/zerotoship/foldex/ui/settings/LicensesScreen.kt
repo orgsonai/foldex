@@ -48,6 +48,8 @@ private data class LicenseEntry(
     /** SPDX ID。null なら「タップで全文」を出さず [note] のみ表示する。 */
     val spdxId: String?,
     val noteRes: Int,
+    /** 配布物固有の第三者告知がある場合は、一般的なライセンス全文と併せて表示する。 */
+    val noticeAsset: String? = null,
 )
 
 // 本アプリ本体。依存ライブラリはすべて Apache-2.0 (MIT 互換) / xz は public domain。
@@ -64,6 +66,8 @@ private val DEPENDENCIES = listOf(
     LicenseEntry("Apache MINA SSHD", null, "Apache-2.0", R.string.license_sftp_note),
     LicenseEntry("Apache FtpServer", null, "Apache-2.0", R.string.license_ftp_server_note),
     LicenseEntry("XZ for Java", null, null, R.string.license_xz_note),
+    LicenseEntry("LiteRT 1.4.2", null, "Apache-2.0", R.string.license_litert_note, noticeAsset = "LiteRT"),
+    LicenseEntry("MagicTouch", null, "Apache-2.0", R.string.license_magic_touch_note, noticeAsset = "MagicTouch"),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,7 +100,7 @@ fun LicensesScreen(onBack: () -> Unit) {
             HorizontalDivider()
             SectionHeader(stringResource(R.string.license_dependencies))
             DEPENDENCIES.forEach { entry ->
-                LicenseRow(entry, onClick = entry.spdxId?.let { id -> { openSpdxId = id } })
+                LicenseRow(entry, onClick = (entry.noticeAsset ?: entry.spdxId)?.let { id -> { openSpdxId = id } })
             }
         }
     }

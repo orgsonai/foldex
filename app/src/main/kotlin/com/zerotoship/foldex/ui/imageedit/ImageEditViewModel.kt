@@ -15,6 +15,8 @@ import com.zerotoship.foldex.ui.imageedit.engine.DocumentRenderer
 import com.zerotoship.foldex.ui.imageedit.engine.ExifTransfer
 import com.zerotoship.foldex.ui.imageedit.engine.ImageEncoder
 import com.zerotoship.foldex.ui.imageedit.engine.ImageSource
+import com.zerotoship.foldex.ui.imageedit.engine.ObjectSelectionEngine
+import com.zerotoship.foldex.ui.imageedit.engine.ObjectSelectionResult
 import com.zerotoship.foldex.ui.imageedit.model.CanvasTransforms
 import com.zerotoship.foldex.ui.imageedit.model.EditDocument
 import com.zerotoship.foldex.ui.imageedit.model.EditHistory
@@ -86,6 +88,9 @@ class ImageEditViewModel @Inject constructor(
     private var previewJob: Job? = null
     private var estimateJob: Job? = null
     private val previewMutex = Mutex()
+    private val selectionMutex = Mutex()
+    private var selectionJob: Job? = null
+    private var selectionRequest = 0L
 
     // ---- 読み込み ----
 
@@ -281,6 +286,7 @@ class ImageEditViewModel @Inject constructor(
 
     fun undo() {
         if (_state.value.saving) return
+        cancelAutomaticSelection()
         if (_state.value.mosaicDraft != null) { cancelMosaic(); return }
         val current = _state.value.document ?: return
         val previous = history.undo(current) ?: return
@@ -289,6 +295,7 @@ class ImageEditViewModel @Inject constructor(
 
     fun redo() {
         if (_state.value.saving) return
+        cancelAutomaticSelection()
         if (_state.value.mosaicDraft != null) return
         val current = _state.value.document ?: return
         val next = history.redo(current) ?: return
@@ -297,6 +304,7 @@ class ImageEditViewModel @Inject constructor(
 
     fun selectTool(tool: EditTool?) {
         if (_state.value.saving) return
+        cancelAutomaticSelection()
         cancelMosaic()
         _state.update { it.copy(activeTool = if (it.activeTool == tool) null else tool) }
         if (_state.value.activeTool == EditTool.RESIZE) requestEstimate()
@@ -411,6 +419,66 @@ class ImageEditViewModel @Inject constructor(
 
     // ---- 選択範囲 (v3) ----
 
+    fun selectObject(point: EditPoint, mode: SelectionMode) {
+        val state = _state.value
+        val doc = state.document ?: return
+        if (state.saving || state.mosaicDraft != null || state.previewing || state.previewFailed ||
+            state.activeTool != EditTool.SELECT
+        ) return
+        cancelAutomaticSelection()
+        val request = selectionRequest
+        val resolve = sourceResolver()
+        _state.update { it.copy(selectingObject = true) }
+        selectionJob = viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.Default) {
+                    selectionMutex.withLock {
+                        val context = currentCoroutineContext()
+                        context.ensureActive()
+                        // UI の Bitmap を推論側で解放しないよう、専用の縮小画像を作る。
+                        val bitmap = DocumentRenderer.render(doc, resolve, targetLongEdge = 1024) {
+                            context.ensureActive()
+                        } ?: return@withLock ObjectSelectionResult.Failed
+                        try {
+                            ObjectSelectionEngine.select(appContext, bitmap, point, doc.canvasSize) {
+                                context.ensureActive()
+                            }
+                        } finally {
+                            bitmap.recycle()
+                        }
+                    }
+                }
+                // 選択の解除・ツール変更・編集が先に進んでいれば古い結果を捨てる。
+                if (selectionRequest != request || _state.value.document !== doc) return@launch
+                when (result) {
+                    is ObjectSelectionResult.Success -> _state.update {
+                        it.copy(document = doc.copy(selection = doc.selection.applying(mode, result.selection)))
+                    }
+                    ObjectSelectionResult.Empty -> objectSelectionMessage(R.string.image_object_empty)
+                    ObjectSelectionResult.Unavailable -> objectSelectionMessage(R.string.image_object_unavailable)
+                    ObjectSelectionResult.Failed -> objectSelectionMessage(R.string.image_object_failed)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (selectionRequest == request) objectSelectionMessage(R.string.image_object_failed)
+            } finally {
+                if (selectionRequest == request) _state.update { it.copy(selectingObject = false) }
+            }
+        }
+    }
+
+    fun cancelAutomaticSelection() {
+        selectionRequest++
+        selectionJob?.cancel()
+        selectionJob = null
+        _state.update { it.copy(selectingObject = false) }
+    }
+
+    private fun objectSelectionMessage(message: Int) {
+        _events.trySend(ImageEditEvent.Message(appContext.getString(message)))
+    }
+
     /**
      * 指で描いた形を選択に反映する。**履歴には積まない。**
      *
@@ -441,6 +509,7 @@ class ImageEditViewModel @Inject constructor(
         val doc = _state.value.document ?: return
         val area = doc.selection?.takeUnless { it.isEmpty } ?: return
         if (_state.value.saving) return
+        cancelAutomaticSelection()
         _state.update {
             it.copy(mosaicDraft = Layer.Mosaic(
                 id = doc.freshLayerId("mosaic"),
@@ -510,6 +579,7 @@ class ImageEditViewModel @Inject constructor(
      */
     private fun updateSelection(next: SelectionSpec?) {
         if (_state.value.mosaicDraft != null || _state.value.saving) return
+        cancelAutomaticSelection()
         _state.update { st ->
             val doc = st.document ?: return@update st
             st.copy(document = doc.copy(selection = next))
@@ -524,6 +594,7 @@ class ImageEditViewModel @Inject constructor(
     }
 
     private fun applyDocument(doc: EditDocument, recordHistory: Boolean = true) {
+        cancelAutomaticSelection()
         _state.update {
             it.copy(
                 document = doc,
@@ -607,6 +678,7 @@ class ImageEditViewModel @Inject constructor(
         val doc = _state.value.document ?: return
         val file = sourceFile ?: return
         if (_state.value.saving || _state.value.mosaicDraft != null) return
+        cancelAutomaticSelection()
         _state.update { it.copy(saving = true) }
 
         viewModelScope.launch {
@@ -727,6 +799,7 @@ class ImageEditViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        selectionJob?.cancel()
         previewJob?.cancel()
         estimateJob?.cancel()
         imageSource?.release()
@@ -815,6 +888,7 @@ data class ImageEditUiState(
     val previewing: Boolean = false,
     val previewFailed: Boolean = false,
     val mosaicDraft: Layer.Mosaic? = null,
+    val selectingObject: Boolean = false,
     val activeTool: EditTool? = null,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,

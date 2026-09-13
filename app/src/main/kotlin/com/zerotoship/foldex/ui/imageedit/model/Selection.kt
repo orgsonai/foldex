@@ -90,6 +90,20 @@ sealed interface SelectionSpec {
         }
     }
 
+    /** 自動選択の閉じた輪郭。even-odd で穴と離れた領域をともに保持する。 */
+    data class Contours(val rings: List<List<EditPoint>>) : SelectionSpec {
+        private val polygons = rings.filter { it.size >= 3 }.map { Lasso(it) }
+        override val bounds: EditRect = if (polygons.isEmpty()) {
+            EditRect(0f, 0f, 0f, 0f)
+        } else {
+            val boxes = polygons.map { it.bounds }
+            EditRect(boxes.minOf { it.left }, boxes.minOf { it.top }, boxes.maxOf { it.right }, boxes.maxOf { it.bottom })
+        }
+
+        override fun contains(x: Float, y: Float): Boolean =
+            polygons.fold(false) { inside, ring -> inside xor ring.contains(x, y) }
+    }
+
     /**
      * 「追加 (＋)」「除外 (−)」の積み重ね。[parts] を**先頭から順に**適用する。
      *
@@ -141,6 +155,7 @@ enum class BoolOp { ADD, SUBTRACT }
 
 /** 指でなぞって作る形。 */
 enum class SelectionShape {
+    OBJECT,
     RECT,
     ELLIPSE,
 
@@ -192,6 +207,7 @@ fun SelectionSpec.mapPoints(transform: (EditPoint) -> EditPoint): SelectionSpec 
     is SelectionSpec.Rect -> SelectionSpec.Rect(rect.mapCorners(transform))
     is SelectionSpec.Ellipse -> SelectionSpec.Ellipse(rect.mapCorners(transform))
     is SelectionSpec.Lasso -> SelectionSpec.Lasso(points.map(transform))
+    is SelectionSpec.Contours -> SelectionSpec.Contours(rings.map { it.map(transform) })
     is SelectionSpec.Combined -> SelectionSpec.Combined(
         parts.map { it.copy(spec = it.spec.mapPoints(transform)) },
     )

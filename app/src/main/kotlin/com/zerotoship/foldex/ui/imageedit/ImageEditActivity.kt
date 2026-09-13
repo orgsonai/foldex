@@ -119,6 +119,8 @@ class ImageEditActivity : ComponentActivity() {
                     onMosaicPercent = viewModel::setMosaicPercent,
                     onCommitMosaic = viewModel::commitMosaic,
                     onCancelMosaic = viewModel::cancelMosaic,
+                    onSelectObject = viewModel::selectObject,
+                    onCancelObjectSelection = viewModel::cancelAutomaticSelection,
                     onSave = viewModel::save,
                 )
             }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,6 +51,8 @@ fun SelectionPanel(
     mode: SelectionMode,
     color: Int,
     hasSelection: Boolean,
+    selectingObject: Boolean,
+    onCancelObjectSelection: () -> Unit,
     onShapeChange: (SelectionShape) -> Unit,
     onModeChange: (SelectionMode) -> Unit,
     onColorChange: (Int) -> Unit,
@@ -68,6 +71,7 @@ fun SelectionPanel(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                ShapeChip(SelectionShape.OBJECT, shape, R.string.image_select_object, onShapeChange)
                 ShapeChip(SelectionShape.RECT, shape, R.string.image_select_rect, onShapeChange)
                 ShapeChip(SelectionShape.ELLIPSE, shape, R.string.image_select_ellipse, onShapeChange)
                 ShapeChip(SelectionShape.LASSO, shape, R.string.image_select_lasso, onShapeChange)
@@ -100,13 +104,13 @@ fun SelectionPanel(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onMosaic, enabled = hasSelection) {
+                TextButton(onClick = onMosaic, enabled = hasSelection && !selectingObject) {
                     Text(stringResource(R.string.image_mosaic))
                 }
-                TextButton(onClick = onFill, enabled = hasSelection) {
+                TextButton(onClick = onFill, enabled = hasSelection && !selectingObject) {
                     Text(stringResource(R.string.image_select_fill))
                 }
-                TextButton(onClick = onErase, enabled = hasSelection) {
+                TextButton(onClick = onErase, enabled = hasSelection && !selectingObject) {
                     Text(stringResource(R.string.image_select_erase))
                 }
                 TextButton(onClick = onInvert) {
@@ -117,9 +121,17 @@ fun SelectionPanel(
                 }
             }
 
-            if (!hasSelection) {
+            if (selectingObject) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(stringResource(R.string.image_object_selecting), modifier = Modifier.weight(1f))
+                    TextButton(onClick = onCancelObjectSelection) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            } else if (shape == SelectionShape.OBJECT || !hasSelection) {
                 Text(
-                    stringResource(R.string.image_select_hint),
+                    stringResource(if (shape == SelectionShape.OBJECT) R.string.image_object_hint else R.string.image_select_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

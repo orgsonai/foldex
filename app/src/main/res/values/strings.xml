@@ -996,6 +996,14 @@
     <string name="image_mosaic_hint">Adjust the blocks, check the selected area, then apply.</string>
     <string name="image_preview_failed">Could not update the preview. Reduce the edited area and try again.</string>
     <string name="image_select_rect">Rectangle</string>
+    <string name="image_select_object">Person / object</string>
+    <string name="license_litert_note">On-device AI inference — Google AI Edge / TensorFlow. Apache 2.0; includes third-party notices.</string>
+    <string name="license_magic_touch_note">Object selection model — Valentin Bazarevsky and Ben Hahn, Google. Apache 2.0.</string>
+    <string name="image_object_hint">Tap a person or object. Check the selection; use Add / Remove with the lasso to refine it.</string>
+    <string name="image_object_selecting">Selecting object…</string>
+    <string name="image_object_empty">Could not select that object. Tap inside it again, or use the lasso.</string>
+    <string name="image_object_failed">Automatic selection failed. Your previous selection is unchanged. Try again or use the lasso.</string>
+    <string name="image_object_unavailable">Automatic selection is unavailable on this device. You can use the rectangle or lasso.</string>
     <string name="image_select_ellipse">Ellipse</string>
     <string name="image_select_lasso">Lasso</string>
     <string name="image_select_new">New</string>

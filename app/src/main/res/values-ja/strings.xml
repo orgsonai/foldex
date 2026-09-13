@@ -987,6 +987,14 @@
     <string name="image_mosaic_hint">粒の大きさを調整し、隠したい範囲を確認して適用します。</string>
     <string name="image_preview_failed">プレビューを更新できませんでした。編集範囲を小さくして再試行してください。</string>
     <string name="image_select_rect">矩形</string>
+    <string name="image_select_object">人物・物</string>
+    <string name="license_litert_note">端末内AI推論 — Google AI Edge / TensorFlow。Apache 2.0。第三者の著作権告知を含みます。</string>
+    <string name="license_magic_touch_note">対象物の選択モデル — Valentin Bazarevsky / Ben Hahn（Google）。Apache 2.0。</string>
+    <string name="image_object_hint">人物や物をタップ。選択結果を確認し、必要なら投げ縄の「追加・除外」で調整できます。</string>
+    <string name="image_object_selecting">範囲を選択中…</string>
+    <string name="image_object_empty">対象を選択できませんでした。内側をもう一度タップするか、投げ縄で選択してください。</string>
+    <string name="image_object_failed">自動選択に失敗しました。元の選択範囲は保持しています。再試行するか投げ縄を使ってください。</string>
+    <string name="image_object_unavailable">この端末では自動選択を利用できません。矩形や投げ縄で選択できます。</string>
     <string name="image_select_ellipse">楕円</string>
     <string name="image_select_lasso">投げ縄</string>
     <string name="image_select_new">新規</string>

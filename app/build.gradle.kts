@@ -28,8 +28,8 @@ android {
         applicationId = "com.zerotoship.foldex"
         minSdk = 26
         targetSdk = 35
-        versionCode = 89
-        versionName = "1.7.0"
+        versionCode = 90
+        versionName = "1.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -84,6 +84,11 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    androidResources {
+        // ネイティブ推論からメモリマップするので圧縮しない。
+        noCompress += "tflite"
     }
 
     packaging {
@@ -159,6 +164,8 @@ dependencies {
 
     // 内蔵画像エディタ: 読み込み時の向き正規化と、保存時の EXIF 引き継ぎ。
     implementation(libs.exifinterface)
+    // 同梱版の CPU 推論。Play services や統計送信のランタイムを追加しない。
+    implementation(libs.litert)
 
     // Application.onCreate で SFTP (Apache MINA SSHD) より先に BC を登録するため app から直接参照する。
     implementation(libs.bouncycastle.bcprov)
