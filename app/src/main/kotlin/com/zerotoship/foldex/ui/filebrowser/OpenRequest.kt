@@ -50,6 +50,12 @@ sealed interface OpenRequest {
      */
     data class Archive(val localPath: String, val name: String) : OpenRequest
 
+    /**
+     * 動画編集 (試作) で開く。[localPaths] は端末内の実ファイルで、選んだ順に並べる。
+     * [names] は同じ順の表示名。
+     */
+    data class VideoEditor(val localPaths: List<String>, val names: List<String>) : OpenRequest
+
     /** APK をインストールする (ACTION_VIEW + package-archive MIME)。 */
     data class InstallApk(val uri: Uri) : OpenRequest
 }

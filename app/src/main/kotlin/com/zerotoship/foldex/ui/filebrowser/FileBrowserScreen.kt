@@ -220,6 +220,12 @@ fun FileBrowserScreen(
                         localZipPath = req.localPath,
                         name = req.name,
                     )
+                is OpenRequest.VideoEditor ->
+                    com.zerotoship.foldex.ui.videoedit.VideoEditActivity.intent(
+                        context = context,
+                        localPaths = req.localPaths,
+                        names = req.names,
+                    )
             }
             if (runCatching { context.startActivity(intent) }.isFailure) {
                 snackbarHostState.showSnackbar(resources.getString(R.string.file_no_opening_app))
@@ -549,6 +555,16 @@ fun FileBrowserScreen(
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
                         enabled = singleFile,
                         onClick = { viewModel.openSelectedExternally(); dismiss() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.sel_open_video_editor)) },
+                        leadingIcon = { Icon(Icons.Outlined.Movie, null) },
+                        enabled = sel.any {
+                            it.type == com.zerotoship.foldex.core.model.NodeType.FILE &&
+                                com.zerotoship.foldex.core.model.filetype.FileTypeRegistry.categorize(it.name) ==
+                                com.zerotoship.foldex.core.model.filetype.Category.VIDEO
+                        },
+                        onClick = { viewModel.openSelectedInVideoEditor(); dismiss() },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.action_properties)) },

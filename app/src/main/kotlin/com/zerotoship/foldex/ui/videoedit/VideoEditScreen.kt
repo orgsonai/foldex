@@ -1,0 +1,455 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Zero to Ship
+
+package com.zerotoship.foldex.ui.videoedit
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ZoomOutMap
+import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import com.zerotoship.foldex.R
+import com.zerotoship.foldex.ui.videoedit.model.AssetKind
+import com.zerotoship.foldex.ui.videoedit.model.ClipRef
+import com.zerotoship.foldex.ui.videoedit.model.FrameRate
+import com.zerotoship.foldex.ui.videoedit.model.VideoEditOps
+import com.zerotoship.foldex.ui.videoedit.model.formatClock
+import com.zerotoship.foldex.ui.videoedit.model.formatTimecode
+import com.zerotoship.foldex.ui.videoedit.panel.EditPanelHost
+import com.zerotoship.foldex.ui.videoedit.panel.ExportSheet
+import com.zerotoship.foldex.ui.videoedit.timeline.TimelineState
+import com.zerotoship.foldex.ui.videoedit.timeline.TimelineView
+
+/**
+ * 動画編集 (試作) の画面。
+ *
+ * 縦画面は上から: トップバー → プレビュー → 時刻と再生の行 → タイムライン → 設定パネル → 操作列。
+ * 横画面はプレビューの右に設定パネルと操作列を置き、タイムラインは下に全幅で置く。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VideoEditScreen(
+    state: VideoEditUiState,
+    actions: VideoEditActions,
+    snackbar: SnackbarHostState,
+    onAddMedia: (AssetKind, Long) -> Unit,
+    onClose: () -> Unit,
+    timeline: TimelineState = remember { TimelineState() },
+) {
+    val project = state.project
+    val durationUs = project.durationUs
+    var playing by remember { mutableStateOf(false) }
+    var showExport by remember { mutableStateOf(false) }
+    var showExit by remember { mutableStateOf(false) }
+
+    LaunchedEffect(durationUs) {
+        if (timeline.playheadUs > durationUs) timeline.playheadUs = durationUs
+    }
+    LaunchedEffect(state.loading) {
+        if (!state.loading) timeline.requestFitAll()
+    }
+    LaunchedEffect(timeline.scrubbing) {
+        if (timeline.scrubbing) playing = false
+    }
+    // 試作版の簡易再生: 再生位置だけを実時間で進める。音は出さず、映像は静止画を切り替える。
+    LaunchedEffect(playing) {
+        if (!playing) return@LaunchedEffect
+        if (timeline.playheadUs >= durationUs) timeline.playheadUs = 0L
+        val startUs = timeline.playheadUs
+        val startNanos = withFrameNanos { it }
+        while (playing) {
+            val elapsedUs = (withFrameNanos { it } - startNanos) / 1_000L
+            if (startUs + elapsedUs >= durationUs) {
+                timeline.playheadUs = durationUs
+                playing = false
+            } else {
+                timeline.playheadUs = startUs + elapsedUs
+            }
+        }
+    }
+
+    BackHandler {
+        when {
+            state.panel != null -> actions.openPanel(null)
+            state.selection != null -> actions.select(null)
+            state.modified -> showExit = true
+            else -> onClose()
+        }
+    }
+
+    @Composable
+    fun PreviewArea(modifier: Modifier) {
+        VideoPreview(
+            project = project,
+            timeline = timeline,
+            coarse = playing || timeline.scrubbing,
+            selectedTextId = (state.selection as? ClipRef.Text)?.id,
+            onSelectText = { id -> actions.select(ClipRef.Text(id)) },
+            onMoveText = { id, dx, dy ->
+                actions.preview { current ->
+                    VideoEditOps.updateText(current, id) { text ->
+                        text.copy(
+                            centerX = (text.centerX + dx).coerceIn(0f, 1f),
+                            centerY = (text.centerY + dy).coerceIn(0f, 1f),
+                        )
+                    }
+                }
+            },
+            onMoveTextEnd = actions::commit,
+            modifier = modifier,
+        )
+    }
+
+    @Composable
+    fun Transport() {
+        TransportBar(
+            timeline = timeline,
+            durationUs = durationUs,
+            rate = project.frameRate,
+            playing = playing,
+            onStep = { frames ->
+                playing = false
+                timeline.stepFrames(frames, project.frameRate, durationUs)
+            },
+            onPlayPause = { playing = !playing },
+            onFitAll = timeline::requestFitAll,
+        )
+    }
+
+    @Composable
+    fun Timeline() {
+        TimelineView(
+            project = project,
+            selection = state.selection,
+            state = timeline,
+            emptyHint = stringResource(R.string.video_edit_empty_hint),
+            onSelect = actions::select,
+            onPreview = actions::preview,
+            onCommit = actions::commit,
+            onEdit = actions::edit,
+            onSplitAtPlayhead = { actions.splitAt(timeline.playheadUs) },
+        )
+    }
+
+    @Composable
+    fun Panel() {
+        EditPanelHost(project = project, selection = state.selection, panel = state.panel, actions = actions)
+    }
+
+    @Composable
+    fun Toolbar() {
+        VideoEditToolbar(
+            selection = state.selection,
+            activePanel = state.panel,
+            enabled = !state.adding,
+            onAction = { action ->
+                val atUs = timeline.playheadUs
+                when (action) {
+                    ToolAction.ADD_VIDEO -> onAddMedia(AssetKind.VIDEO, atUs)
+                    ToolAction.ADD_IMAGE -> onAddMedia(AssetKind.IMAGE, atUs)
+                    ToolAction.ADD_AUDIO -> onAddMedia(AssetKind.AUDIO, atUs)
+                    ToolAction.ADD_TEXT -> actions.addText(atUs)
+                    ToolAction.CANVAS -> actions.openPanel(togglePanel(state.panel, EditPanel.CANVAS))
+                    ToolAction.SPLIT -> actions.splitAt(atUs)
+                    ToolAction.SPEED -> actions.openPanel(togglePanel(state.panel, EditPanel.SPEED))
+                    ToolAction.VOLUME -> actions.openPanel(togglePanel(state.panel, EditPanel.VOLUME))
+                    ToolAction.TRANSFORM -> actions.openPanel(togglePanel(state.panel, EditPanel.TRANSFORM))
+                    ToolAction.EDIT_TEXT -> actions.openPanel(togglePanel(state.panel, EditPanel.TEXT))
+                    ToolAction.DUPLICATE -> actions.duplicateSelected()
+                    ToolAction.DELETE -> actions.deleteSelected()
+                    ToolAction.DESELECT -> actions.select(null)
+                }
+            },
+        )
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(stringResource(R.string.video_edit_title), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!state.loading) {
+                            Text(
+                                stringResource(R.string.video_edit_summary, project.clipCount, formatClock(durationUs)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = { if (state.modified) showExit = true else onClose() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
+                    }
+                },
+                actions = {
+                    IconButton(onClick = actions::undo, enabled = state.canUndo) {
+                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.action_undo))
+                    }
+                    IconButton(onClick = actions::redo, enabled = state.canRedo) {
+                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.action_redo))
+                    }
+                    TextButton(
+                        onClick = {
+                            playing = false
+                            showExport = true
+                        },
+                        enabled = !state.loading && durationUs > 0L,
+                    ) { Text(stringResource(R.string.video_edit_export)) }
+                },
+            )
+        },
+    ) { padding ->
+        BoxWithConstraints(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding),
+        ) {
+            val landscape = maxWidth > maxHeight
+            val panelMaxHeight = maxHeight * 0.4f
+            Column(Modifier.fillMaxSize()) {
+                if (state.noticeVisible) PrototypeNotice(onDismiss = actions::dismissNotice)
+                when {
+                    state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                    landscape -> {
+                        Row(Modifier.weight(1f).fillMaxWidth()) {
+                            Column(Modifier.weight(1f).fillMaxHeight()) {
+                                PreviewArea(Modifier.weight(1f).fillMaxWidth())
+                                Transport()
+                            }
+                            VerticalDivider()
+                            Column(Modifier.width(320.dp).fillMaxHeight()) {
+                                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) { Panel() }
+                                HorizontalDivider()
+                                Toolbar()
+                            }
+                        }
+                        HorizontalDivider()
+                        Timeline()
+                    }
+                    else -> {
+                        PreviewArea(Modifier.weight(1f).fillMaxWidth())
+                        Transport()
+                        HorizontalDivider()
+                        Timeline()
+                        if (state.panel != null) {
+                            HorizontalDivider()
+                            Column(Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).verticalScroll(rememberScrollState())) {
+                                Panel()
+                            }
+                        }
+                        HorizontalDivider()
+                        Toolbar()
+                    }
+                }
+            }
+        }
+    }
+
+    if (showExport) {
+        ExportSheet(
+            settings = state.exportSettings,
+            project = project,
+            onChange = actions::setExportSettings,
+            onExport = actions::requestExport,
+            onDismiss = { showExport = false },
+        )
+    }
+
+    if (showExit) {
+        VideoEditExitDialog(
+            onDiscard = {
+                showExit = false
+                onClose()
+            },
+            onDismiss = { showExit = false },
+        )
+    }
+}
+
+private fun togglePanel(current: EditPanel?, target: EditPanel): EditPanel? = if (current == target) null else target
+
+@Composable
+private fun PrototypeNotice(onDismiss: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.video_edit_prototype_notice),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close))
+            }
+        }
+    }
+}
+
+/** 時刻と、1 コマ送り・再生・全体表示の行。 */
+@Composable
+internal fun TransportBar(
+    timeline: TimelineState,
+    durationUs: Long,
+    rate: FrameRate,
+    playing: Boolean,
+    onStep: (Int) -> Unit,
+    onPlayPause: () -> Unit,
+    onFitAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val hasContent = durationUs > 0L
+    Row(
+        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Timecode(timeline = timeline, durationUs = durationUs, rate = rate, modifier = Modifier.weight(1f))
+        IconButton(onClick = { onStep(-1) }, enabled = hasContent) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.video_edit_frame_back))
+        }
+        IconButton(onClick = onPlayPause, enabled = hasContent) {
+            if (playing) {
+                Icon(Icons.Default.Pause, contentDescription = stringResource(R.string.video_edit_pause))
+            } else {
+                Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.video_edit_play))
+            }
+        }
+        IconButton(onClick = { onStep(1) }, enabled = hasContent) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.video_edit_frame_forward))
+        }
+        IconButton(onClick = onFitAll, enabled = hasContent) {
+            Icon(Icons.Default.ZoomOutMap, contentDescription = stringResource(R.string.video_edit_fit_all))
+        }
+    }
+}
+
+/** 再生位置が変わったときに、この表示だけを描き直す。 */
+@Composable
+private fun Timecode(timeline: TimelineState, durationUs: Long, rate: FrameRate, modifier: Modifier = Modifier) {
+    Text(
+        text = formatTimecode(timeline.playheadUs, rate) + " / " + formatTimecode(durationUs, rate),
+        style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
+}
+
+/** 長い選択肢を同じ幅で縦に並べ、狭い画面や大きな文字でも崩れないようにする (画像編集と同じ作り)。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VideoEditExitDialog(onDiscard: () -> Unit, onDismiss: () -> Unit) {
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    stringResource(R.string.video_edit_exit_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(bottom = 8.dp).semantics { heading() },
+                )
+                Text(
+                    stringResource(R.string.video_edit_exit_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                val actionModifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                Button(onClick = onDismiss, modifier = actionModifier, shape = MaterialTheme.shapes.small) {
+                    Text(stringResource(R.string.video_edit_exit_back), Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                }
+                TextButton(
+                    onClick = onDiscard,
+                    modifier = actionModifier,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text(stringResource(R.string.video_edit_exit_discard), Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                }
+            }
+        }
+    }
+}
+
+@Preview(name = "Transport", showBackground = true, widthDp = 360, locale = "ja")
+@Composable
+private fun TransportBarPreview() {
+    MaterialTheme {
+        TransportBar(
+            timeline = remember { TimelineState() },
+            durationUs = 90_000_000L,
+            rate = FrameRate.FPS_30,
+            playing = false,
+            onStep = {},
+            onPlayPause = {},
+            onFitAll = {},
+        )
+    }
+}
+
+@Preview(name = "Exit dialog large text", showBackground = true, widthDp = 320, heightDp = 480, fontScale = 2f, locale = "ja")
+@Composable
+private fun VideoEditExitDialogPreview() {
+    MaterialTheme { VideoEditExitDialog(onDiscard = {}, onDismiss = {}) }
+}

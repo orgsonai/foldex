@@ -1665,6 +1665,31 @@ class FileBrowserViewModel @Inject constructor(
         open(target, name)
     }
 
+    /**
+     * 選んだ順に、端末内の動画・画像・音声を動画編集 (試作) へ渡す。
+     * NAS・SAF の素材は編集前の取り込み (設計書 §10) が未実装のため、試作版では除く。
+     */
+    fun openSelectedInVideoEditor() {
+        val current = _state.value
+        val byUri = current.files.associateBy { it.uri.toStorageString() }
+        val allowed = setOf(Category.VIDEO, Category.IMAGE, Category.AUDIO)
+        val media = current.selectedUris.mapNotNull { byUri[it] }.filter { node ->
+            node.type == NodeType.FILE && FileTypeRegistry.categorize(node.name) in allowed
+        }
+        val local = media.filter { it.uri is FileUri.Local }
+        if (local.none { FileTypeRegistry.categorize(it.name) == Category.VIDEO }) {
+            emit(SnackbarEvent(text(R.string.video_edit_open_no_local_video)))
+            return
+        }
+        if (local.size < media.size) emit(SnackbarEvent(text(R.string.video_edit_open_local_only)))
+        val paths = local.map { (it.uri as FileUri.Local).absolutePath }
+        val names = local.map { it.name }
+        viewModelScope.launch {
+            _openRequests.send(OpenRequest.VideoEditor(localPaths = paths, names = names))
+            clearSelection()
+        }
+    }
+
     /** 選択中ノードを「リモートはローカルにDLしてから」FileProvider 経由で他アプリに共有する。 */
     fun shareSelected() {
         val nodes = _state.value.selectedNodes.filter { it.type == NodeType.FILE }
