@@ -65,6 +65,7 @@ private val DEPENDENCIES = listOf(
     LicenseEntry("Apache Commons Net", null, "Apache-2.0", R.string.license_ftp_client_note),
     LicenseEntry("Apache MINA SSHD", null, "Apache-2.0", R.string.license_sftp_note),
     LicenseEntry("Apache FtpServer", null, "Apache-2.0", R.string.license_ftp_server_note),
+    LicenseEntry("AndroidX Media3 1.11.1", null, "Apache-2.0", R.string.license_media3_note),
     LicenseEntry("XZ for Java", null, null, R.string.license_xz_note),
     LicenseEntry("LiteRT 1.4.2", null, "Apache-2.0", R.string.license_litert_note, noticeAsset = "LiteRT"),
     LicenseEntry("MagicTouch", null, "Apache-2.0", R.string.license_magic_touch_note, noticeAsset = "MagicTouch"),

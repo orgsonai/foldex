@@ -22,14 +22,15 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.zerotoship.foldex"
-    compileSdk = 35
+    // Media3 1.10 以降が compileSdk 36 を要求する。targetSdk は 35 のまま (実行時の挙動は変えない)。
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.zerotoship.foldex"
         minSdk = 26
         targetSdk = 35
-        versionCode = 99
-        versionName = "1.10.1"
+        versionCode = 100
+        versionName = "1.10.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -146,6 +147,9 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.session)
+    // 動画編集の書き出し (Transformer) と、クリップ・合成の映像効果。
+    implementation(libs.media3.transformer)
+    implementation(libs.media3.effect)
     implementation(libs.markwon.core)
     implementation(libs.markwon.ext.tables)
     implementation(libs.markwon.ext.strikethrough)

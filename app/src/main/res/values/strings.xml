@@ -1003,6 +1003,7 @@
     <string name="image_select_object">Person / object</string>
     <string name="license_litert_note">On-device AI inference — Google AI Edge / TensorFlow. Apache 2.0; includes third-party notices.</string>
     <string name="license_magic_touch_note">Object selection model — Valentin Bazarevsky and Ben Hahn, Google. Apache 2.0.</string>
+    <string name="license_media3_note">Video and audio playback, video export — Apache License 2.0</string>
     <string name="image_object_hint">Tap a person or object. Check the selection; use Add / Remove with the lasso to refine it.</string>
     <string name="image_object_selecting">Selecting object…</string>
     <string name="image_object_empty">Could not select that object. Tap inside it again, or use the lasso.</string>
