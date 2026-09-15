@@ -19,7 +19,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -34,8 +36,8 @@ import com.zerotoship.foldex.ui.videoedit.model.AssetKind
 import com.zerotoship.foldex.ui.videoedit.model.ExportPreset
 import com.zerotoship.foldex.ui.videoedit.model.VideoSaveNaming
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 /**
  * 動画編集 (試作) の単独 Activity。
@@ -71,7 +73,8 @@ class VideoEditActivity : ComponentActivity() {
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 val snackbar = remember { SnackbarHostState() }
                 // 音声を置く位置。ファイル選択から戻るまで覚えておく。
-                var pendingAddAtUs by remember { mutableLongStateOf(0L) }
+                var pendingAddAtUs by rememberSaveable { mutableLongStateOf(0L) }
+                var pendingLayer by rememberSaveable { mutableStateOf(false) }
                 val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
                     uris.forEach { uri ->
                         try {
@@ -80,7 +83,7 @@ class VideoEditActivity : ComponentActivity() {
                             // 永続的な権限を出さない提供元がある。この画面を開いている間は読める。
                         }
                     }
-                    viewModel.addSources(uris.map { it.toString() }, pendingAddAtUs)
+                    viewModel.addSources(uris.map { it.toString() }, pendingAddAtUs, pendingLayer)
                 }
                 // 「場所を選んで書き出す」。形式ごとに MIME が違うので、設定が変わったら登録し直す。
                 val exportMime = VideoSaveNaming.mimeType(state.exportSettings.preset == ExportPreset.AUDIO_ONLY)
@@ -118,7 +121,8 @@ class VideoEditActivity : ComponentActivity() {
                     state = state,
                     actions = viewModel,
                     snackbar = snackbar,
-                    onAddMedia = { kind, atUs ->
+                    onAddMedia = { kind, atUs, asLayer ->
+                        pendingLayer = asLayer
                         pendingAddAtUs = atUs
                         val mime = when (kind) {
                             AssetKind.VIDEO -> "video/*"

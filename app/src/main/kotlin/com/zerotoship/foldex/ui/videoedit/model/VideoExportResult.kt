@@ -74,9 +74,10 @@ object VideoSaveNaming {
     fun candidate(baseName: String, extension: String, number: Int): String =
         if (number <= 1) "$baseName$EDITED_SUFFIX.$extension" else "$baseName$EDITED_SUFFIX$number.$extension"
 
-    /** 書き出し名の元にする素材。最初のメインクリップ、無ければ最初の音声クリップ。 */
+    /** 書き出し名の元にする素材。最初のメイン、音声、表示中レイヤーの順に探す。 */
     fun sourceAsset(project: VideoProject): MediaAsset? =
-        (project.mainTrack.firstOrNull()?.assetId ?: project.audioTrack.firstOrNull()?.assetId)?.let { project.assets[it] }
+        (project.mainTrack.firstOrNull()?.assetId ?: project.audioTrack.firstOrNull()?.assetId
+            ?: project.layers.firstOrNull { it.visible }?.clip?.assetId)?.let { project.assets[it] }
 
     /** 「場所を選んで書き出す」で最初に出す名前。 */
     fun suggestedName(project: VideoProject, audioOnly: Boolean): String =

@@ -3,7 +3,10 @@
 
 package com.zerotoship.foldex.ui.videoedit
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
@@ -40,19 +43,22 @@ class TimelineGesturesInstrumentedTest {
     private var selection by mutableStateOf<ClipRef?>(null)
     private val timeline = TimelineState()
     private var density = 1f
+    private val verticalScroll = ScrollState(0)
     private var edits = 0
     private var gestureBase: VideoProject? = null
 
-    private fun show(firstSeconds: Long = 10, text: Boolean = false, selected: Boolean = true) {
+    private fun show(firstSeconds: Long = 10, text: Boolean = false, selected: Boolean = true, layer: Boolean = false, scrollRows: Boolean = false) {
         val asset = MediaAsset("video", AssetKind.VIDEO, "/missing-test-video.mp4", "test.mp4", 12 * S)
         project = VideoProject(assets = mapOf(asset.id to asset), mainTrack = listOf(
             MainClip("a", asset.id, 0L, firstSeconds * S), MainClip("b", asset.id, 0L, 2 * S),
         ), texts = if (text) listOf(TextClip("text", S, 2 * S, "A"), TextClip("next", 5 * S, S, "B")) else emptyList())
-        selection = if (!selected) null else if (text) ClipRef.Text("text") else ClipRef.Main("a")
+        if (layer) project = project.copy(layers = listOf(LayerClip(MainClip("layer", asset.id, 2 * S, 4 * S), S),
+            LayerClip(MainClip("top", asset.id, 0, S), 5 * S)))
+        selection = if (layer) ClipRef.Layer("layer") else if (!selected) null else if (text) ClipRef.Text("text") else ClipRef.Main("a")
         compose.setContent {
             density = LocalDensity.current.density
             MaterialTheme(colorScheme = lightColorScheme(primary = Color.Magenta)) {
-                Box(Modifier.width(400.dp)) {
+                Column(Modifier.width(400.dp).then(if (scrollRows) Modifier.height(130.dp).verticalScroll(verticalScroll) else Modifier)) {
                     TimelineView(project, selection, timeline, "", onSelect = { selection = it },
                         onPreview = { transform ->
                             if (gestureBase == null) gestureBase = project
@@ -161,4 +167,60 @@ class TimelineGesturesInstrumentedTest {
         }
         compose.runOnIdle { assertEquals(original, project); assertEquals(0, edits); assertFalse(timeline.scrubbing) }
     }
+
+    @Test
+    fun layerBodySnapsToAnotherLayersEdgeWithoutMovingMainTrack() {
+        show(layer = true)
+        val main = project.mainTrack
+        // main=26..82dp, top layer=86..122dp, selected lower layer=126..162dp.
+        node.performTouchInput {
+            down(Offset(centerX + dp(30f), dp(144f)))
+            moveTo(Offset(centerX + dp(59f), dp(144f)), delayMillis = 100)
+            up()
+        }
+        compose.runOnIdle {
+            assertEquals(3 * S, project.layers.first().startUs)
+            assertEquals(5 * S, project.layers.first().endUs)
+            assertEquals(main, project.mainTrack)
+            assertEquals(1, edits)
+        }
+    }
+
+    @Test
+    fun layerLeftTrimKeepsItsRightEdgeAndOtherTracksStill() {
+        show(layer = true)
+        val before = project
+        node.performTouchInput {
+            down(Offset(centerX + dp(8f), dp(144f)))
+            moveTo(Offset(centerX + dp(25f), dp(144f)), delayMillis = 100)
+            up()
+        }
+        compose.runOnIdle {
+            assertTrue(project.layers.first().startUs > before.layers.first().startUs)
+            assertEquals(before.layers.first().endUs, project.layers.first().endUs)
+            assertEquals(before.layers.last(), project.layers.last())
+            assertEquals(before.mainTrack, project.mainTrack)
+            assertEquals(0L, timeline.playheadUs)
+        }
+    }
+
+
+    @Test
+    fun verticalDragOverSelectedLayerScrollsRowsWithoutEditingTime() {
+        show(layer = true, scrollRows = true)
+        val before = project
+        compose.runOnIdle { selection = ClipRef.Layer("top") }
+        node.performTouchInput {
+            down(Offset(centerX + dp(82.5f), dp(104f)))
+            moveTo(Offset(centerX + dp(82.5f), dp(44f)), delayMillis = 200)
+            up()
+        }
+        compose.runOnIdle {
+            assertTrue(verticalScroll.value > 0)
+            assertEquals(before, project)
+            assertEquals(0L, timeline.playheadUs)
+            assertEquals(0, edits)
+        }
+    }
+
 }

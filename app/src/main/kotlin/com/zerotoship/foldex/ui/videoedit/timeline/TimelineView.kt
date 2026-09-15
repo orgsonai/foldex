@@ -73,20 +73,21 @@ import com.zerotoship.foldex.ui.videoedit.model.AssetKind
 import com.zerotoship.foldex.ui.videoedit.model.AudioClip
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 import com.zerotoship.foldex.ui.videoedit.model.FrameRate
+import com.zerotoship.foldex.ui.videoedit.model.LayerEditOps
 import com.zerotoship.foldex.ui.videoedit.model.US_PER_SECOND
 import com.zerotoship.foldex.ui.videoedit.model.VideoEditOps
 import com.zerotoship.foldex.ui.videoedit.model.VideoProject
 import com.zerotoship.foldex.ui.videoedit.model.formatClock
 import com.zerotoship.foldex.ui.videoedit.model.formatTimecode
 import com.zerotoship.foldex.ui.videoedit.sourceModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 private val RULER_HEIGHT = 22.dp
 private val MAIN_HEIGHT = 56.dp
@@ -132,7 +133,7 @@ fun TimelineView(
     val density = LocalDensity.current
     val hasText = project.texts.isNotEmpty()
     val hasAudio = project.audioTrack.isNotEmpty()
-    val lanes = remember(density, hasText, hasAudio) { density.lanesFor(hasText, hasAudio) }
+    val lanes = remember(density, hasText, hasAudio, project.layers.map { it.id }) { density.lanesFor(hasText, hasAudio, project.layers.map { it.id }) }
     val heightDp = with(density) { lanes.height.toDp() }
     var widthPx by remember { mutableFloatStateOf(0f) }
     var reorder by remember { mutableStateOf<ReorderDrag?>(null) }
@@ -262,6 +263,7 @@ fun TimelineView(
                 drawReorder(project, layout, lanes, colors, measurer, labelStyle, drag)
             }
             if (lanes.hasText) drawTextClips(project, layout, lanes, colors, measurer, labelStyle)
+            drawLayerClips(project, layout, lanes, colors, measurer, labelStyle)
             if (lanes.hasAudio) drawAudioClips(project, layout, lanes, colors, measurer, labelStyle)
             if (drag == null) drawSelection(project, selection, layout, lanes, colors, startTrim)
             if (project.durationUs == 0L) {
@@ -294,22 +296,30 @@ private data class Lanes(
     val audioTop: Float,
     val audioBottom: Float,
     val height: Float,
+    val layers: Map<String, Pair<Float, Float>>,
 ) {
     val hasText: Boolean get() = textBottom > textTop
     val hasAudio: Boolean get() = audioBottom > audioTop
 }
 
 /** 文字と音声の段は、クリップがあるときだけ作る。 */
-private fun Density.lanesFor(hasText: Boolean, hasAudio: Boolean): Lanes {
+private fun Density.lanesFor(hasText: Boolean, hasAudio: Boolean, layerIds: List<String>): Lanes {
     val gap = LANE_GAP.toPx()
     val rulerBottom = RULER_HEIGHT.toPx()
     val mainTop = rulerBottom + gap
     val mainBottom = mainTop + MAIN_HEIGHT.toPx()
-    val textTop = if (hasText) mainBottom + gap else mainBottom
+    var layerBottom = mainBottom
+    // 手前のレイヤーを上に表示し、重なり順が分かるようにする。
+    val layerRows = layerIds.asReversed().associateWith {
+        val top = layerBottom + gap
+        layerBottom = top + AUDIO_HEIGHT.toPx()
+        top to layerBottom
+    }
+    val textTop = if (hasText) layerBottom + gap else layerBottom
     val textBottom = if (hasText) textTop + TEXT_HEIGHT.toPx() else textTop
     val audioTop = if (hasAudio) textBottom + gap else textBottom
     val audioBottom = if (hasAudio) audioTop + AUDIO_HEIGHT.toPx() else audioTop
-    return Lanes(rulerBottom, mainTop, mainBottom, textTop, textBottom, audioTop, audioBottom, audioBottom + gap)
+    return Lanes(rulerBottom, mainTop, mainBottom, textTop, textBottom, audioTop, audioBottom, audioBottom + gap, layerRows)
 }
 
 private data class ReorderDrag(val from: Int, val fingerX: Float, val target: Int, val grabOffsetUs: Long)
@@ -678,11 +688,13 @@ private fun DrawScope.drawSelection(
     val top = when (ref) {
         is ClipRef.Main -> lanes.mainTop
         is ClipRef.Text -> lanes.textTop
+        is ClipRef.Layer -> lanes.layers[ref.id]?.first ?: return
         is ClipRef.Audio -> lanes.audioTop
     }
     val bottom = when (ref) {
         is ClipRef.Main -> lanes.mainBottom
         is ClipRef.Text -> lanes.textBottom
+        is ClipRef.Layer -> lanes.layers[ref.id]?.second ?: return
         is ClipRef.Audio -> lanes.audioBottom
     }
     val left = layout.xOf(startUs)
@@ -735,12 +747,14 @@ private fun hitTest(
     val inMain = y >= lanes.mainTop && y <= lanes.mainBottom
     val inText = lanes.hasText && y >= lanes.textTop && y <= lanes.textBottom
     val inAudio = lanes.hasAudio && y >= lanes.audioTop && y <= lanes.audioBottom
+    val layerId = lanes.layers.entries.firstOrNull { y >= it.value.first && y <= it.value.second }?.key
     // 選択中クリップの端 (トリム用の取っ手) を最優先で当てる。短いクリップでは中央で左右を分ける。
     if (selection != null) {
         val range = timeRangeOf(project, selection)
         val inLane = when (selection) {
             is ClipRef.Main -> inMain
             is ClipRef.Text -> inText
+            is ClipRef.Layer -> layerId == selection.id
             is ClipRef.Audio -> inAudio
         }
         if (range != null && inLane) {
@@ -755,6 +769,8 @@ private fun hitTest(
             val found = if (timeUs >= 0L && timeUs < project.mainDurationUs) project.mainClipAt(timeUs) else null
             found?.let { (index, _) -> Hit.Clip(ClipRef.Main(project.mainTrack[index].id)) } ?: Hit.Empty
         }
+        layerId != null -> project.layers.firstOrNull { it.id == layerId && timeUs >= it.startUs && timeUs < it.endUs }
+            ?.let { Hit.Clip(ClipRef.Layer(it.id)) } ?: Hit.Empty
         inText -> project.texts.lastOrNull { timeUs >= it.startUs && timeUs < it.endUs }?.let { Hit.Clip(ClipRef.Text(it.id)) } ?: Hit.Empty
         inAudio -> project.audioTrack.lastOrNull { timeUs >= it.startUs && timeUs < it.endUs }?.let { Hit.Clip(ClipRef.Audio(it.id)) } ?: Hit.Empty
         else -> Hit.Empty
@@ -771,6 +787,7 @@ private fun timeRangeOf(project: VideoProject, ref: ClipRef, startTrim: MainStar
             start to start + project.mainTrack[index].durationUs
         }
     }
+    is ClipRef.Layer -> project.layers.firstOrNull { it.id == ref.id }?.let { it.startUs to it.endUs }
     is ClipRef.Text -> project.texts.firstOrNull { it.id == ref.id }?.let { it.startUs to it.endUs }
     is ClipRef.Audio -> project.audioTrack.firstOrNull { it.id == ref.id }?.let { it.startUs to it.endUs }
 }
@@ -800,6 +817,9 @@ private fun snapTargets(project: VideoProject, playheadUs: Long, exclude: ClipRe
             targets.add(it.endUs)
         }
     }
+    project.layers.forEach {
+        if (it.id != exclude.id) { targets.add(it.startUs); targets.add(it.endUs) }
+    }
     return targets
 }
 
@@ -811,10 +831,6 @@ private suspend fun AwaitPointerEventScope.timelineGesture(ctx: TimelineGestureC
     val project = ctx.project()
     val layout = TimelineLayout(size.width.toFloat(), ctx.state.playheadUs, ctx.state.pxPerSecond)
     val hit = hitTest(down.position, project, layout, ctx.lanes, ctx.selection(), HANDLE_TOUCH.toPx())
-    if (hit is Hit.Handle) {
-        trimClip(ctx, down, hit, project, layout)
-        return
-    }
     // 長押し・移動・指を離す・2 本目の指、のどれが先に起きたかで操作を決める。
     val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
         var result: Early? = null
@@ -834,6 +850,14 @@ private suspend fun AwaitPointerEventScope.timelineGesture(ctx: TimelineGestureC
         Early.RELEASED -> tap(ctx, hit, down.position, layout)
         Early.MULTI -> pinch(ctx)
         Early.MOVED -> {
+            val change = currentEvent.changes.firstOrNull { it.id == down.id } ?: return
+            val delta = change.position - down.position
+            // 縦方向は親の段スクロールへ渡す。クリップ選択中でも全レイヤーにたどり着ける。
+            if (abs(delta.y) > abs(delta.x)) return
+            if (hit is Hit.Handle) {
+                trimClip(ctx, down, hit, project, layout)
+                return
+            }
             val ref = (hit as? Hit.Clip)?.ref
             when {
                 ref == null || ref != ctx.selection() -> scroll(ctx, down)
@@ -842,6 +866,10 @@ private suspend fun AwaitPointerEventScope.timelineGesture(ctx: TimelineGestureC
             }
         }
         null -> {
+            if (hit is Hit.Handle) {
+                trimClip(ctx, down, hit, project, layout)
+                return
+            }
             val ref = (hit as? Hit.Clip)?.ref
             if (ref == null) {
                 scroll(ctx, down)
@@ -923,13 +951,14 @@ private suspend fun AwaitPointerEventScope.trimClip(
     val mainClip = project.mainTrack.getOrNull(mainIndex)
     val mainStart = if (mainIndex >= 0) project.mainStartUs(mainIndex) else 0L
     val text = if (ref is ClipRef.Text) project.texts.firstOrNull { it.id == ref.id } else null
+    val layer = if (ref is ClipRef.Layer) project.layers.firstOrNull { it.id == ref.id } else null
     val audio = if (ref is ClipRef.Audio) project.audioTrack.firstOrNull { it.id == ref.id } else null
     var snappedTarget: Long? = null
     var released = false
     ctx.state.scrubbing = true
     try {
+        var event = currentEvent
         while (true) {
-            val event = awaitPointerEvent()
             if (event.changes.count { it.pressed } >= 2) {
                 ctx.onPreview { project }
                 ctx.onStartTrim(null)
@@ -972,6 +1001,19 @@ private suspend fun AwaitPointerEventScope.trimClip(
                 ctx.onPreview {
                     if (hit.start) VideoEditOps.trimTextStart(project, text.id, finalEdge) else VideoEditOps.trimTextEnd(project, text.id, finalEdge)
                 }
+            } else if (layer != null) {
+                val clip = layer.clip
+                val finalEdge = if (hit.start) {
+                    snappedEdge(layer.startUs + deltaUs,
+                        maxOf(0L, layer.startUs - (clip.sourceInUs / clip.speed).roundToLong()),
+                        layer.endUs - project.frameRate.frameDurationUs)
+                } else {
+                    snappedEdge(layer.endUs + deltaUs, layer.startUs + project.frameRate.frameDurationUs,
+                        layer.startUs + ((VideoEditOps.sourceLimitUs(project, clip.assetId) - clip.sourceInUs) / clip.speed).roundToLong())
+                }
+                ctx.onPreview {
+                    if (hit.start) LayerEditOps.trimStart(project, layer.id, finalEdge) else LayerEditOps.trimEnd(project, layer.id, finalEdge)
+                }
             } else if (audio != null) {
                 val finalEdge = if (hit.start) {
                     snappedEdge(audio.startUs + deltaUs, maxOf(0L, audio.startUs - audio.sourceInUs), audio.endUs - project.frameRate.frameDurationUs)
@@ -987,6 +1029,7 @@ private suspend fun AwaitPointerEventScope.trimClip(
             snappedTarget = target
             ctx.onSnap(target)
             change.consume()
+            event = awaitPointerEvent()
         }
     } finally {
         if (!released) ctx.onPreview { project }
@@ -1005,9 +1048,10 @@ private suspend fun AwaitPointerEventScope.moveClip(
     layout: TimelineLayout,
 ) {
     val text = if (ref is ClipRef.Text) project.texts.firstOrNull { it.id == ref.id } else null
+    val layer = if (ref is ClipRef.Layer) project.layers.firstOrNull { it.id == ref.id } else null
     val audio = if (ref is ClipRef.Audio) project.audioTrack.firstOrNull { it.id == ref.id } else null
-    val baseStart = text?.startUs ?: audio?.startUs ?: return
-    val length = text?.durationUs ?: audio?.durationUs ?: return
+    val baseStart = text?.startUs ?: audio?.startUs ?: layer?.startUs ?: return
+    val length = text?.durationUs ?: audio?.durationUs ?: layer?.durationUs ?: return
     ctx.haptic(HapticFeedbackType.LongPress)
     ctx.onSelect(ref)
     val targets = snapTargets(project, ctx.state.playheadUs, ref)
@@ -1035,7 +1079,11 @@ private suspend fun AwaitPointerEventScope.moveClip(
             snappedTarget = snap.targetUs
             ctx.onSnap(snap.targetUs)
             ctx.onPreview {
-                if (text != null) VideoEditOps.moveText(project, text.id, snap.startUs) else VideoEditOps.moveAudio(project, ref.id, snap.startUs)
+                when {
+                    text != null -> VideoEditOps.moveText(project, text.id, snap.startUs)
+                    layer != null -> LayerEditOps.move(project, layer.id, snap.startUs)
+                    else -> VideoEditOps.moveAudio(project, ref.id, snap.startUs)
+                }
             }
             change.consume()
             event = awaitPointerEvent()
@@ -1118,5 +1166,24 @@ private suspend fun flingPlayhead(state: TimelineState, initialVelocityPx: Float
         }
     } finally {
         state.scrubbing = false
+    }
+}
+
+private fun DrawScope.drawLayerClips(
+    project: VideoProject, layout: TimelineLayout, lanes: Lanes, colors: TimelineColors,
+    measurer: TextMeasurer, style: TextStyle,
+) {
+    project.layers.forEachIndexed { index, layer ->
+        val (top, bottom) = lanes.layers.getValue(layer.id)
+        drawRect(colors.lane, Offset(0f, top), Size(size.width, bottom - top))
+        val left = layout.xOf(layer.startUs)
+        val right = layout.xOf(layer.endUs)
+        if (right < 0f || left > size.width) return@forEachIndexed
+        val width = max(right - left, 1f)
+        drawRect(colors.mainClip.copy(alpha = if (layer.visible) 1f else 0.4f), Offset(left, top), Size(width, bottom - top))
+        val clip = layer.clip
+        val label = "${index + 1} · ${project.assets[clip.assetId]?.name.orEmpty()} · ${formatTimecode(clip.sourceInUs, project.frameRate)}–${formatTimecode(clip.sourceOutUs, project.frameRate)}"
+        drawClipLabel(label, left, top, width, bottom - top, colors.onMainClip, measurer, style)
+        if (!layer.visible) drawLine(colors.onMainClip.copy(alpha = 0.5f), Offset(left, bottom), Offset(right, top), 1.dp.toPx())
     }
 }

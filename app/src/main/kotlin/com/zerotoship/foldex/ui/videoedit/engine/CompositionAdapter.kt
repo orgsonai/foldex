@@ -8,17 +8,22 @@ import android.os.Build
 import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.OverlaySettings
 import androidx.media3.common.SpeedParameters
+import androidx.media3.common.VideoCompositorSettings
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.audio.SpeedProvider
 import androidx.media3.common.audio.ToInt16PcmAudioProcessor
 import androidx.media3.common.util.ExperimentalApi
+import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.ScaleAndRotateTransformation
+import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -35,26 +40,52 @@ import com.zerotoship.foldex.ui.videoedit.plan.PlannedMedia
 import com.zerotoship.foldex.ui.videoedit.plan.PlannedText
 import com.zerotoship.foldex.ui.videoedit.plan.RenderPlan
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * [RenderPlan] を Media3 の [Composition] に変換する。Media3 の型を扱うのは engine/ だけにする (設計書 §3)。
  *
- * 段の構成: メイン (映像と音声) → 音声トラックの段。文字は合成全体の効果として最後に重ねる。
+ * 段の構成: 透明な時計 → 手前から奥のレイヤー → メイン → 音声。文字は合成全体へ最後に重ねる。
  * 文字の Bitmap は書き出しごとに作り直す。Media3 が書き出しの終わりに重ねの資源を解放するため、使い回さない。
  */
 @androidx.annotation.OptIn(UnstableApi::class, ExperimentalApi::class)
 internal object CompositionAdapter {
 
+    private val VIDEO = setOf(C.TRACK_TYPE_VIDEO)
     private val AUDIO = setOf(C.TRACK_TYPE_AUDIO)
     private val AUDIO_AND_VIDEO = setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO)
 
     fun build(plan: RenderPlan): Composition {
         val output = plan.output
+        // Media3 は先の段ほど手前。透明な静止画を時計にし、最前面の短い動画の fps / 長さに出力を引きずらせない。
+        val layers = plan.layers.asReversed()
         val sequences = buildList {
+            if (!output.audioOnly && layers.isNotEmpty()) add(clockSequence(plan))
+            layers.forEach { layer ->
+                val layerWidth = (output.width * layer.widthFraction).roundToInt().coerceAtLeast(2)
+                val layerHeight = (layerWidth / layer.aspectRatio).roundToInt().coerceAtLeast(2)
+                val layerOutput = if (output.audioOnly) output else output.copy(width = layerWidth, height = layerHeight)
+                add(sequence(layer.items(plan.durationUs), layerOutput, if (output.audioOnly) AUDIO else AUDIO_AND_VIDEO))
+            }
             if (plan.main.isNotEmpty()) add(sequence(plan.main, output, if (output.audioOnly) AUDIO else AUDIO_AND_VIDEO))
             plan.audioLanes.forEach { lane -> add(sequence(lane, output, AUDIO)) }
         }
         val builder = Composition.Builder(sequences)
+        if (!output.audioOnly && layers.isNotEmpty()) {
+            builder.setVideoCompositorSettings(object : VideoCompositorSettings {
+                override fun getOutputSize(inputSizes: MutableList<Size>): Size = Size(output.width, output.height)
+
+                override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
+                    if (inputId == 0) return StaticOverlaySettings.Builder().setAlphaScale(0f).build()
+                    val layer = layers.getOrNull(inputId - 1) ?: return StaticOverlaySettings.Builder().build()
+                    val alpha = if (presentationTimeUs >= layer.startUs && presentationTimeUs < layer.endUs) layer.opacity else 0f
+                    return StaticOverlaySettings.Builder()
+                        .setBackgroundFrameAnchor(layer.centerX * 2f - 1f, 1f - layer.centerY * 2f)
+                        .setAlphaScale(alpha)
+                        .build()
+                }
+            })
+        }
         if (!output.audioOnly && plan.texts.isNotEmpty()) {
             val overlays = plan.texts.map<PlannedText, TextureOverlay> { TimedTextOverlay(it, output.width, output.height) }
             builder.setEffects(Effects(emptyList<AudioProcessor>(), listOf<Effect>(OverlayEffect(overlays))))
@@ -64,6 +95,14 @@ internal object CompositionAdapter {
             builder.setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
         }
         return builder.build()
+    }
+
+    private fun clockSequence(plan: RenderPlan): EditedMediaItemSequence {
+        val item = MediaItem.Builder().setUri("asset:///video_edit_clock.png")
+            .setMimeType(MimeTypes.IMAGE_PNG).setImageDurationMs((plan.durationUs + 999L) / 1000L).build()
+        return EditedMediaItemSequence.Builder(VIDEO).addItem(
+            EditedMediaItem.Builder(item).setDurationUs(plan.durationUs).setFrameRate(plan.output.frameRate).build(),
+        ).build()
     }
 
     private fun sequence(items: List<PlannedItem>, output: OutputSpec, trackTypes: Set<Int>): EditedMediaItemSequence {

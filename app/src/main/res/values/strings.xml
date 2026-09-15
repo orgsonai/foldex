@@ -1178,7 +1178,7 @@
     <string name="video_edit_export_elsewhere">Choose where to save</string>
     <string name="video_edit_export_original_safe">The original files are never changed. The result is saved under a new name.</string>
     <string name="video_edit_export_notice_background">Background colors aren\'t exported yet. Empty areas become black.</string>
-    <string name="video_edit_export_notice_trimmed">Audio and text after the end of the video aren\'t exported.</string>
+    <string name="video_edit_export_notice_trimmed">Layers, audio and text after the end of the main video will not be exported.</string>
     <string name="video_edit_export_running">Exporting</string>
     <string name="video_edit_export_stage_checking">Checking media and free space…</string>
     <string name="video_edit_export_stage_encoding">Encoding… %1$d%%</string>
@@ -1257,4 +1257,17 @@
     <string name="video_edit_source_previous">1 frame earlier</string>
     <string name="video_edit_source_next">1 frame later</string>
     <string name="video_edit_drag_hint">Drag the middle to move · Drag either edge to trim</string>
+    <string name="video_edit_layer_video">Video layer</string>
+    <string name="video_edit_layer_image">Image layer</string>
+    <string name="video_edit_layer_layout">Layer layout</string>
+    <string name="video_edit_layer_visible">Enable picture and sound</string>
+    <string name="video_edit_layer_width">Width</string>
+    <string name="video_edit_layer_opacity">Opacity</string>
+    <string name="video_edit_layer_x">Horizontal position</string>
+    <string name="video_edit_layer_y">Vertical position</string>
+    <string name="video_edit_layer_center">Center</string>
+    <string name="video_edit_layer_forward">Bring forward</string>
+    <string name="video_edit_layer_backward">Send backward</string>
+    <string name="video_edit_layer_hint">Drag the preview to position the layer. Drag its timeline body or edges to adjust timing. New layers start muted.</string>
+    <string name="video_edit_layer_number">Layer %1$d</string>
 </resources>

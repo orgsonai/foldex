@@ -87,7 +87,7 @@ object ExportEstimate {
             clip.fadeInUs == 0L &&
             clip.fadeOutUs == 0L &&
             project.texts.isEmpty() &&
-            project.audioTrack.isEmpty()
+            project.audioTrack.isEmpty() && project.layers.none { it.visible }
     }
 
     /**

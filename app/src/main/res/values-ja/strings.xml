@@ -1168,7 +1168,7 @@
     <string name="video_edit_export_elsewhere">場所を選んで書き出す</string>
     <string name="video_edit_export_original_safe">元のファイルは変更しません。新しい名前で保存します。</string>
     <string name="video_edit_export_notice_background">背景色はまだ書き出せません。余白は黒になります。</string>
-    <string name="video_edit_export_notice_trimmed">映像の終わりより後ろの音声と文字は書き出しません。</string>
+    <string name="video_edit_export_notice_trimmed">メイン映像の終わりより後ろのレイヤー・音声・文字は書き出しません。</string>
     <string name="video_edit_export_running">書き出し中</string>
     <string name="video_edit_export_stage_checking">素材と空き容量を確認しています…</string>
     <string name="video_edit_export_stage_encoding">変換しています… %1$d%%</string>
@@ -1247,4 +1247,17 @@
     <string name="video_edit_source_previous">1 コマ前へ</string>
     <string name="video_edit_source_next">1 コマ後へ</string>
     <string name="video_edit_drag_hint">中央をドラッグで移動 · 両端をドラッグでトリム</string>
+    <string name="video_edit_layer_video">動画レイヤー</string>
+    <string name="video_edit_layer_image">画像レイヤー</string>
+    <string name="video_edit_layer_layout">レイヤー配置</string>
+    <string name="video_edit_layer_visible">表示・音声を有効にする</string>
+    <string name="video_edit_layer_width">幅</string>
+    <string name="video_edit_layer_opacity">不透明度</string>
+    <string name="video_edit_layer_x">横位置</string>
+    <string name="video_edit_layer_y">縦位置</string>
+    <string name="video_edit_layer_center">中央へ</string>
+    <string name="video_edit_layer_forward">手前へ</string>
+    <string name="video_edit_layer_backward">奥へ</string>
+    <string name="video_edit_layer_hint">プレビューをドラッグして配置。時間は段の中央・両端をドラッグして調整。追加時の音声はミュートです。</string>
+    <string name="video_edit_layer_number">レイヤー %1$d</string>
 </resources>

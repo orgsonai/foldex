@@ -4,6 +4,7 @@
 package com.zerotoship.foldex.ui.videoedit.project
 
 import com.zerotoship.foldex.core.common.Result
+import com.zerotoship.foldex.ui.videoedit.model.LayerClip
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -39,6 +40,18 @@ class VideoProjectStoreTest {
         val opened = VideoProjectStore(root).open(draft.id).getOrNull()!!
         assertEquals(updated, opened.draft)
         assertFalse(opened.recoveredPrevious)
+    }
+
+    @Test
+    fun `レイヤーを追加した下書きを保存して別のストアで復元する`() {
+        val store = VideoProjectStore(root)
+        val draft = create(store)
+        val project = draft.project.copy(layers = listOf(LayerClip(draft.project.mainTrack.first().copy(id = "layer"), 1_000_000L)))
+        val updated = revised(draft, 1).copy(project = project)
+        assertTrue(store.save(updated).isSuccess)
+        store.close()
+        val reopened = VideoProjectStore(root)
+        try { assertEquals(updated, reopened.open(draft.id).getOrNull()!!.draft) } finally { reopened.close() }
     }
 
     @Test

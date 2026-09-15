@@ -3,6 +3,7 @@
 
 package com.zerotoship.foldex.ui.videoedit.project
 
+import com.zerotoship.foldex.ui.videoedit.model.LayerClip
 import com.zerotoship.foldex.ui.videoedit.model.MainClip
 import com.zerotoship.foldex.ui.videoedit.model.US_PER_SECOND
 import org.junit.Assert.assertEquals
@@ -16,6 +17,33 @@ class VideoProjectCodecTest {
     private fun encode(draft: VideoDraft): ByteArray = ByteArrayOutputStream().also { VideoProjectCodec.write(draft, it) }.toByteArray()
 
     private fun decode(bytes: ByteArray): VideoDraft = VideoProjectCodec.read(ByteArrayInputStream(bytes))
+
+    @Test
+    fun `1_12_1が保存した下書きを値を落とさずに開く`() {
+        val restored = javaClass.getResourceAsStream("/videoedit/schema1.fdxv")!!.use { VideoProjectCodec.read(it) }
+        assertEquals(sampleDraft(), restored)
+        assertEquals(restored, decode(encode(restored)))
+    }
+
+    @Test
+    fun `映像レイヤーの配置順序と全項目を復元する`() {
+        val before = sampleDraft()
+        val layer = LayerClip(before.project.mainTrack.first().copy(id = "layer"), 2 * US_PER_SECOND,
+            centerX = 0.2f, centerY = 0.7f, widthFraction = 1.3f, opacity = 0.4f, visible = false)
+        val draft = before.copy(project = before.project.copy(layers = listOf(layer, layer.copy(clip = layer.clip.copy(id = "top")))))
+        assertEquals(draft, decode(encode(draft)))
+    }
+
+    @Test
+    fun `不正なレイヤーの大きさや重複IDを拒否する`() {
+        val before = sampleDraft()
+        val layer = LayerClip(before.project.mainTrack.first(), 0)
+        for (bad in listOf(layer, layer.copy(clip = layer.clip.copy(id = "new"), widthFraction = Float.NaN),
+            layer.copy(clip = layer.clip.copy(id = "new"), opacity = 2f))) {
+            val draft = before.copy(project = before.project.copy(layers = listOf(bad)))
+            assertThrows(IllegalArgumentException::class.java) { decode(encode(draft)) }
+        }
+    }
 
     @Test
     fun `すべての項目が書いて読んで一致する`() {

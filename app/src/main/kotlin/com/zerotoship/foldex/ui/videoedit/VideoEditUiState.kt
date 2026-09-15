@@ -35,7 +35,7 @@ data class VideoEditUiState(
 )
 
 /** 下部に開く設定パネル。比率以外はクリップを選んでいるときだけ開ける。 */
-enum class EditPanel { SOURCE_RANGE, SPEED, VOLUME, TRANSFORM, TEXT, CANVAS }
+enum class EditPanel { SOURCE_RANGE, SPEED, VOLUME, TRANSFORM, TEXT, CANVAS, LAYER }
 
 enum class VideoDraftStatus { NONE, PENDING, SAVED, FAILED }
 

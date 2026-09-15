@@ -20,6 +20,7 @@ import com.zerotoship.foldex.ui.videoedit.engine.VideoExportOutcome
 import com.zerotoship.foldex.ui.videoedit.model.CanvasAspect
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 import com.zerotoship.foldex.ui.videoedit.model.ExportSettings
+import com.zerotoship.foldex.ui.videoedit.model.LayerEditOps
 import com.zerotoship.foldex.ui.videoedit.model.ProjectHistory
 import com.zerotoship.foldex.ui.videoedit.model.VideoEditOps
 import com.zerotoship.foldex.ui.videoedit.model.VideoExportError
@@ -35,6 +36,9 @@ import com.zerotoship.foldex.ui.videoedit.service.VideoExportSignal
 import com.zerotoship.foldex.ui.videoedit.service.VideoExportSignals
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import java.util.UUID
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -51,9 +55,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.util.UUID
-import javax.inject.Inject
 
 /**
  * 動画編集 (試作) の状態と操作。
@@ -195,7 +196,7 @@ class VideoEditViewModel @Inject constructor(
     }
 
     /** ファイル選択で選ばれた素材を追加する。音声は [atUs] (その時点の再生位置) に置く。 */
-    fun addSources(sources: List<String>, atUs: Long) {
+    fun addSources(sources: List<String>, atUs: Long, asLayer: Boolean = false) {
         if (sources.isEmpty()) return
         viewModelScope.launch {
             _state.update { it.copy(adding = true) }
@@ -210,7 +211,14 @@ class VideoEditViewModel @Inject constructor(
             if (assets.isEmpty()) return@launch
             val clipIds = assets.map { newId() }
             edit { project ->
-                assets.foldIndexed(project) { index, acc, asset -> VideoEditOps.appendMedia(acc, asset, clipIds[index], atUs) }
+                assets.foldIndexed(project) { index, acc, asset ->
+                    if (asLayer) LayerEditOps.add(acc, asset, clipIds[index], atUs)
+                    else VideoEditOps.appendMedia(acc, asset, clipIds[index], atUs)
+                }
+            }
+            if (asLayer) {
+                select(ClipRef.Layer(clipIds.last()))
+                openPanel(EditPanel.LAYER)
             }
         }
     }
@@ -276,7 +284,9 @@ class VideoEditViewModel @Inject constructor(
         val state = _state.value
         val selection = state.selection
         val id = newId()
-        val after = if (selection is ClipRef.Audio) {
+        val after = if (selection is ClipRef.Layer) {
+            LayerEditOps.split(state.project, selection.id, timeUs, id)
+        } else if (selection is ClipRef.Audio) {
             VideoEditOps.splitAudioAt(state.project, selection.id, timeUs, id)
         } else {
             VideoEditOps.splitMainAt(state.project, timeUs, id)
@@ -286,7 +296,11 @@ class VideoEditViewModel @Inject constructor(
             return
         }
         edit { after }
-        select(if (selection is ClipRef.Audio) ClipRef.Audio(id) else ClipRef.Main(id))
+        select(when (selection) {
+            is ClipRef.Layer -> ClipRef.Layer(id)
+            is ClipRef.Audio -> ClipRef.Audio(id)
+            else -> ClipRef.Main(id)
+        })
     }
 
     override fun deleteSelected() {
@@ -504,8 +518,10 @@ class VideoEditViewModel @Inject constructor(
 
     private fun panelFits(panel: EditPanel, selection: ClipRef?): Boolean = when (panel) {
         EditPanel.CANVAS -> true
-        EditPanel.SOURCE_RANGE, EditPanel.SPEED, EditPanel.TRANSFORM -> selection is ClipRef.Main
-        EditPanel.VOLUME -> selection is ClipRef.Main || selection is ClipRef.Audio
+        EditPanel.TRANSFORM -> selection is ClipRef.Main
+        EditPanel.LAYER -> selection is ClipRef.Layer
+        EditPanel.SOURCE_RANGE, EditPanel.SPEED -> selection is ClipRef.Main || selection is ClipRef.Layer
+        EditPanel.VOLUME -> selection is ClipRef.Main || selection is ClipRef.Audio || selection is ClipRef.Layer
         EditPanel.TEXT -> selection is ClipRef.Text
     }
 

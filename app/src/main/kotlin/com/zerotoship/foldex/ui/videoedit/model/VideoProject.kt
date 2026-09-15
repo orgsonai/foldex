@@ -96,6 +96,30 @@ data class TextClip(
     val endUs: Long get() = startUs + durationUs
 }
 
+/** メイン映像に重ねる動画・画像。リストの後ろほど手前。時間と配置はメインから独立する。 */
+data class LayerClip(
+    val clip: MainClip,
+    val startUs: Long,
+    val centerX: Float = 0.5f,
+    val centerY: Float = 0.5f,
+    /** 回転後の幅 / キャンバス幅。縦横比を保って拡大する。 */
+    val widthFraction: Float = 0.45f,
+    val opacity: Float = 1f,
+    /** 非表示では音声も止める。 */
+    val visible: Boolean = true,
+) {
+    val id: String get() = clip.id
+    val durationUs: Long get() = clip.durationUs
+    val endUs: Long get() = startUs + durationUs
+
+    fun isActiveAt(timeUs: Long): Boolean = visible && timeUs >= startUs && timeUs < endUs
+
+    fun aspectRatio(asset: MediaAsset): Float {
+        val ratio = if (asset.widthPx > 0 && asset.heightPx > 0) asset.widthPx.toFloat() / asset.heightPx else 1f
+        return if (clip.quarterTurns.mod(2) == 0) ratio else 1f / ratio
+    }
+}
+
 /** 音声トラックのクリップ。メインと違い、タイムライン上の開始時刻を自分で持つ。 */
 data class AudioClip(
     val id: String,
@@ -121,6 +145,8 @@ sealed interface ClipRef {
     data class Text(override val id: String) : ClipRef
 
     data class Audio(override val id: String) : ClipRef
+
+    data class Layer(override val id: String) : ClipRef
 }
 
 /** 編集中のプロジェクト全体。画素や音のデータを含まないので、丸ごと Undo 履歴に積める。 */
@@ -132,6 +158,7 @@ data class VideoProject(
     val aspect: CanvasAspect = CanvasAspect.R16_9,
     val background: Int = 0xFF000000.toInt(),
     val frameRate: FrameRate = FrameRate.FPS_30,
+    val layers: List<LayerClip> = emptyList(),
 ) {
     val mainDurationUs: Long get() = mainTrack.sumOf { it.durationUs }
 
@@ -139,10 +166,10 @@ data class VideoProject(
         get() = maxOf(
             mainDurationUs,
             texts.maxOfOrNull { it.endUs } ?: 0L,
-            audioTrack.maxOfOrNull { it.endUs } ?: 0L,
+            maxOf(audioTrack.maxOfOrNull { it.endUs } ?: 0L, layers.maxOfOrNull { it.endUs } ?: 0L),
         )
 
-    val clipCount: Int get() = mainTrack.size + texts.size + audioTrack.size
+    val clipCount: Int get() = mainTrack.size + texts.size + audioTrack.size + layers.size
 
     /** [index] 番目のメインクリップの開始時刻。 */
     fun mainStartUs(index: Int): Long = mainTrack.take(index).sumOf { it.durationUs }
@@ -169,5 +196,6 @@ data class VideoProject(
         is ClipRef.Main -> mainTrack.any { it.id == ref.id }
         is ClipRef.Text -> texts.any { it.id == ref.id }
         is ClipRef.Audio -> audioTrack.any { it.id == ref.id }
+        is ClipRef.Layer -> layers.any { it.id == ref.id }
     }
 }

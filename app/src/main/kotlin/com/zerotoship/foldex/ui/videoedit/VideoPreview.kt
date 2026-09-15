@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,6 +58,8 @@ import coil3.video.videoFrameOption
 import com.zerotoship.foldex.R
 import com.zerotoship.foldex.ui.videoedit.model.AssetKind
 import com.zerotoship.foldex.ui.videoedit.model.FrameFill
+import com.zerotoship.foldex.ui.videoedit.model.LayerClip
+import com.zerotoship.foldex.ui.videoedit.model.MainClip
 import com.zerotoship.foldex.ui.videoedit.model.TextClip
 import com.zerotoship.foldex.ui.videoedit.model.VideoProject
 import com.zerotoship.foldex.ui.videoedit.timeline.TimelineState
@@ -77,6 +81,9 @@ fun VideoPreview(
     onSelectText: (String) -> Unit,
     onMoveText: (String, Float, Float) -> Unit,
     onMoveTextEnd: () -> Unit,
+    selectedLayerId: String? = null,
+    onSelectLayer: (String) -> Unit = {},
+    onMoveLayer: (String, Float, Float) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     // 再生位置が変わっても、表示するコマや文字の組み合わせが変わったときだけ描き直す。
@@ -89,6 +96,12 @@ fun VideoPreview(
             project.texts.filter { playhead >= it.startUs && playhead < it.endUs }
         }
     }
+    val layerFrames by remember(project, coarse) {
+        derivedStateOf { project.layers.mapNotNull { layer ->
+            previewLayerFrameAt(project, layer, timeline.playheadUs, coarse)?.let { layer to it }
+        } }
+    }
+    val latestLayerMove by rememberUpdatedState(onMoveLayer)
     val latestMove by rememberUpdatedState(onMoveText)
     val latestMoveEnd by rememberUpdatedState(onMoveTextEnd)
 
@@ -108,8 +121,10 @@ fun VideoPreview(
                 .size(boxWidth, boxHeight)
                 .clipToBounds()
                 .background(background)
-                .pointerInput(selectedTextId, widthPx, heightPx) {
-                    val textId = selectedTextId ?: return@pointerInput
+                .pointerInput(selectedTextId, selectedLayerId, widthPx, heightPx) {
+                    val textId = selectedTextId
+                    val layerId = selectedLayerId
+                    if (textId == null && layerId == null) return@pointerInput
                     if (widthPx <= 0f || heightPx <= 0f) return@pointerInput
                     // 選んだ文字は、プレビューのどこをなぞっても動かせる (指で文字を隠さずに済む)。
                     awaitEachGesture {
@@ -125,7 +140,8 @@ fun VideoPreview(
                             if (!dragging && travelled.getDistance() > viewConfiguration.touchSlop) dragging = true
                             if (dragging && delta != Offset.Zero) {
                                 change.consume()
-                                latestMove(textId, delta.x / widthPx, delta.y / heightPx)
+                                if (textId != null) latestMove(textId, delta.x / widthPx, delta.y / heightPx)
+                                else if (layerId != null) latestLayerMove(layerId, delta.x / widthPx, delta.y / heightPx)
                             }
                         }
                         if (dragging) latestMoveEnd()
@@ -143,6 +159,32 @@ fun VideoPreview(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.align(Alignment.Center).padding(16.dp),
                 )
+            }
+            layerFrames.forEach { (layer, layerFrame) ->
+                key(layer.id) {
+                    val asset = project.assets.getValue(layer.clip.assetId)
+                    val layerWidth = boxWidth * layer.widthFraction
+                    val layerHeight = layerWidth / layer.aspectRatio(asset)
+                    val odd = layer.clip.quarterTurns.mod(2) != 0
+                    val sourceWidth = if (odd) layerHeight else layerWidth
+                    val sourceHeight = if (odd) layerWidth else layerHeight
+                    val selected = layer.id == selectedLayerId
+                    val latestSelect by rememberUpdatedState(onSelectLayer)
+                    Box(Modifier
+                        .offset { IntOffset((layer.centerX * widthPx - with(density) { layerWidth.toPx() } / 2f).roundToInt(),
+                            (layer.centerY * heightPx - with(density) { layerHeight.toPx() } / 2f).roundToInt()) }
+                        .wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .requiredSize(layerWidth, layerHeight)
+                        .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary) else Modifier)
+                        .pointerInput(layer.id) { detectTapGestures { latestSelect(layer.id) } },
+                    ) {
+                        Box(Modifier.align(Alignment.Center).requiredSize(sourceWidth, sourceHeight)
+                            .graphicsLayer { rotationZ = layer.clip.quarterTurns * 90f; alpha = layer.opacity }) {
+                            PreviewFrameImage(layerFrame.copy(quarterTurns = 0),
+                                with(density) { sourceWidth.toPx() }, with(density) { sourceHeight.toPx() })
+                        }
+                    }
+                }
             }
             visibleTexts.forEach { clip ->
                 key(clip.id) {
@@ -254,6 +296,13 @@ internal data class PreviewFrame(
 internal fun previewFrameAt(project: VideoProject, playheadUs: Long, coarse: Boolean): PreviewFrame? {
     val (index, localUs) = project.mainClipAt(playheadUs) ?: return null
     val clip = project.mainTrack[index]
+    return previewClipFrameAt(project, clip, localUs, coarse)
+}
+
+internal fun previewLayerFrameAt(project: VideoProject, layer: LayerClip, playheadUs: Long, coarse: Boolean): PreviewFrame? =
+    if (layer.isActiveAt(playheadUs)) previewClipFrameAt(project, layer.clip, playheadUs - layer.startUs, coarse) else null
+
+private fun previewClipFrameAt(project: VideoProject, clip: MainClip, localUs: Long, coarse: Boolean): PreviewFrame? {
     val asset = project.assets[clip.assetId] ?: return null
     val sourceUs = clip.sourceTimeAt(localUs)
     val isVideo = asset.kind == AssetKind.VIDEO

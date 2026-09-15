@@ -12,6 +12,7 @@ import com.zerotoship.foldex.ui.videoedit.model.ExportResolution
 import com.zerotoship.foldex.ui.videoedit.model.ExportSettings
 import com.zerotoship.foldex.ui.videoedit.model.FrameFill
 import com.zerotoship.foldex.ui.videoedit.model.FrameRate
+import com.zerotoship.foldex.ui.videoedit.model.LayerClip
 import com.zerotoship.foldex.ui.videoedit.model.MainClip
 import com.zerotoship.foldex.ui.videoedit.model.MediaAsset
 import com.zerotoship.foldex.ui.videoedit.model.TextClip
@@ -31,7 +32,7 @@ import java.nio.ByteBuffer
  * 形式を変えるときは [SCHEMA] を上げ、古い版を読めるようにする。
  */
 internal object VideoProjectCodec {
-    const val SCHEMA = 1
+    const val SCHEMA = 2
     const val MAX_BYTES = 8L * 1024 * 1024
     private const val MAGIC = 0x46445856 // FDXV
     private const val MAX_STRING_BYTES = 64 * 1024
@@ -61,7 +62,7 @@ internal object VideoProjectCodec {
         require(data.readInt() == MAGIC)
         val schema = data.readInt()
         if (schema !in 1..SCHEMA) throw VideoDraftException(VideoDraftFailure.UNSUPPORTED)
-        return with(Reader(data)) {
+        return with(Reader(data, schema)) {
             val id = string()
             val revision = data.readLong()
             val updatedAt = data.readLong()
@@ -99,12 +100,7 @@ internal object VideoProjectCodec {
                     out.writeLong(stamp.sizeBytes); out.writeLong(stamp.modifiedMs)
                 }
             }
-            list(project.mainTrack) { clip ->
-                string(clip.id); string(clip.assetId); out.writeLong(clip.sourceInUs); out.writeLong(clip.sourceOutUs)
-                out.writeDouble(clip.speed); out.writeBoolean(clip.keepPitch); out.writeFloat(clip.volume); out.writeBoolean(clip.muted)
-                out.writeLong(clip.fadeInUs); out.writeLong(clip.fadeOutUs)
-                out.writeInt(clip.quarterTurns); out.writeBoolean(clip.flipHorizontal); string(clip.fill.name)
-            }
+            list(project.mainTrack, ::mainClip)
             list(project.texts) { text ->
                 string(text.id); out.writeLong(text.startUs); out.writeLong(text.durationUs); string(text.text)
                 out.writeFloat(text.sizeFraction); out.writeInt(text.color); out.writeBoolean(text.outlined)
@@ -118,6 +114,19 @@ internal object VideoProjectCodec {
             out.writeInt(project.background)
             out.writeInt(project.frameRate.numerator)
             out.writeInt(project.frameRate.denominator)
+            list(project.layers) { layer ->
+                mainClip(layer.clip)
+                out.writeLong(layer.startUs)
+                out.writeFloat(layer.centerX); out.writeFloat(layer.centerY)
+                out.writeFloat(layer.widthFraction); out.writeFloat(layer.opacity); out.writeBoolean(layer.visible)
+            }
+        }
+
+        fun mainClip(clip: MainClip) {
+            string(clip.id); string(clip.assetId); out.writeLong(clip.sourceInUs); out.writeLong(clip.sourceOutUs)
+            out.writeDouble(clip.speed); out.writeBoolean(clip.keepPitch); out.writeFloat(clip.volume); out.writeBoolean(clip.muted)
+            out.writeLong(clip.fadeInUs); out.writeLong(clip.fadeOutUs)
+            out.writeInt(clip.quarterTurns); out.writeBoolean(clip.flipHorizontal); string(clip.fill.name)
         }
 
         fun export(settings: ExportSettings) {
@@ -126,7 +135,7 @@ internal object VideoProjectCodec {
         }
     }
 
-    private class Reader(val input: DataInputStream) {
+    private class Reader(val input: DataInputStream, val schema: Int) {
         // 不正な件数で巨大なリストを先に確保しない。
         private var remainingItems = MAX_ITEMS
 
@@ -173,25 +182,7 @@ internal object VideoProjectCodec {
             val byId = assets.associateBy { it.id }
             require(byId.size == assets.size)
 
-            val main = List(count()) {
-                val id = string()
-                val assetId = string()
-                val sourceIn = time()
-                val sourceOut = time()
-                val speed = input.readDouble()
-                val keepPitch = input.readBoolean()
-                val volume = float(0f..MAX_VOLUME)
-                val muted = input.readBoolean()
-                val fadeIn = time()
-                val fadeOut = time()
-                val turns = input.readInt()
-                val flip = input.readBoolean()
-                val fill = enum<FrameFill>()
-                val kind = byId[assetId]?.kind
-                require(id.isNotEmpty() && kind != null && kind != AssetKind.AUDIO && sourceIn < sourceOut)
-                require(speed.isFinite() && speed in VideoEditOps.MIN_SPEED..VideoEditOps.MAX_SPEED && turns in 0..3)
-                MainClip(id, assetId, sourceIn, sourceOut, speed, keepPitch, volume, muted, fadeIn, fadeOut, turns, flip, fill)
-            }
+            val main = List(count()) { mainClip(byId) }
 
             val texts = List(count()) {
                 val id = string()
@@ -221,13 +212,37 @@ internal object VideoProjectCodec {
                 AudioClip(id, assetId, start, sourceIn, sourceOut, volume, muted, fadeIn, fadeOut)
             }
 
-            // 選択は ID で探すので、トラックをまたいでも重ならないこと。
-            val ids = main.map { it.id } + texts.map { it.id } + audio.map { it.id }
-            require(ids.toSet().size == ids.size)
             val aspect = enum<CanvasAspect>()
             val background = input.readInt()
             val frameRate = FrameRate(input.readInt(), input.readInt())
-            return VideoProject(byId, main, texts, audio, aspect, background, frameRate)
+            val layers = if (schema >= 2) List(count()) {
+                val clip = mainClip(byId)
+                LayerClip(clip, time(), float(0f..1f), float(0f..1f), float(0.05f..2f), float(0f..1f), input.readBoolean())
+            } else emptyList()
+            // 選択は ID で探すので、トラックをまたいでも重ならないこと。
+            val ids = main.map { it.id } + texts.map { it.id } + audio.map { it.id } + layers.map { it.id }
+            require(ids.toSet().size == ids.size)
+            return VideoProject(byId, main, texts, audio, aspect, background, frameRate, layers)
+        }
+
+        fun mainClip(byId: Map<String, MediaAsset>): MainClip {
+            val id = string()
+            val assetId = string()
+            val sourceIn = time()
+            val sourceOut = time()
+            val speed = input.readDouble()
+            val keepPitch = input.readBoolean()
+            val volume = float(0f..MAX_VOLUME)
+            val muted = input.readBoolean()
+            val fadeIn = time()
+            val fadeOut = time()
+            val turns = input.readInt()
+            val flip = input.readBoolean()
+            val fill = enum<FrameFill>()
+            val kind = byId[assetId]?.kind
+            require(id.isNotEmpty() && kind != null && kind != AssetKind.AUDIO && sourceIn < sourceOut)
+            require(speed.isFinite() && speed in VideoEditOps.MIN_SPEED..VideoEditOps.MAX_SPEED && turns in 0..3)
+            return MainClip(id, assetId, sourceIn, sourceOut, speed, keepPitch, volume, muted, fadeIn, fadeOut, turns, flip, fill)
         }
 
         fun export(): ExportSettings {

@@ -196,10 +196,15 @@ object VideoEditOps {
         is ClipRef.Main -> project.copy(mainTrack = project.mainTrack.filterNot { it.id == ref.id })
         is ClipRef.Text -> project.copy(texts = project.texts.filterNot { it.id == ref.id })
         is ClipRef.Audio -> project.copy(audioTrack = project.audioTrack.filterNot { it.id == ref.id })
+        is ClipRef.Layer -> project.copy(layers = project.layers.filterNot { it.id == ref.id })
     }
 
     /** メインは直後に差し込み、文字と音声は元の終わりの位置に置く。 */
     fun duplicate(project: VideoProject, ref: ClipRef, newId: String): VideoProject = when (ref) {
+        is ClipRef.Layer -> {
+            val layer = project.layers.firstOrNull { it.id == ref.id }
+            if (layer == null) project else project.copy(layers = project.layers + layer.copy(clip = layer.clip.copy(id = newId), startUs = layer.endUs))
+        }
         is ClipRef.Main -> {
             val index = project.mainIndexOf(ref.id)
             if (index < 0) {

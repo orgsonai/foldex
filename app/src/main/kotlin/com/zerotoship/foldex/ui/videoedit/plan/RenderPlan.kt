@@ -23,10 +23,12 @@ data class RenderPlan(
     val texts: List<PlannedText>,
     val durationUs: Long,
     val notices: Set<PlanNotice>,
+    /** 後ろほど手前。表示区間の外は透明にする。 */
+    val layers: List<PlannedLayer> = emptyList(),
 ) {
     /** 書き出しで読む素材 (素材ごとに 1 つ)。開始前の存在確認に使う。 */
     val media: List<PlannedMedia>
-        get() = (main + audioLanes.flatten()).filterIsInstance<PlannedMedia>().distinctBy { it.assetId }
+        get() = (main + audioLanes.flatten() + layers.map { it.media }).filterIsInstance<PlannedMedia>().distinctBy { it.assetId }
 }
 
 data class OutputSpec(
@@ -87,6 +89,24 @@ enum class PlanNotice {
     /** 背景色は書き出しに未対応。はめ込みの余白は黒になる。 */
     BACKGROUND_BLACK,
 
-    /** 映像の終わりより後ろの音声・文字は書き出さない。 */
+    /** メイン映像の終わりより後ろのレイヤー・音声・文字は書き出さない。 */
     TRIMMED_AFTER_VIDEO,
+}
+
+/** 1 つの独立した映像レイヤー。前後の隙間を含めて出力全体と同じ長さの段へ変換する。 */
+data class PlannedLayer(
+    val media: PlannedMedia,
+    val startUs: Long,
+    val endUs: Long,
+    val centerX: Float,
+    val centerY: Float,
+    val widthFraction: Float,
+    val aspectRatio: Float,
+    val opacity: Float,
+) {
+    fun items(durationUs: Long): List<PlannedItem> = buildList {
+        if (startUs > 0L) add(PlannedGap(startUs))
+        add(media)
+        if (endUs < durationUs) add(PlannedGap(durationUs - endUs))
+    }
 }

@@ -67,6 +67,7 @@ import com.zerotoship.foldex.ui.videoedit.model.AssetKind
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 import com.zerotoship.foldex.ui.videoedit.model.ExportPreset
 import com.zerotoship.foldex.ui.videoedit.model.FrameRate
+import com.zerotoship.foldex.ui.videoedit.model.LayerEditOps
 import com.zerotoship.foldex.ui.videoedit.model.VideoEditOps
 import com.zerotoship.foldex.ui.videoedit.model.VideoSaveNaming
 import com.zerotoship.foldex.ui.videoedit.model.formatClock
@@ -90,7 +91,7 @@ fun VideoEditScreen(
     state: VideoEditUiState,
     actions: VideoEditActions,
     snackbar: SnackbarHostState,
-    onAddMedia: (AssetKind, Long) -> Unit,
+    onAddMedia: (AssetKind, Long, Boolean) -> Unit,
     /** 「場所を選んで書き出す」。引数は最初に出す保存名。 */
     onExportElsewhere: (String) -> Unit,
     timeline: TimelineState = remember { TimelineState() },
@@ -154,6 +155,13 @@ fun VideoEditScreen(
                 }
             },
             onMoveTextEnd = actions::commit,
+            selectedLayerId = (state.selection as? ClipRef.Layer)?.id,
+            onSelectLayer = { actions.select(ClipRef.Layer(it)) },
+            onMoveLayer = { id, dx, dy ->
+                actions.preview { current -> LayerEditOps.update(current, id) { layer ->
+                    layer.copy(centerX = (layer.centerX + dx).coerceIn(0f, 1f), centerY = (layer.centerY + dy).coerceIn(0f, 1f))
+                } }
+            },
             modifier = modifier,
         )
     }
@@ -198,23 +206,29 @@ fun VideoEditScreen(
     fun Toolbar() {
         VideoEditToolbar(
             selection = state.selection,
-            sourceRangeAvailable = (state.selection as? ClipRef.Main)?.let { ref ->
-                project.mainTrack.firstOrNull { it.id == ref.id }?.let { project.assets[it.assetId]?.kind == AssetKind.VIDEO }
-            } == true,
+            sourceRangeAvailable = (project.mainTrack.firstOrNull { it.id == state.selection?.id }
+                ?: project.layers.firstOrNull { it.id == state.selection?.id }?.clip)
+                ?.let { project.assets[it.assetId]?.kind == AssetKind.VIDEO } == true,
             activePanel = state.panel,
             enabled = !state.adding,
             onAction = { action ->
                 val atUs = timeline.playheadUs
                 when (action) {
-                    ToolAction.ADD_VIDEO -> onAddMedia(AssetKind.VIDEO, atUs)
-                    ToolAction.ADD_IMAGE -> onAddMedia(AssetKind.IMAGE, atUs)
-                    ToolAction.ADD_AUDIO -> onAddMedia(AssetKind.AUDIO, atUs)
+                    ToolAction.ADD_VIDEO -> onAddMedia(AssetKind.VIDEO, atUs, false)
+                    ToolAction.ADD_IMAGE -> onAddMedia(AssetKind.IMAGE, atUs, false)
+                    ToolAction.ADD_AUDIO -> onAddMedia(AssetKind.AUDIO, atUs, false)
+                    ToolAction.ADD_LAYER_VIDEO -> onAddMedia(AssetKind.VIDEO, atUs, true)
+                    ToolAction.ADD_LAYER_IMAGE -> onAddMedia(AssetKind.IMAGE, atUs, true)
+                    ToolAction.LAYER -> actions.openPanel(togglePanel(state.panel, EditPanel.LAYER))
                     ToolAction.ADD_TEXT -> actions.addText(atUs)
                     ToolAction.CANVAS -> actions.openPanel(togglePanel(state.panel, EditPanel.CANVAS))
                     ToolAction.SPLIT -> actions.splitAt(atUs)
                     ToolAction.SPEED -> actions.openPanel(togglePanel(state.panel, EditPanel.SPEED))
                     ToolAction.SOURCE_RANGE -> {
                         if (state.panel != EditPanel.SOURCE_RANGE) {
+                            (state.selection as? ClipRef.Layer)?.let { ref ->
+                                project.layers.firstOrNull { it.id == ref.id }?.let { timeline.playheadUs = it.startUs }
+                            }
                             (state.selection as? ClipRef.Main)?.let { ref ->
                                 val index = project.mainIndexOf(ref.id)
                                 if (index >= 0) timeline.playheadUs = project.mainStartUs(index)
@@ -287,7 +301,8 @@ fun VideoEditScreen(
                 .consumeWindowInsets(padding),
         ) {
             val landscape = maxWidth > maxHeight
-            val panelMaxHeight = maxHeight * 0.4f
+            val panelMaxHeight = maxHeight * 0.3f
+            val timelineMaxHeight = maxHeight * if (state.panel == null) 0.32f else 0.22f
             Column(Modifier.fillMaxSize()) {
                 if (state.noticeVisible) PrototypeNotice(onDismiss = actions::dismissNotice)
                 when {
@@ -308,13 +323,13 @@ fun VideoEditScreen(
                             }
                         }
                         HorizontalDivider()
-                        Timeline()
+                        Column(Modifier.fillMaxWidth().heightIn(max = timelineMaxHeight).verticalScroll(rememberScrollState())) { Timeline() }
                     }
                     else -> {
                         PreviewArea(Modifier.weight(1f).fillMaxWidth())
                         Transport()
                         HorizontalDivider()
-                        Timeline()
+                        Column(Modifier.fillMaxWidth().heightIn(max = timelineMaxHeight).verticalScroll(rememberScrollState())) { Timeline() }
                         if (state.panel != null) {
                             HorizontalDivider()
                             Column(Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).verticalScroll(rememberScrollState())) {

@@ -48,8 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -57,10 +57,12 @@ import com.zerotoship.foldex.R
 import com.zerotoship.foldex.ui.imageedit.PALETTE
 import com.zerotoship.foldex.ui.videoedit.EditPanel
 import com.zerotoship.foldex.ui.videoedit.VideoEditActions
-import com.zerotoship.foldex.ui.videoedit.model.CanvasAspect
 import com.zerotoship.foldex.ui.videoedit.model.AssetKind
+import com.zerotoship.foldex.ui.videoedit.model.CanvasAspect
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 import com.zerotoship.foldex.ui.videoedit.model.FrameFill
+import com.zerotoship.foldex.ui.videoedit.model.LayerClip
+import com.zerotoship.foldex.ui.videoedit.model.LayerEditOps
 import com.zerotoship.foldex.ui.videoedit.model.MainClip
 import com.zerotoship.foldex.ui.videoedit.model.TextClip
 import com.zerotoship.foldex.ui.videoedit.model.US_PER_SECOND
@@ -88,10 +90,14 @@ fun EditPanelHost(
     modifier: Modifier = Modifier,
 ) {
     val close = { actions.openPanel(null) }
+    val sourceActions = if (selection is ClipRef.Layer) object : VideoEditActions by actions {
+        override fun edit(transform: (VideoProject) -> VideoProject) = actions.edit { LayerEditOps.editSource(it, selection.id, transform) }
+        override fun preview(transform: (VideoProject) -> VideoProject) = actions.preview { LayerEditOps.editSource(it, selection.id, transform) }
+    } else actions
     when (panel) {
         null -> Unit
         EditPanel.SOURCE_RANGE -> mainClipOf(project, selection)?.let { clip ->
-            SourceRangePanel(project, clip, actions, close, modifier)
+            SourceRangePanel(project, clip, sourceActions, close, modifier)
         }
         EditPanel.CANVAS -> CanvasPanel(
             aspect = project.aspect,
@@ -102,7 +108,7 @@ fun EditPanelHost(
             modifier = modifier,
         )
         EditPanel.SPEED -> mainClipOf(project, selection)?.let { clip ->
-            SpeedPanel(clip = clip, actions = actions, onDone = close, modifier = modifier)
+            SpeedPanel(clip = clip, actions = sourceActions, onDone = close, modifier = modifier)
         }
         EditPanel.TRANSFORM -> mainClipOf(project, selection)?.let { clip ->
             TransformPanel(
@@ -117,16 +123,16 @@ fun EditPanelHost(
             )
         }
         EditPanel.VOLUME -> when (selection) {
-            is ClipRef.Main -> mainClipOf(project, selection)?.let { clip ->
+            is ClipRef.Main, is ClipRef.Layer -> mainClipOf(project, selection)?.let { clip ->
                 VolumePanel(
                     volume = clip.volume,
                     muted = clip.muted,
                     fadeInUs = clip.fadeInUs,
                     fadeOutUs = clip.fadeOutUs,
                     durationUs = clip.durationUs,
-                    onVolume = { value -> actions.preview { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(volume = value) } } },
-                    onMuted = { value -> actions.edit { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(muted = value) } } },
-                    onFades = { fadeIn, fadeOut -> actions.preview { p -> VideoEditOps.setMainFades(p, clip.id, fadeIn, fadeOut) } },
+                    onVolume = { value -> sourceActions.preview { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(volume = value) } } },
+                    onMuted = { value -> sourceActions.edit { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(muted = value) } } },
+                    onFades = { fadeIn, fadeOut -> sourceActions.preview { p -> VideoEditOps.setMainFades(p, clip.id, fadeIn, fadeOut) } },
                     onCommit = actions::commit,
                     onDone = close,
                     modifier = modifier,
@@ -149,6 +155,9 @@ fun EditPanelHost(
             }
             else -> Unit
         }
+        EditPanel.LAYER -> project.layers.firstOrNull { it.id == selection?.id }?.let { layer ->
+            LayerPanel(project, layer, actions, close, modifier)
+        }
         EditPanel.TEXT -> (selection as? ClipRef.Text)
             ?.let { ref -> project.texts.firstOrNull { it.id == ref.id } }
             ?.let { clip -> TextPanel(clip = clip, actions = actions, onDone = close, modifier = modifier) }
@@ -156,7 +165,11 @@ fun EditPanelHost(
 }
 
 private fun mainClipOf(project: VideoProject, selection: ClipRef?): MainClip? =
-    (selection as? ClipRef.Main)?.let { ref -> project.mainTrack.firstOrNull { it.id == ref.id } }
+    when (selection) {
+        is ClipRef.Main -> project.mainTrack.firstOrNull { it.id == selection.id }
+        is ClipRef.Layer -> project.layers.firstOrNull { it.id == selection.id }?.clip
+        else -> null
+    }
 
 @Composable
 private fun PanelSurface(
@@ -515,4 +528,55 @@ private fun CanvasPanelPreview() {
     MaterialTheme {
         CanvasPanel(aspect = CanvasAspect.R9_16, background = 0xFF000000.toInt(), onAspect = {}, onBackground = {}, onDone = {}, modifier = Modifier)
     }
+}
+
+@Composable
+private fun LayerPanel(project: VideoProject, layer: LayerClip, actions: VideoEditActions, onDone: () -> Unit, modifier: Modifier) {
+    fun edit(transform: (LayerClip) -> LayerClip) = actions.edit { LayerEditOps.update(it, layer.id, transform) }
+    fun preview(transform: (LayerClip) -> LayerClip) = actions.preview { LayerEditOps.update(it, layer.id, transform) }
+    PanelSurface(stringResource(R.string.video_edit_layer_layout), onDone, modifier) {
+        Text(project.assets[layer.clip.assetId]?.name.orEmpty(), style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.video_edit_layer_hint), style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.video_edit_layer_visible), modifier = Modifier.weight(1f))
+            Switch(checked = layer.visible, onCheckedChange = { value -> edit { it.copy(visible = value) } })
+        }
+        LayerSlider(stringResource(R.string.video_edit_layer_width), layer.widthFraction, 0.05f..2f, actions::commit) {
+            value -> preview { it.copy(widthFraction = value) }
+        }
+        LayerSlider(stringResource(R.string.video_edit_layer_opacity), layer.opacity, 0f..1f, actions::commit) {
+            value -> preview { it.copy(opacity = value) }
+        }
+        LayerSlider(stringResource(R.string.video_edit_layer_x), layer.centerX, 0f..1f, actions::commit) {
+            value -> preview { it.copy(centerX = value) }
+        }
+        LayerSlider(stringResource(R.string.video_edit_layer_y), layer.centerY, 0f..1f, actions::commit) {
+            value -> preview { it.copy(centerY = value) }
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { edit { it.copy(clip = it.clip.copy(quarterTurns = (it.clip.quarterTurns + 1).mod(4))) } }) {
+                Icon(Icons.Default.Rotate90DegreesCw, stringResource(R.string.image_rotate_right))
+            }
+            IconButton(onClick = { edit { it.copy(clip = it.clip.copy(flipHorizontal = !it.clip.flipHorizontal)) } }) {
+                Icon(Icons.Default.Flip, stringResource(R.string.image_flip_horizontal))
+            }
+            TextButton(onClick = { edit { it.copy(centerX = 0.5f, centerY = 0.5f) } }) {
+                Text(stringResource(R.string.video_edit_layer_center))
+            }
+            val index = project.layers.indexOfFirst { it.id == layer.id }
+            TextButton(enabled = index < project.layers.lastIndex, onClick = { actions.edit { LayerEditOps.reorder(it, layer.id, 1) } }) {
+                Text(stringResource(R.string.video_edit_layer_forward))
+            }
+            TextButton(enabled = index > 0, onClick = { actions.edit { LayerEditOps.reorder(it, layer.id, -1) } }) {
+                Text(stringResource(R.string.video_edit_layer_backward))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LayerSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onCommit: () -> Unit, onChange: (Float) -> Unit) {
+    Text("$label · ${(value * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium)
+    Slider(value = value.coerceIn(range), onValueChange = onChange, onValueChangeFinished = onCommit,
+        valueRange = range, modifier = Modifier.semantics { contentDescription = label })
 }

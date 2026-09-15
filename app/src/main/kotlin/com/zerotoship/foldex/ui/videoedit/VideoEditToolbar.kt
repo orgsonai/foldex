@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Title
@@ -45,7 +46,7 @@ import com.zerotoship.foldex.R
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 
 enum class ToolAction {
-    ADD_VIDEO, ADD_IMAGE, ADD_AUDIO, ADD_TEXT, CANVAS,
+    ADD_VIDEO, ADD_IMAGE, ADD_AUDIO, ADD_TEXT, ADD_LAYER_VIDEO, ADD_LAYER_IMAGE, LAYER, CANVAS,
     SPLIT, SOURCE_RANGE, SPEED, VOLUME, TRANSFORM, EDIT_TEXT, DUPLICATE, DELETE, DESELECT,
 }
 
@@ -76,6 +77,8 @@ fun VideoEditToolbar(
             ToolItem(ToolAction.ADD_IMAGE, Icons.Default.Image, R.string.video_edit_tool_image),
             ToolItem(ToolAction.ADD_AUDIO, Icons.Default.MusicNote, R.string.video_edit_tool_audio),
             ToolItem(ToolAction.ADD_TEXT, Icons.Default.Title, R.string.video_edit_tool_text),
+            ToolItem(ToolAction.ADD_LAYER_VIDEO, Icons.Default.Layers, R.string.video_edit_layer_video),
+            ToolItem(ToolAction.ADD_LAYER_IMAGE, Icons.Default.Layers, R.string.video_edit_layer_image),
             ToolItem(ToolAction.CANVAS, Icons.Default.AspectRatio, R.string.video_edit_tool_canvas, EditPanel.CANVAS),
         )
         is ClipRef.Main -> listOf(
@@ -84,6 +87,15 @@ fun VideoEditToolbar(
             ToolItem(ToolAction.SPEED, Icons.Default.Speed, R.string.video_edit_tool_speed, EditPanel.SPEED),
             ToolItem(ToolAction.VOLUME, Icons.AutoMirrored.Filled.VolumeUp, R.string.video_edit_tool_volume, EditPanel.VOLUME),
             ToolItem(ToolAction.TRANSFORM, Icons.Default.Crop, R.string.video_edit_tool_transform, EditPanel.TRANSFORM),
+            ToolItem(ToolAction.DUPLICATE, Icons.Default.ContentCopy, R.string.video_edit_tool_duplicate),
+            ToolItem(ToolAction.DELETE, Icons.Default.Delete, R.string.action_delete),
+        )
+        is ClipRef.Layer -> listOf(
+            ToolItem(ToolAction.LAYER, Icons.Default.Layers, R.string.video_edit_layer_layout, EditPanel.LAYER),
+            ToolItem(ToolAction.SPLIT, Icons.Default.ContentCut, R.string.video_edit_tool_split),
+            ToolItem(ToolAction.SOURCE_RANGE, Icons.Default.Edit, R.string.video_edit_source_range, EditPanel.SOURCE_RANGE),
+            ToolItem(ToolAction.SPEED, Icons.Default.Speed, R.string.video_edit_tool_speed, EditPanel.SPEED),
+            ToolItem(ToolAction.VOLUME, Icons.AutoMirrored.Filled.VolumeUp, R.string.video_edit_tool_volume, EditPanel.VOLUME),
             ToolItem(ToolAction.DUPLICATE, Icons.Default.ContentCopy, R.string.video_edit_tool_duplicate),
             ToolItem(ToolAction.DELETE, Icons.Default.Delete, R.string.action_delete),
         )

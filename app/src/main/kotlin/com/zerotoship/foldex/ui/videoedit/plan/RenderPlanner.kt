@@ -30,14 +30,16 @@ object RenderPlanner {
         if (settings.preset == ExportPreset.LOSSLESS_CUT) return fail(VideoExportFailure.UNSUPPORTED_PRESET)
         val audioOnly = settings.preset == ExportPreset.AUDIO_ONLY
         val missing = project.mainTrack.any { it.assetId !in project.assets } ||
-            project.audioTrack.any { it.assetId !in project.assets }
+            project.audioTrack.any { it.assetId !in project.assets } ||
+            project.layers.any { it.visible && it.clip.assetId !in project.assets }
         if (missing) return fail(VideoExportFailure.SOURCE_MISSING)
-        if (project.mainTrack.isEmpty() && project.audioTrack.isEmpty()) return fail(VideoExportFailure.NOTHING_TO_EXPORT)
+        if (project.mainTrack.isEmpty() && project.audioTrack.isEmpty() && project.layers.none { it.visible }) return fail(VideoExportFailure.NOTHING_TO_EXPORT)
         if (!audioOnly && project.mainTrack.isEmpty()) return fail(VideoExportFailure.NO_VIDEO)
         if (audioOnly && !hasAudio(project)) return fail(VideoExportFailure.NO_AUDIO)
 
         val durationUs = if (audioOnly) {
-            maxOf(project.mainDurationUs, project.audioTrack.maxOfOrNull { it.endUs } ?: 0L)
+            maxOf(project.mainDurationUs, project.audioTrack.maxOfOrNull { it.endUs } ?: 0L,
+                project.layers.filter { it.visible }.maxOfOrNull { it.endUs } ?: 0L)
         } else {
             project.mainDurationUs
         }
@@ -63,8 +65,24 @@ object RenderPlanner {
         val main = planMain(project, audioOnly)
         val lanes = planAudioLanes(project, durationUs)
         val texts = if (audioOnly) TrimmedTexts(emptyList(), trimmed = false) else planTexts(project, durationUs)
+        val layers = project.layers.filter { it.visible && it.startUs < durationUs }.mapNotNull { layer ->
+            val clip = layer.clip
+            val asset = project.assets.getValue(clip.assetId)
+            if (audioOnly && (asset.kind != AssetKind.VIDEO || !asset.hasAudio)) return@mapNotNull null
+            val length = minOf(layer.endUs, durationUs) - layer.startUs
+            val image = asset.kind == AssetKind.IMAGE
+            PlannedLayer(
+                media(asset, if (image) 0L else clip.sourceInUs,
+                    if (image) 0L else minOf(clip.sourceOutUs, clip.sourceInUs + (length * clip.speed).roundToLong()),
+                    length, if (image) 1.0 else clip.speed, clip.keepPitch,
+                    GainCurve.of(clip.volume, clip.muted, clip.fadeInUs, clip.fadeOutUs, clip.durationUs),
+                    clip.quarterTurns, clip.flipHorizontal, FrameFill.FIT),
+                layer.startUs, layer.startUs + length, layer.centerX, layer.centerY,
+                layer.widthFraction, layer.aspectRatio(asset), layer.opacity,
+            )
+        }
         val notices = buildSet {
-            if (!audioOnly && (lanes.trimmed || texts.trimmed)) add(PlanNotice.TRIMMED_AFTER_VIDEO)
+            if (!audioOnly && (lanes.trimmed || texts.trimmed || project.layers.any { it.visible && it.endUs > durationUs })) add(PlanNotice.TRIMMED_AFTER_VIDEO)
             if (!audioOnly && (project.background and 0xFFFFFF) != 0) add(PlanNotice.BACKGROUND_BLACK)
         }
         return Result.Success(
@@ -76,6 +94,7 @@ object RenderPlanner {
                 texts = texts.texts,
                 durationUs = durationUs,
                 notices = notices,
+                layers = layers,
             ),
         )
     }
@@ -95,6 +114,7 @@ object RenderPlanner {
 
     private fun hasAudio(project: VideoProject): Boolean =
         project.audioTrack.isNotEmpty() ||
+            project.layers.any { it.visible && project.assets[it.clip.assetId]?.hasAudio == true } ||
             project.mainTrack.any { project.assets[it.assetId]?.let { asset -> asset.kind == AssetKind.VIDEO && asset.hasAudio } == true }
 
     private fun planMain(project: VideoProject, audioOnly: Boolean): List<PlannedItem> =
