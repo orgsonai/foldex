@@ -29,12 +29,13 @@
 - Releaseビルド・`lintRelease`・JVMテスト331件成功。Lintはエラー0件。既存の警告と、プロジェクト規約によるModifier引数順の警告は残る。
 - 1.12.1の旧Codecで生成した実データを固定fixtureとして保持し、旧下書きの読み込み、新形式への保存と再読み込みを検証した。
 - レイヤーのトリム、速度別の分割、プレビュー境界、時間移動、重なり順、Undo/Redo、保存復元、書き出し計画をJVMで確認した。
-- 実機用の操作テスト8件と、色面動画を実際に書き出して画素を読む合成テスト2件を用意した。**1.13.0の実機テストは未実行。**
-- moto g66j 5GはUSB ADBの一覧に出ない。SSH経由で機種と導入版1.12.1を確認できたが、端末アプリの権限ではPackageInstallerの書き込みを実行できなかった。作成した空のインストールセッションは破棄した。
-- **1.13.0の更新インストールは未完了。** 正式署名APKを端末の `/sdcard/Download/foldex-1.13.0-video-layers.apk` に配置済み。転送前後のSHA-256一致を確認した。
+- moto g66j 5Gで合成テスト2件が成功（`OK (2 tests)`、12.034秒）。実際の動画を符号化・再読込し、レイヤーの開始終了、位置、不透明度、重なり順、分割前後の異なる素材区間を画素で確認した。
+- 操作テスト8件は準備済みだが未実行。ユーザーが今は画面を解除できないため、ドラッグ操作の検証は保留。
+- 前回はADB未接続で導入できなかったが、2026-09-16にUSB接続が回復した。MainActivityの起動要求成功とプロセス存続も確認した（ロック画面中のため画面操作は未確認）。
+- **通常版1.13.0 / code104をデータ保持で更新インストール済み。** 導入されたAPKのSHA-256が検証済みAPKと一致することを確認した。端末の `/sdcard/Download/foldex-1.13.0-video-layers.apk` にも控えを配置済み。
 
-ログ: `/tmp/foldex-video-1.13.0-build.log`、`/tmp/foldex-video-1.13.0-device-build.log`。
-実機用は既存Debug版と共存する `.gesturetest` / `.gesturetest.test` パッケージ。通常版のデータは消さない。
+ログ: `/tmp/foldex-video-1.13.0-build.log`、`/tmp/foldex-video-1.13.0-device-build.log`、`/tmp/foldex-video-1.13.0-export-device.log`。
+実機用には `.gesturetest` / `.gesturetest.test` パッケージを使い、実行後に削除した。通常版と既存Debug版のデータは保持。
 
 ## 実装上の判断
 
@@ -50,7 +51,7 @@ Media3 1.11.1は先に登録した映像が手前になるため、レイヤー�
 公式APIと、導入版1.11.1の`DefaultVideoCompositor`・`SequenceAssetLoader`のソースを確認した。
 [カスタム合成レイアウト](https://developer.android.com/media/media3/transformer/videocompositorsettings?hl=en)、
 [VideoCompositorSettings](https://developer.android.com/reference/androidx/media3/common/VideoCompositorSettings)。
-実機での精度・速度の確認は、上記のinstrumented testを実行してから判断する。
+上記の色面動画では合成の基礎動作を確認できた。一般の素材・高解像度での精度と性能、操作感は引き続き確認する。
 
 ## 残る範囲
 
