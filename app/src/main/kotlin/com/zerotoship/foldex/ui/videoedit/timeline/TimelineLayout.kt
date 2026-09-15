@@ -58,6 +58,11 @@ fun rulerStepUs(pxPerSecond: Float, rate: FrameRate, minSpacingPx: Float): Long 
 /** サムネイル 1 枚分。[localUs] はクリップ内の時刻、[timelineUs] はタイムライン上の時刻。 */
 data class ThumbSlot(val clipIndex: Int, val localUs: Long, val timelineUs: Long, val widthUs: Long)
 
+/** 左トリム中だけ、短くなった分を表示上の空白として保つ。指を離すと通常の前詰めに戻す。 */
+data class MainStartTrim(val clipIndex: Int, val offsetUs: Long) {
+    fun offsetFor(index: Int): Long = if (index >= clipIndex) offsetUs else 0L
+}
+
 private val THUMB_STEPS_US = longArrayOf(
     50_000L, 100_000L, 200_000L, 500_000L, 1_000_000L, 2_000_000L, 5_000_000L, 10_000_000L,
     30_000_000L, 60_000_000L, 120_000_000L, 300_000_000L, 600_000_000L, 1_800_000_000L,
@@ -76,6 +81,7 @@ fun thumbnailSlots(
     layout: TimelineLayout,
     thumbWidthPx: Float,
     maxSlots: Int = 300,
+    startTrim: MainStartTrim? = null,
 ): List<ThumbSlot> {
     if (layout.widthPx <= 0f || layout.pxPerSecond <= 0f) return emptyList()
     val step = thumbStepUs(layout.pxPerSecond, thumbWidthPx)
@@ -84,36 +90,65 @@ fun thumbnailSlots(
     val result = ArrayList<ThumbSlot>()
     var clipStart = 0L
     durationsUs.forEachIndexed { index, duration ->
-        val clipEnd = clipStart + duration
-        if (duration > 0L && clipEnd > visibleStart && clipStart < visibleEnd) {
-            val first = (visibleStart - clipStart).coerceAtLeast(0L) / step
-            val last = (minOf(visibleEnd, clipEnd) - clipStart - 1).coerceAtLeast(0L) / step
+        val displayStart = clipStart + (startTrim?.offsetFor(index) ?: 0L)
+        val clipEnd = displayStart + duration
+        if (duration > 0L && clipEnd > visibleStart && displayStart < visibleEnd) {
+            val first = (visibleStart - displayStart).coerceAtLeast(0L) / step
+            val last = (minOf(visibleEnd, clipEnd) - displayStart - 1).coerceAtLeast(0L) / step
             var k = first
             while (k <= last && result.size < maxSlots) {
                 val local = k * step
-                result.add(ThumbSlot(index, local, clipStart + local, minOf(step, duration - local)))
+                result.add(ThumbSlot(index, local, displayStart + local, minOf(step, duration - local)))
                 k++
             }
         }
-        clipStart = clipEnd
+        clipStart += duration
     }
     return result
 }
 
 /**
- * 並べ替えで差し込む先。動かしているクリップを除いた並びで、中央が [timeUs] より左にあるクリップの数。
+ * 並べ替えで差し込む先。[timeUs] はドラッグ中のクリップの左端。
+ * 元の並びを基準に、移動方向の端が隣のクリップの中央を越えたら差し込む。
+ * 自分の長さを先に詰めると、長いクリップをつかんだだけで末尾へ飛ぶため、判定中は詰めない。
  * `VideoEditOps.moveMain(from, to)` の to にそのまま渡せる。
  */
 fun reorderTargetIndex(durationsUs: List<Long>, fromIndex: Int, timeUs: Long): Int {
+    if (fromIndex !in durationsUs.indices) return fromIndex
+    val originalStart = durationsUs.take(fromIndex).sum()
+    var target = fromIndex
     var start = 0L
-    var count = 0
     durationsUs.forEachIndexed { index, duration ->
-        if (index != fromIndex) {
-            if (start + duration / 2 < timeUs) count++
-            start += duration
-        }
+        val middle = start + duration / 2
+        if (timeUs < originalStart && index < fromIndex && timeUs < middle) target = minOf(target, index)
+        if (timeUs > originalStart && index > fromIndex && timeUs + durationsUs[fromIndex] > middle) target = index
+        start += duration
     }
-    return count
+    return target
+}
+
+/** 取っ手の内側への当たり判定を制限し、短いクリップでも中央をつかんで移動できるようにする。 */
+fun trimHandleAt(x: Float, startX: Float, endX: Float, touchPx: Float): Boolean? {
+    val inset = minOf(touchPx, (endX - startX).coerceAtLeast(0f) / 3f)
+    return when {
+        x >= startX - touchPx && x < startX + inset -> true
+        x > endX - inset && x <= endX + touchPx -> false
+        else -> null
+    }
+}
+
+data class RangeSnap(val startUs: Long, val targetUs: Long?)
+
+/** 両端のうち近い方を吸着させ、長さと非負の開始位置を保つ。 */
+fun snapMovingRange(startUs: Long, durationUs: Long, targetsUs: Iterable<Long>, thresholdUs: Long): RangeSnap {
+    val start = startUs.coerceAtLeast(0L)
+    val left = snapTarget(start, targetsUs.filter { it >= 0L }, thresholdUs)
+    val right = snapTarget(start + durationUs, targetsUs.filter { it >= durationUs }, thresholdUs)
+    return when {
+        left != null && (right == null || abs(left - start) <= abs(right - (start + durationUs))) -> RangeSnap(left, left)
+        right != null -> RangeSnap(right - durationUs, right)
+        else -> RangeSnap(start, null)
+    }
 }
 
 /** [valueUs] にもっとも近い目標が [thresholdUs] 以内にあれば、その目標を返す。 */

@@ -1250,4 +1250,11 @@
     <string name="video_draft_delete">Delete</string>
     <string name="video_draft_list_failed">Couldn\'t load drafts.</string>
     <string name="video_draft_delete_failed">Couldn\'t delete the draft. Close any editor using it and try again.</string>
+    <string name="video_edit_source_range">Source range</string>
+    <string name="video_edit_source_range_value">Source: %1$s → %2$s</string>
+    <string name="video_edit_source_range_hint">Shift the source range while keeping the same length.</string>
+    <string name="video_edit_source_range_full">The full video is in use. Trim or split it first to shift the range.</string>
+    <string name="video_edit_source_previous">1 frame earlier</string>
+    <string name="video_edit_source_next">1 frame later</string>
+    <string name="video_edit_drag_hint">Drag the middle to move · Drag either edge to trim</string>
 </resources>

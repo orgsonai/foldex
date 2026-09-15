@@ -286,6 +286,7 @@ class VideoEditViewModel @Inject constructor(
             return
         }
         edit { after }
+        select(if (selection is ClipRef.Audio) ClipRef.Audio(id) else ClipRef.Main(id))
     }
 
     override fun deleteSelected() {
@@ -503,7 +504,7 @@ class VideoEditViewModel @Inject constructor(
 
     private fun panelFits(panel: EditPanel, selection: ClipRef?): Boolean = when (panel) {
         EditPanel.CANVAS -> true
-        EditPanel.SPEED, EditPanel.TRANSFORM -> selection is ClipRef.Main
+        EditPanel.SOURCE_RANGE, EditPanel.SPEED, EditPanel.TRANSFORM -> selection is ClipRef.Main
         EditPanel.VOLUME -> selection is ClipRef.Main || selection is ClipRef.Audio
         EditPanel.TEXT -> selection is ClipRef.Text
     }

@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -57,6 +58,7 @@ import com.zerotoship.foldex.ui.imageedit.PALETTE
 import com.zerotoship.foldex.ui.videoedit.EditPanel
 import com.zerotoship.foldex.ui.videoedit.VideoEditActions
 import com.zerotoship.foldex.ui.videoedit.model.CanvasAspect
+import com.zerotoship.foldex.ui.videoedit.model.AssetKind
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 import com.zerotoship.foldex.ui.videoedit.model.FrameFill
 import com.zerotoship.foldex.ui.videoedit.model.MainClip
@@ -65,6 +67,7 @@ import com.zerotoship.foldex.ui.videoedit.model.US_PER_SECOND
 import com.zerotoship.foldex.ui.videoedit.model.VideoEditOps
 import com.zerotoship.foldex.ui.videoedit.model.VideoProject
 import com.zerotoship.foldex.ui.videoedit.model.formatSeconds
+import com.zerotoship.foldex.ui.videoedit.model.formatTimecode
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ln
@@ -87,6 +90,9 @@ fun EditPanelHost(
     val close = { actions.openPanel(null) }
     when (panel) {
         null -> Unit
+        EditPanel.SOURCE_RANGE -> mainClipOf(project, selection)?.let { clip ->
+            SourceRangePanel(project, clip, actions, close, modifier)
+        }
         EditPanel.CANVAS -> CanvasPanel(
             aspect = project.aspect,
             background = project.background,
@@ -166,6 +172,47 @@ private fun PanelSurface(
                 TextButton(onClick = onDone) { Text(stringResource(R.string.action_done)) }
             }
             content()
+        }
+    }
+}
+
+// ---- 使用区間 ----
+
+/** 両端の間隔を保って使用区間をずらす。タイムライン上での並べ替えとは別の編集。 */
+@Composable
+private fun SourceRangePanel(
+    project: VideoProject,
+    clip: MainClip,
+    actions: VideoEditActions,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val asset = project.assets[clip.assetId]
+    val maxStart = ((asset?.durationUs ?: 0L) - clip.sourceDurationUs).coerceAtLeast(0L)
+    val canShift = asset?.kind == AssetKind.VIDEO && maxStart > 0L
+    val label = stringResource(R.string.video_edit_source_range)
+    PanelSurface(label, onDone, modifier) {
+        Text(asset?.name.orEmpty(), style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.video_edit_source_range_value,
+            formatTimecode(clip.sourceInUs, project.frameRate), formatTimecode(clip.sourceOutUs, project.frameRate)))
+        Text(stringResource(if (canShift) R.string.video_edit_source_range_hint else R.string.video_edit_source_range_full),
+            style = MaterialTheme.typography.bodySmall)
+        if (canShift) {
+            Slider(
+                value = (clip.sourceInUs.toDouble() / maxStart).toFloat().coerceIn(0f, 1f),
+                onValueChange = { fraction ->
+                    val start = (fraction.toDouble() * maxStart).roundToLong()
+                    actions.preview { VideoEditOps.shiftMainSource(it, clip.id, start) }
+                },
+                onValueChangeFinished = actions::commit,
+                modifier = Modifier.semantics { contentDescription = label },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { actions.edit { VideoEditOps.shiftMainSource(it, clip.id, clip.sourceInUs - project.frameRate.frameDurationUs) } },
+                    enabled = clip.sourceInUs > 0L) { Text(stringResource(R.string.video_edit_source_previous)) }
+                TextButton(onClick = { actions.edit { VideoEditOps.shiftMainSource(it, clip.id, clip.sourceInUs + project.frameRate.frameDurationUs) } },
+                    enabled = clip.sourceInUs < maxStart) { Text(stringResource(R.string.video_edit_source_next)) }
+            }
         }
     }
 }

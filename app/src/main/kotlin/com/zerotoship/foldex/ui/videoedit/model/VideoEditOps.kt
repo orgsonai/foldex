@@ -77,6 +77,15 @@ object VideoEditOps {
     fun trimMainEnd(project: VideoProject, id: String, sourceOutUs: Long): VideoProject =
         updateMain(project, id) { clip -> clip.copy(sourceOutUs = clampMainSourceOut(project, clip, sourceOutUs)).clampFades() }
 
+    /** 長さとタイムライン上の位置を保ち、素材から使う区間だけをずらす。 */
+    fun shiftMainSource(project: VideoProject, id: String, sourceInUs: Long): VideoProject =
+        updateMain(project, id) { clip ->
+            val asset = project.assets[clip.assetId]
+            if (asset?.kind != AssetKind.VIDEO) return@updateMain clip
+            val start = sourceInUs.clampBetween(0L, asset.durationUs - clip.sourceDurationUs)
+            clip.copy(sourceInUs = start, sourceOutUs = start + clip.sourceDurationUs)
+        }
+
     /** [from] 番目を取り除いてから [to] 番目に差し込む。 */
     fun moveMain(project: VideoProject, from: Int, to: Int): VideoProject {
         val list = project.mainTrack

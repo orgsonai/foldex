@@ -100,8 +100,9 @@ fun VideoEditScreen(
     var playing by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
 
-    LaunchedEffect(durationUs) {
-        if (timeline.playheadUs > durationUs) timeline.playheadUs = durationUs
+    LaunchedEffect(durationUs, timeline.scrubbing) {
+        // トリム中に表示位置を動かすと、つかんだ端が指から逃げる。確定後に範囲へ戻す。
+        if (!timeline.scrubbing && timeline.playheadUs > durationUs) timeline.playheadUs = durationUs
     }
     LaunchedEffect(state.loading) {
         if (!state.loading) timeline.requestFitAll()
@@ -197,6 +198,9 @@ fun VideoEditScreen(
     fun Toolbar() {
         VideoEditToolbar(
             selection = state.selection,
+            sourceRangeAvailable = (state.selection as? ClipRef.Main)?.let { ref ->
+                project.mainTrack.firstOrNull { it.id == ref.id }?.let { project.assets[it.assetId]?.kind == AssetKind.VIDEO }
+            } == true,
             activePanel = state.panel,
             enabled = !state.adding,
             onAction = { action ->
@@ -209,6 +213,15 @@ fun VideoEditScreen(
                     ToolAction.CANVAS -> actions.openPanel(togglePanel(state.panel, EditPanel.CANVAS))
                     ToolAction.SPLIT -> actions.splitAt(atUs)
                     ToolAction.SPEED -> actions.openPanel(togglePanel(state.panel, EditPanel.SPEED))
+                    ToolAction.SOURCE_RANGE -> {
+                        if (state.panel != EditPanel.SOURCE_RANGE) {
+                            (state.selection as? ClipRef.Main)?.let { ref ->
+                                val index = project.mainIndexOf(ref.id)
+                                if (index >= 0) timeline.playheadUs = project.mainStartUs(index)
+                            }
+                        }
+                        actions.openPanel(togglePanel(state.panel, EditPanel.SOURCE_RANGE))
+                    }
                     ToolAction.VOLUME -> actions.openPanel(togglePanel(state.panel, EditPanel.VOLUME))
                     ToolAction.TRANSFORM -> actions.openPanel(togglePanel(state.panel, EditPanel.TRANSFORM))
                     ToolAction.EDIT_TEXT -> actions.openPanel(togglePanel(state.panel, EditPanel.TEXT))

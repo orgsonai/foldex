@@ -77,6 +77,7 @@ import com.zerotoship.foldex.ui.videoedit.model.US_PER_SECOND
 import com.zerotoship.foldex.ui.videoedit.model.VideoEditOps
 import com.zerotoship.foldex.ui.videoedit.model.VideoProject
 import com.zerotoship.foldex.ui.videoedit.model.formatClock
+import com.zerotoship.foldex.ui.videoedit.model.formatTimecode
 import com.zerotoship.foldex.ui.videoedit.sourceModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -111,7 +112,7 @@ private const val THUMB_REQUEST_PX = 256
  *  - 2 本指のピンチ = 時間軸の拡大縮小
  *  - タップ = クリップの選択 / 解除
  *  - 選んだクリップの端 = トリム (再生位置などに吸着し、軽い触覚で知らせる)
- *  - 長押しして動かす = メインは並べ替え、文字・音声は位置の移動
+ *  - 選択中の中央をドラッグ (または未選択を長押し) = メインは並べ替え、文字・音声は位置の移動
  *
  * クリップ数に比例した Composable は作らない。描画は Canvas、サムネイルは見えている分だけ置く。
  */
@@ -135,6 +136,8 @@ fun TimelineView(
     val heightDp = with(density) { lanes.height.toDp() }
     var widthPx by remember { mutableFloatStateOf(0f) }
     var reorder by remember { mutableStateOf<ReorderDrag?>(null) }
+    var startTrim by remember { mutableStateOf<MainStartTrim?>(null) }
+    var snapLineUs by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     val fling = remember { JobHolder() }
     val haptics = LocalHapticFeedback.current
@@ -183,6 +186,8 @@ fun TimelineView(
             onCommit = { latestOnCommit.value() },
             onEdit = { latestOnEdit.value(it) },
             onReorder = { reorder = it },
+            onStartTrim = { startTrim = it },
+            onSnap = { snapLineUs = it },
             haptic = { haptics.performHapticFeedback(it) },
             startFling = { velocity ->
                 fling.job?.cancel()
@@ -240,25 +245,25 @@ fun TimelineView(
             }
             .drawBehind {
                 val layout = TimelineLayout(size.width, state.playheadUs, state.pxPerSecond)
-                drawLanes(project, layout, lanes, colors, reordering = reorder != null)
+                drawLanes(project, layout, lanes, colors, reordering = reorder != null, startTrim = startTrim)
                 drawRuler(layout, project.frameRate, lanes, colors, measurer, labelStyle)
             }
             .pointerInput(gestures) {
                 awaitEachGesture { timelineGesture(gestures) }
             },
     ) {
-        if (reorder == null) MainThumbnails(project, state, widthPx, lanes)
+        if (reorder == null) MainThumbnails(project, state, widthPx, lanes, startTrim)
         Canvas(Modifier.fillMaxSize()) {
             val layout = TimelineLayout(size.width, state.playheadUs, state.pxPerSecond)
             val drag = reorder
             if (drag == null) {
-                drawMainOverlays(project, layout, lanes, colors, measurer, labelStyle)
+                drawMainOverlays(project, layout, lanes, colors, measurer, labelStyle, startTrim)
             } else {
                 drawReorder(project, layout, lanes, colors, measurer, labelStyle, drag)
             }
             if (lanes.hasText) drawTextClips(project, layout, lanes, colors, measurer, labelStyle)
             if (lanes.hasAudio) drawAudioClips(project, layout, lanes, colors, measurer, labelStyle)
-            if (drag == null) drawSelection(project, selection, layout, lanes, colors)
+            if (drag == null) drawSelection(project, selection, layout, lanes, colors, startTrim)
             if (project.durationUs == 0L) {
                 drawText(
                     measurer,
@@ -270,6 +275,10 @@ fun TimelineView(
                 )
             }
             drawPlayhead(colors)
+            snapLineUs?.let { time ->
+                val x = layout.xOf(time)
+                drawLine(colors.selection, Offset(x, 0f), Offset(x, size.height), strokeWidth = 2.dp.toPx())
+            }
         }
     }
 }
@@ -303,7 +312,7 @@ private fun Density.lanesFor(hasText: Boolean, hasAudio: Boolean): Lanes {
     return Lanes(rulerBottom, mainTop, mainBottom, textTop, textBottom, audioTop, audioBottom, audioBottom + gap)
 }
 
-private data class ReorderDrag(val from: Int, val fingerX: Float, val target: Int)
+private data class ReorderDrag(val from: Int, val fingerX: Float, val target: Int, val grabOffsetUs: Long)
 
 private sealed interface Hit {
     data object Empty : Hit
@@ -348,6 +357,8 @@ private class TimelineGestureContext(
     val onCommit: () -> Unit,
     val onEdit: ((VideoProject) -> VideoProject) -> Unit,
     val onReorder: (ReorderDrag?) -> Unit,
+    val onStartTrim: (MainStartTrim?) -> Unit,
+    val onSnap: (Long?) -> Unit,
     val haptic: (HapticFeedbackType) -> Unit,
     val startFling: (Float) -> Unit,
     val stopFling: () -> Unit,
@@ -362,29 +373,33 @@ private class TimelineGestureContext(
 // ---- サムネイル ----
 
 @Composable
-private fun MainThumbnails(project: VideoProject, state: TimelineState, widthPx: Float, lanes: Lanes) {
+private fun MainThumbnails(project: VideoProject, state: TimelineState, widthPx: Float, lanes: Lanes, startTrim: MainStartTrim?) {
     if (widthPx <= 0f) return
     val context = LocalContext.current
     val density = LocalDensity.current
     val thumbWidthPx = with(density) { THUMB_WIDTH.toPx() }
     val mainHeight = with(density) { (lanes.mainBottom - lanes.mainTop).toDp() }
     val durations = remember(project.mainTrack) { project.mainTrack.map { it.durationUs } }
-    val slots by remember(durations, widthPx, thumbWidthPx) {
-        derivedStateOf { thumbnailSlots(durations, TimelineLayout(widthPx, state.playheadUs, state.pxPerSecond), thumbWidthPx) }
+    val slots by remember(durations, widthPx, thumbWidthPx, startTrim) {
+        derivedStateOf { thumbnailSlots(durations, TimelineLayout(widthPx, state.playheadUs, state.pxPerSecond), thumbWidthPx, startTrim = startTrim) }
     }
     slots.forEach { slot ->
         val clip = project.mainTrack.getOrNull(slot.clipIndex) ?: return@forEach
         val asset = project.assets[clip.assetId] ?: return@forEach
-        val sourceUs = if (asset.kind == AssetKind.VIDEO) clip.sourceTimeAt(slot.localUs) / THUMB_BUCKET_US * THUMB_BUCKET_US else 0L
+        // 分割直後の先頭を、区間外のキーフレームや 0.1 秒の丸めで同じ絵にしない。
+        val exact = slot.localUs == 0L
+        val sourceUs = if (asset.kind == AssetKind.VIDEO) {
+            if (exact) clip.sourceInUs else (clip.sourceTimeAt(slot.localUs) / THUMB_BUCKET_US * THUMB_BUCKET_US).coerceAtLeast(clip.sourceInUs)
+        } else 0L
         key(clip.id, slot.localUs, slot.widthUs) {
-            val request = remember(asset.source, sourceUs) {
+            val request = remember(asset.source, sourceUs, exact) {
                 val builder = ImageRequest.Builder(context)
                     .data(sourceModel(asset.source))
                     .size(THUMB_REQUEST_PX)
-                    .memoryCacheKey("videoedit-thumb:${asset.source}#$sourceUs")
+                    .memoryCacheKey("videoedit-thumb:${asset.source}#$sourceUs#$exact")
                     .crossfade(false)
                 if (asset.kind == AssetKind.VIDEO) {
-                    builder.videoFrameMicros(sourceUs).videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    builder.videoFrameMicros(sourceUs).videoFrameOption(if (exact) MediaMetadataRetriever.OPTION_CLOSEST else MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 }
                 builder.build()
             }
@@ -408,16 +423,17 @@ private fun MainThumbnails(project: VideoProject, state: TimelineState, widthPx:
 
 // ---- 描画 ----
 
-private fun DrawScope.drawLanes(project: VideoProject, layout: TimelineLayout, lanes: Lanes, colors: TimelineColors, reordering: Boolean) {
+private fun DrawScope.drawLanes(project: VideoProject, layout: TimelineLayout, lanes: Lanes, colors: TimelineColors, reordering: Boolean, startTrim: MainStartTrim?) {
     drawRect(colors.lane, Offset(0f, lanes.mainTop), Size(size.width, lanes.mainBottom - lanes.mainTop))
     if (lanes.hasText) drawRect(colors.lane, Offset(0f, lanes.textTop), Size(size.width, lanes.textBottom - lanes.textTop))
     if (lanes.hasAudio) drawRect(colors.lane, Offset(0f, lanes.audioTop), Size(size.width, lanes.audioBottom - lanes.audioTop))
     if (reordering) return
     // サムネイルが読み込まれる前に見える下地。
     var start = 0L
-    project.mainTrack.forEach { clip ->
-        val left = layout.xOf(start)
-        val right = layout.xOf(start + clip.durationUs)
+    project.mainTrack.forEachIndexed { index, clip ->
+        val displayStart = start + (startTrim?.offsetFor(index) ?: 0L)
+        val left = layout.xOf(displayStart)
+        val right = layout.xOf(displayStart + clip.durationUs)
         start += clip.durationUs
         if (right >= 0f && left <= size.width) {
             drawRect(colors.mainClip, Offset(left, lanes.mainTop), Size(right - left, lanes.mainBottom - lanes.mainTop))
@@ -460,18 +476,31 @@ private fun DrawScope.drawMainOverlays(
     colors: TimelineColors,
     measurer: TextMeasurer,
     style: TextStyle,
+    startTrim: MainStartTrim?,
 ) {
     val top = lanes.mainTop
     val height = lanes.mainBottom - lanes.mainTop
     val border = 1.dp.toPx()
     var start = 0L
-    project.mainTrack.forEach { clip ->
-        val clipStart = start
+    project.mainTrack.forEachIndexed { index, clip ->
+        val clipStart = start + (startTrim?.offsetFor(index) ?: 0L)
         start += clip.durationUs
         val left = layout.xOf(clipStart)
         val right = layout.xOf(clipStart + clip.durationUs)
-        if (right < 0f || left > size.width) return@forEach
+        if (right < 0f || left > size.width) return@forEachIndexed
         drawRect(colors.clipBorder, Offset(left, top), Size(right - left, height), style = Stroke(border))
+        // 同じ素材を分割しても、番号・使用区間・境界から別の区間だと分かるようにする。
+        val labelHeight = 18.dp.toPx()
+        val labelLeft = max(left, 0f)
+        if (right - labelLeft > 32.dp.toPx()) {
+            drawRect(colors.scrim, Offset(labelLeft, top + height - labelHeight), Size(right - labelLeft, labelHeight))
+            drawClipLabel(
+                "${index + 1}  ${formatTimecode(clip.sourceInUs, project.frameRate)}–${formatTimecode(clip.sourceOutUs, project.frameRate)}",
+                labelLeft, top + height - labelHeight, right - labelLeft, labelHeight,
+                Color.White, measurer, style,
+            )
+        }
+        drawLine(colors.clipBorder, Offset(left, top), Offset(left, top + height), strokeWidth = 3.dp.toPx())
         // フェードは上端から斜めに下りる三角形で示す。
         if (clip.fadeInUs > 0L) {
             val edge = layout.xOf(clipStart + clip.fadeInUs)
@@ -524,12 +553,16 @@ private fun DrawScope.drawReorder(
     val height = lanes.mainBottom - lanes.mainTop
     val radius = CornerRadius(6.dp.toPx())
     val gap = 2.dp.toPx()
+    val moving = project.mainTrack.getOrNull(drag.from) ?: return
     var start = 0L
     var seen = 0
     var insertionX = layout.xOf(0L)
     project.mainTrack.forEachIndexed { index, clip ->
         if (index == drag.from) return@forEachIndexed
-        if (seen == drag.target) insertionX = layout.xOf(start)
+        if (seen == drag.target) {
+            insertionX = layout.xOf(start)
+            start += moving.durationUs
+        }
         val left = layout.xOf(start)
         val right = layout.xOf(start + clip.durationUs)
         if (right >= 0f && left <= size.width) {
@@ -542,9 +575,8 @@ private fun DrawScope.drawReorder(
     }
     if (drag.target >= seen) insertionX = layout.xOf(start)
     drawLine(colors.selection, Offset(insertionX, top - gap), Offset(insertionX, top + height + gap), strokeWidth = 3.dp.toPx())
-    val moving = project.mainTrack.getOrNull(drag.from) ?: return
-    val width = 72.dp.toPx()
-    val left = drag.fingerX - width / 2f
+    val width = (moving.durationUs.toDouble() / US_PER_SECOND * layout.pxPerSecond).toFloat().coerceAtLeast(1f)
+    val left = drag.fingerX - (drag.grabOffsetUs.toDouble() / US_PER_SECOND * layout.pxPerSecond).toFloat()
     drawRoundRect(colors.selection, Offset(left, top), Size(width, height), radius)
     drawClipLabel(project.assets[moving.assetId]?.name.orEmpty(), left, top, width, height, colors.onSelection, measurer, style)
 }
@@ -639,9 +671,10 @@ private fun DrawScope.drawSelection(
     layout: TimelineLayout,
     lanes: Lanes,
     colors: TimelineColors,
+    startTrim: MainStartTrim?,
 ) {
     val ref = selection ?: return
-    val (startUs, endUs) = timeRangeOf(project, ref) ?: return
+    val (startUs, endUs) = timeRangeOf(project, ref, startTrim) ?: return
     val top = when (ref) {
         is ClipRef.Main -> lanes.mainTop
         is ClipRef.Text -> lanes.textTop
@@ -713,9 +746,7 @@ private fun hitTest(
         if (range != null && inLane) {
             val startX = layout.xOf(range.first)
             val endX = layout.xOf(range.second)
-            val middle = (startX + endX) / 2f
-            if (abs(x - startX) <= handleTouchPx && x <= middle) return Hit.Handle(selection, start = true)
-            if (abs(x - endX) <= handleTouchPx && x >= middle) return Hit.Handle(selection, start = false)
+            trimHandleAt(x, startX, endX, handleTouchPx)?.let { return Hit.Handle(selection, start = it) }
         }
     }
     val timeUs = layout.timeAt(x)
@@ -730,13 +761,13 @@ private fun hitTest(
     }
 }
 
-private fun timeRangeOf(project: VideoProject, ref: ClipRef): Pair<Long, Long>? = when (ref) {
+private fun timeRangeOf(project: VideoProject, ref: ClipRef, startTrim: MainStartTrim? = null): Pair<Long, Long>? = when (ref) {
     is ClipRef.Main -> {
         val index = project.mainIndexOf(ref.id)
         if (index < 0) {
             null
         } else {
-            val start = project.mainStartUs(index)
+            val start = project.mainStartUs(index) + (startTrim?.offsetFor(index) ?: 0L)
             start to start + project.mainTrack[index].durationUs
         }
     }
@@ -802,7 +833,14 @@ private suspend fun AwaitPointerEventScope.timelineGesture(ctx: TimelineGestureC
     when (early) {
         Early.RELEASED -> tap(ctx, hit, down.position, layout)
         Early.MULTI -> pinch(ctx)
-        Early.MOVED -> scroll(ctx, down)
+        Early.MOVED -> {
+            val ref = (hit as? Hit.Clip)?.ref
+            when {
+                ref == null || ref != ctx.selection() -> scroll(ctx, down)
+                ref is ClipRef.Main -> reorderMain(ctx, down, ref, project)
+                else -> moveClip(ctx, down, ref, project, layout)
+            }
+        }
         null -> {
             val ref = (hit as? Hit.Clip)?.ref
             if (ref == null) {
@@ -886,56 +924,74 @@ private suspend fun AwaitPointerEventScope.trimClip(
     val mainStart = if (mainIndex >= 0) project.mainStartUs(mainIndex) else 0L
     val text = if (ref is ClipRef.Text) project.texts.firstOrNull { it.id == ref.id } else null
     val audio = if (ref is ClipRef.Audio) project.audioTrack.firstOrNull { it.id == ref.id } else null
-    var snapped = false
+    var snappedTarget: Long? = null
+    var released = false
     ctx.state.scrubbing = true
     try {
         while (true) {
             val event = awaitPointerEvent()
+            if (event.changes.count { it.pressed } >= 2) {
+                ctx.onPreview { project }
+                ctx.onStartTrim(null)
+                ctx.onSnap(null)
+                pinch(ctx)
+                break
+            }
             val change = event.changes.firstOrNull { it.id == down.id } ?: break
-            if (!change.pressed) break
+            if (!change.pressed) {
+                released = true
+                break
+            }
             val deltaUs = layout.usForPx(change.position.x - down.position.x)
-            var nowSnapped = false
+            var target: Long? = null
+            fun snappedEdge(wanted: Long, minUs: Long, maxUs: Long): Long {
+                val bounded = wanted.coerceIn(minUs, maxOf(minUs, maxUs))
+                target = snapTarget(bounded, targets.filter { it in minUs..maxUs }, thresholdUs)
+                return target ?: bounded
+            }
             if (mainClip != null && hit.start) {
-                val wanted = mainClip.sourceInUs + (deltaUs * mainClip.speed).roundToLong()
-                val sourceIn = VideoEditOps.clampMainSourceIn(project, mainClip, wanted)
-                // 開始位置は前のクリップで決まるので、詰まった長さの分だけ再生位置を戻し、端を指の下に保つ。
-                val shortenedUs = ((sourceIn - mainClip.sourceInUs) / mainClip.speed).roundToLong()
-                ctx.state.playheadUs = (basePlayhead - shortenedUs).coerceAtLeast(0L)
-                ctx.onPreview { VideoEditOps.trimMainStart(it, mainClip.id, sourceIn) }
+                val minEdge = mainStart - (mainClip.sourceInUs / mainClip.speed).roundToLong()
+                val maxEdge = mainStart + mainClip.durationUs - project.frameRate.frameDurationUs
+                val edge = snappedEdge(mainStart + deltaUs, minEdge, maxEdge)
+                val sourceIn = mainClip.sourceInUs + ((edge - mainStart) * mainClip.speed).roundToLong()
+                val next = VideoEditOps.trimMainStart(project, mainClip.id, sourceIn)
+                // 再生位置や目盛りを動かさず、左端だけを指に追従させる。
+                ctx.onStartTrim(MainStartTrim(mainIndex, mainClip.durationUs - next.mainTrack[mainIndex].durationUs))
+                ctx.onPreview { next }
             } else if (mainClip != null) {
-                var endUs = mainStart + mainClip.durationUs + deltaUs
-                snapTarget(endUs, listOf(basePlayhead), thresholdUs)?.let {
-                    endUs = it
-                    nowSnapped = true
-                }
+                val maxEdge = mainStart + ((VideoEditOps.sourceLimitUs(project, mainClip.assetId) - mainClip.sourceInUs) / mainClip.speed).roundToLong()
+                val endUs = snappedEdge(mainStart + mainClip.durationUs + deltaUs, mainStart + project.frameRate.frameDurationUs, maxEdge)
                 val sourceOut = mainClip.sourceInUs + ((endUs - mainStart) * mainClip.speed).roundToLong()
-                ctx.onPreview { VideoEditOps.trimMainEnd(it, mainClip.id, sourceOut) }
+                ctx.onPreview { VideoEditOps.trimMainEnd(project, mainClip.id, sourceOut) }
             } else if (text != null) {
-                var edgeUs = (if (hit.start) text.startUs else text.endUs) + deltaUs
-                snapTarget(edgeUs, targets, thresholdUs)?.let {
-                    edgeUs = it
-                    nowSnapped = true
+                val finalEdge = if (hit.start) {
+                    snappedEdge(text.startUs + deltaUs, 0L, text.endUs - project.frameRate.frameDurationUs)
+                } else {
+                    snappedEdge(text.endUs + deltaUs, text.startUs + project.frameRate.frameDurationUs, Long.MAX_VALUE)
                 }
-                val finalEdge = edgeUs
                 ctx.onPreview {
-                    if (hit.start) VideoEditOps.trimTextStart(it, text.id, finalEdge) else VideoEditOps.trimTextEnd(it, text.id, finalEdge)
+                    if (hit.start) VideoEditOps.trimTextStart(project, text.id, finalEdge) else VideoEditOps.trimTextEnd(project, text.id, finalEdge)
                 }
             } else if (audio != null) {
-                var edgeUs = (if (hit.start) audio.startUs else audio.endUs) + deltaUs
-                snapTarget(edgeUs, targets, thresholdUs)?.let {
-                    edgeUs = it
-                    nowSnapped = true
+                val finalEdge = if (hit.start) {
+                    snappedEdge(audio.startUs + deltaUs, maxOf(0L, audio.startUs - audio.sourceInUs), audio.endUs - project.frameRate.frameDurationUs)
+                } else {
+                    snappedEdge(audio.endUs + deltaUs, audio.startUs + project.frameRate.frameDurationUs,
+                        audio.startUs + VideoEditOps.sourceLimitUs(project, audio.assetId) - audio.sourceInUs)
                 }
-                val finalEdge = edgeUs
                 ctx.onPreview {
-                    if (hit.start) VideoEditOps.trimAudioStart(it, audio.id, finalEdge) else VideoEditOps.trimAudioEnd(it, audio.id, finalEdge)
+                    if (hit.start) VideoEditOps.trimAudioStart(project, audio.id, finalEdge) else VideoEditOps.trimAudioEnd(project, audio.id, finalEdge)
                 }
             }
-            if (nowSnapped && !snapped) ctx.haptic(HapticFeedbackType.TextHandleMove)
-            snapped = nowSnapped
+            if (target != null && target != snappedTarget) ctx.haptic(HapticFeedbackType.TextHandleMove)
+            snappedTarget = target
+            ctx.onSnap(target)
             change.consume()
         }
     } finally {
+        if (!released) ctx.onPreview { project }
+        ctx.onStartTrim(null)
+        ctx.onSnap(null)
         ctx.state.scrubbing = false
         ctx.onCommit()
     }
@@ -956,35 +1012,38 @@ private suspend fun AwaitPointerEventScope.moveClip(
     ctx.onSelect(ref)
     val targets = snapTargets(project, ctx.state.playheadUs, ref)
     val thresholdUs = layout.usForPx(SNAP_DISTANCE.toPx())
-    var snapped = false
+    var snappedTarget: Long? = null
+    var released = false
+    ctx.state.scrubbing = true
     try {
+        var event = currentEvent
         while (true) {
-            val event = awaitPointerEvent()
-            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-            if (!change.pressed) break
-            var startUs = (baseStart + layout.usForPx(change.position.x - down.position.x)).coerceAtLeast(0L)
-            val snapStart = snapTarget(startUs, targets, thresholdUs)
-            val snapEnd = snapTarget(startUs + length, targets, thresholdUs)
-            val nowSnapped = when {
-                snapStart != null -> {
-                    startUs = snapStart
-                    true
-                }
-                snapEnd != null -> {
-                    startUs = (snapEnd - length).coerceAtLeast(0L)
-                    true
-                }
-                else -> false
+            if (event.changes.count { it.pressed } >= 2) {
+                ctx.onPreview { project }
+                ctx.onSnap(null)
+                pinch(ctx)
+                break
             }
-            if (nowSnapped && !snapped) ctx.haptic(HapticFeedbackType.TextHandleMove)
-            snapped = nowSnapped
-            val finalStart = startUs
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            if (!change.pressed) {
+                released = true
+                break
+            }
+            val startUs = baseStart + layout.usForPx(change.position.x - down.position.x)
+            val snap = snapMovingRange(startUs, length, targets, thresholdUs)
+            if (snap.targetUs != null && snap.targetUs != snappedTarget) ctx.haptic(HapticFeedbackType.TextHandleMove)
+            snappedTarget = snap.targetUs
+            ctx.onSnap(snap.targetUs)
             ctx.onPreview {
-                if (text != null) VideoEditOps.moveText(it, text.id, finalStart) else VideoEditOps.moveAudio(it, ref.id, finalStart)
+                if (text != null) VideoEditOps.moveText(project, text.id, snap.startUs) else VideoEditOps.moveAudio(project, ref.id, snap.startUs)
             }
             change.consume()
+            event = awaitPointerEvent()
         }
     } finally {
+        if (!released) ctx.onPreview { project }
+        ctx.onSnap(null)
+        ctx.state.scrubbing = false
         ctx.onCommit()
     }
 }
@@ -1002,13 +1061,25 @@ private suspend fun AwaitPointerEventScope.reorderMain(
     val durations = project.mainTrack.map { it.durationUs }
     val edge = EDGE_SCROLL.toPx()
     val step = EDGE_STEP.toPx()
-    var drag = ReorderDrag(from, down.position.x, from)
+    val initialLayout = TimelineLayout(size.width.toFloat(), ctx.state.playheadUs, ctx.state.pxPerSecond)
+    val grabOffsetUs = initialLayout.timeAt(down.position.x) - project.mainStartUs(from)
+    var drag = ReorderDrag(from, down.position.x, from, grabOffsetUs)
+    var released = false
+    ctx.state.scrubbing = true
     ctx.onReorder(drag)
     try {
+        var event = currentEvent
         while (true) {
-            val event = awaitPointerEvent()
+            if (event.changes.count { it.pressed } >= 2) {
+                ctx.onReorder(null)
+                pinch(ctx)
+                break
+            }
             val change = event.changes.firstOrNull { it.id == down.id } ?: break
-            if (!change.pressed) break
+            if (!change.pressed) {
+                released = true
+                break
+            }
             val x = change.position.x
             val width = size.width.toFloat()
             // 画面の端では、指を動かすたびに少しずつ送る。
@@ -1018,15 +1089,19 @@ private suspend fun AwaitPointerEventScope.reorderMain(
                 ctx.movePlayheadByPx(step)
             }
             val layout = TimelineLayout(width, ctx.state.playheadUs, ctx.state.pxPerSecond)
-            drag = drag.copy(fingerX = x, target = reorderTargetIndex(durations, from, layout.timeAt(x)))
+            val target = reorderTargetIndex(durations, from, layout.timeAt(x) - grabOffsetUs)
+            if (target != drag.target) ctx.haptic(HapticFeedbackType.TextHandleMove)
+            drag = drag.copy(fingerX = x, target = target)
             ctx.onReorder(drag)
             change.consume()
+            event = awaitPointerEvent()
         }
     } finally {
         ctx.onReorder(null)
+        ctx.state.scrubbing = false
     }
     val target = drag.target
-    if (target != from) ctx.onEdit { VideoEditOps.moveMain(it, from, target) }
+    if (released && target != from) ctx.onEdit { VideoEditOps.moveMain(it, from, target) }
 }
 
 /** 指を離したあとの慣性。端に着いたら止める。 */

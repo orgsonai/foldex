@@ -257,12 +257,14 @@ internal fun previewFrameAt(project: VideoProject, playheadUs: Long, coarse: Boo
     val asset = project.assets[clip.assetId] ?: return null
     val sourceUs = clip.sourceTimeAt(localUs)
     val isVideo = asset.kind == AssetKind.VIDEO
+    // 切り出した区間の先頭を、丸めで直前の区間へ戻さない。
+    val useCoarse = coarse && localUs >= COARSE_STEP_US && clip.durationUs - localUs > COARSE_STEP_US
     val timeUs = when {
         !isVideo -> 0L
-        coarse -> sourceUs / COARSE_STEP_US * COARSE_STEP_US
+        useCoarse -> sourceUs / COARSE_STEP_US * COARSE_STEP_US
         else -> project.frameRate.timeOfFrame(project.frameRate.frameAt(sourceUs))
-    }
-    return PreviewFrame(asset.source, asset.kind, timeUs, coarse && isVideo, clip.quarterTurns, clip.flipHorizontal, clip.fill)
+    }.let { if (isVideo) it.coerceIn(clip.sourceInUs, maxOf(clip.sourceInUs, clip.sourceOutUs - 1L)) else it }
+    return PreviewFrame(asset.source, asset.kind, timeUs, useCoarse && isVideo, clip.quarterTurns, clip.flipHorizontal, clip.fill)
 }
 
 /** Coil に渡す読み込み元。content:// は Uri、それ以外は端末内のファイル。 */

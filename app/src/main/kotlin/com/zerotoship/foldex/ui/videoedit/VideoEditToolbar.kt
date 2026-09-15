@@ -46,7 +46,7 @@ import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 
 enum class ToolAction {
     ADD_VIDEO, ADD_IMAGE, ADD_AUDIO, ADD_TEXT, CANVAS,
-    SPLIT, SPEED, VOLUME, TRANSFORM, EDIT_TEXT, DUPLICATE, DELETE, DESELECT,
+    SPLIT, SOURCE_RANGE, SPEED, VOLUME, TRANSFORM, EDIT_TEXT, DUPLICATE, DELETE, DESELECT,
 }
 
 private data class ToolItem(
@@ -67,6 +67,7 @@ fun VideoEditToolbar(
     activePanel: EditPanel?,
     enabled: Boolean,
     onAction: (ToolAction) -> Unit,
+    sourceRangeAvailable: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val items = when (selection) {
@@ -79,6 +80,7 @@ fun VideoEditToolbar(
         )
         is ClipRef.Main -> listOf(
             ToolItem(ToolAction.SPLIT, Icons.Default.ContentCut, R.string.video_edit_tool_split),
+            ToolItem(ToolAction.SOURCE_RANGE, Icons.Default.Edit, R.string.video_edit_source_range, EditPanel.SOURCE_RANGE),
             ToolItem(ToolAction.SPEED, Icons.Default.Speed, R.string.video_edit_tool_speed, EditPanel.SPEED),
             ToolItem(ToolAction.VOLUME, Icons.AutoMirrored.Filled.VolumeUp, R.string.video_edit_tool_volume, EditPanel.VOLUME),
             ToolItem(ToolAction.TRANSFORM, Icons.Default.Crop, R.string.video_edit_tool_transform, EditPanel.TRANSFORM),
@@ -98,27 +100,33 @@ fun VideoEditToolbar(
         )
     }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Column {
             if (selection != null) {
-                IconButton(onClick = { onAction(ToolAction.DESELECT) }) {
-                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.video_edit_deselect))
-                }
+                Text(stringResource(R.string.video_edit_drag_hint), style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
             }
-            items.forEach { item ->
-                ToolButton(
-                    icon = item.icon,
-                    label = stringResource(item.label),
-                    active = item.panel != null && item.panel == activePanel,
-                    enabled = enabled,
-                    onClick = { onAction(item.action) },
-                    modifier = Modifier.widthIn(min = 56.dp),
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (selection != null) {
+                    IconButton(onClick = { onAction(ToolAction.DESELECT) }) {
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.video_edit_deselect))
+                    }
+                }
+                items.filter { it.action != ToolAction.SOURCE_RANGE || sourceRangeAvailable }.forEach { item ->
+                    ToolButton(
+                        icon = item.icon,
+                        label = stringResource(item.label),
+                        active = item.panel != null && item.panel == activePanel,
+                        enabled = enabled,
+                        onClick = { onAction(item.action) },
+                        modifier = Modifier.widthIn(min = 56.dp),
+                    )
+                }
             }
         }
     }

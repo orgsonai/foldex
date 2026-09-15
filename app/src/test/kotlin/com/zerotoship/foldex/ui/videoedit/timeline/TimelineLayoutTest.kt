@@ -30,11 +30,67 @@ class TimelineLayoutTest {
     }
 
     @Test
-    fun `並べ替え先は動かすクリップを除いた並びで数える`() {
+    fun `並べ替え先は移動方向の端が隣の中央を越えたところになる`() {
         val durations = listOf(2 * S, 2 * S, 2 * S)
         assertEquals(2, reorderTargetIndex(durations, fromIndex = 0, timeUs = 3_500_000L))
         assertEquals(0, reorderTargetIndex(durations, fromIndex = 0, timeUs = 500_000L))
         assertEquals(1, reorderTargetIndex(durations, fromIndex = 2, timeUs = 1_500_000L))
+    }
+
+    @Test
+    fun `長いクリップもつかんだだけで並べ替わらず元の隣を越えてから移る`() {
+        val durations = listOf(10 * S, S, S)
+        assertEquals(0, reorderTargetIndex(durations, 0, 0L))
+        assertEquals(0, reorderTargetIndex(durations, 0, 400_000L))
+        assertEquals(1, reorderTargetIndex(durations, 0, 600_000L))
+        assertEquals(2, reorderTargetIndex(durations, 0, 1_600_000L))
+        assertEquals(1, reorderTargetIndex(listOf(S, S, 10 * S), 2, 1_400_000L))
+    }
+
+    @Test
+    fun `短いクリップにも中央の移動領域を残し外側の取っ手はつかめる`() {
+        assertEquals(true, trimHandleAt(99f, 100f, 112f, 28f))
+        assertEquals(false, trimHandleAt(115f, 100f, 112f, 28f))
+        assertNull(trimHandleAt(106f, 100f, 112f, 28f))
+        assertNull(trimHandleAt(106f, 100f, 112f, 4f))
+    }
+
+    @Test
+    fun `左トリム中は右端と後続の位置が固定され指を離してから前詰めになる`() {
+        val layout = TimelineLayout(1000f, 0L, 100f)
+        val during = thumbnailSlots(listOf(3 * S, 2 * S), layout, 100f, startTrim = MainStartTrim(0, S))
+        assertEquals(S, during.first().timelineUs)
+        assertEquals(600f, layout.xOf(during.first().timelineUs), 0.001f)
+        assertEquals(4 * S, during.first { it.clipIndex == 1 }.timelineUs)
+        val after = thumbnailSlots(listOf(3 * S, 2 * S), layout, 100f)
+        assertEquals(0L, after.first().timelineUs)
+        assertEquals(3 * S, after.first { it.clipIndex == 1 }.timelineUs)
+    }
+
+    @Test
+    fun `左へ延ばすトリムでも前のクリップと後続の位置は動かさない`() {
+        val layout = TimelineLayout(1000f, 3 * S, 100f)
+        val slots = thumbnailSlots(listOf(2 * S, 4 * S, S), layout, 100f, startTrim = MainStartTrim(1, -S))
+        assertEquals(0L, slots.first { it.clipIndex == 0 }.timelineUs)
+        assertEquals(S, slots.first { it.clipIndex == 1 }.timelineUs)
+        assertEquals(5 * S, slots.first { it.clipIndex == 2 }.timelineUs)
+    }
+
+    @Test
+    fun `移動中は左右の端のうち近い方へ吸着して長さを保つ`() {
+        val snap = snapMovingRange(S, 2 * S, listOf(1_080_000L, 3_020_000L), 100_000L)
+        assertEquals(1_020_000L, snap.startUs)
+        assertEquals(3_020_000L, snap.targetUs)
+        val left = snapMovingRange(S, 2 * S, listOf(980_000L), 100_000L)
+        assertEquals(980_000L, left.startUs)
+        assertEquals(980_000L, left.targetUs)
+    }
+
+    @Test
+    fun `右端への吸着で開始が負になる候補を使わず吸着したふりもしない`() {
+        val snap = snapMovingRange(0L, 2 * S, listOf(1_950_000L), 100_000L)
+        assertEquals(0L, snap.startUs)
+        assertNull(snap.targetUs)
     }
 
     @Test

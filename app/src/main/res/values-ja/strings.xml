@@ -1240,4 +1240,11 @@
     <string name="video_draft_delete">削除</string>
     <string name="video_draft_list_failed">下書きを読み込めませんでした。</string>
     <string name="video_draft_delete_failed">下書きを削除できませんでした。この下書きを開いている画面を閉じてから試してください。</string>
+    <string name="video_edit_source_range">使用区間</string>
+    <string name="video_edit_source_range_value">元動画: %1$s → %2$s</string>
+    <string name="video_edit_source_range_hint">長さを保ったまま、使う区間を前後にずらします。</string>
+    <string name="video_edit_source_range_full">動画全体を使用しています。先にトリム・分割すると区間をずらせます。</string>
+    <string name="video_edit_source_previous">1 コマ前へ</string>
+    <string name="video_edit_source_next">1 コマ後へ</string>
+    <string name="video_edit_drag_hint">中央をドラッグで移動 · 両端をドラッグでトリム</string>
 </resources>
