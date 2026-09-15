@@ -4,27 +4,42 @@
 package com.zerotoship.foldex.ui.videoedit
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.R
+import com.zerotoship.foldex.ui.videoedit.engine.ExportDestination
+import com.zerotoship.foldex.ui.videoedit.engine.ExportProgress
+import com.zerotoship.foldex.ui.videoedit.engine.ExportStage
 import com.zerotoship.foldex.ui.videoedit.engine.MediaProbe
+import com.zerotoship.foldex.ui.videoedit.engine.VideoExportCoordinator
+import com.zerotoship.foldex.ui.videoedit.engine.VideoExportOutcome
 import com.zerotoship.foldex.ui.videoedit.model.CanvasAspect
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 import com.zerotoship.foldex.ui.videoedit.model.ExportSettings
 import com.zerotoship.foldex.ui.videoedit.model.ProjectHistory
 import com.zerotoship.foldex.ui.videoedit.model.VideoEditOps
+import com.zerotoship.foldex.ui.videoedit.model.VideoExportError
+import com.zerotoship.foldex.ui.videoedit.model.VideoExportFailure
 import com.zerotoship.foldex.ui.videoedit.model.VideoProject
+import com.zerotoship.foldex.ui.videoedit.model.VideoSaveNaming
+import com.zerotoship.foldex.ui.videoedit.service.VideoExportService
+import com.zerotoship.foldex.ui.videoedit.service.VideoExportSignal
+import com.zerotoship.foldex.ui.videoedit.service.VideoExportSignals
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 
@@ -32,7 +47,7 @@ import javax.inject.Inject
  * 動画編集 (試作) の状態と操作。
  *
  * 編集の実体は [VideoProject] の差し替えだけで、素材のファイルには一切書き込まない。
- * 試作版は画面の操作感を確かめるためのもので、再生・保存・書き出しは行わない。
+ * 書き出しは [VideoExportCoordinator] に任せ、ここは開始・取消・結果の表示だけを持つ。音の再生とプロジェクトの保存は未実装。
  */
 @HiltViewModel
 class VideoEditViewModel @Inject constructor(
@@ -51,11 +66,33 @@ class VideoEditViewModel @Inject constructor(
     private var gestureBase: VideoProject? = null
     private var loadStarted = false
 
+    private val exporter = VideoExportCoordinator(appContext)
+    private var exportJob: Job? = null
+
+    /** 通知へ最後に送った進み具合。同じ値を送り直さない。 */
+    private var notifiedPercent = Int.MIN_VALUE
+
+    init {
+        // 通知の「取消」と、Android 15 以降の前景サービスの時間上限。書き出し中の画面だけが反応する。
+        viewModelScope.launch {
+            VideoExportSignals.events.collect { signal ->
+                when (signal) {
+                    VideoExportSignal.CANCEL_REQUESTED -> cancelExport()
+                    VideoExportSignal.TIME_LIMIT ->
+                        stopExport(VideoExportOutcome.Failed(VideoExportError(VideoExportFailure.TIME_LIMIT)))
+                }
+            }
+        }
+    }
+
     /** 起動時に渡された端末内のファイルを、渡された順にメイントラックへ並べる。 */
     fun load(paths: List<String>, names: List<String>) {
         if (loadStarted) return
         loadStarted = true
         viewModelScope.launch {
+            if (withContext(Dispatchers.IO) { VideoExportCoordinator.recoverInterrupted(appContext) }) {
+                _events.send(VideoEditEvent.Message(R.string.video_edit_export_interrupted))
+            }
             val results = withContext(Dispatchers.IO) {
                 paths.mapIndexed { index, path -> MediaProbe.probe(appContext, path, names.getOrNull(index), newId()) }
             }
@@ -192,7 +229,60 @@ class VideoEditViewModel @Inject constructor(
     }
 
     override fun requestExport() {
-        _events.trySend(VideoEditEvent.Message(R.string.video_edit_export_not_ready))
+        val project = _state.value.project
+        val folder = VideoSaveNaming.localFolder(project) ?: return
+        val baseName = VideoSaveNaming.baseName(VideoSaveNaming.sourceAsset(project)?.name.orEmpty())
+        startExport(ExportDestination.LocalFolder(File(folder), baseName))
+    }
+
+    /** 「場所を選んで書き出す」で作られた文書へ書き出す。 */
+    fun exportToDocument(uri: Uri) {
+        startExport(ExportDestination.Document(uri))
+    }
+
+    override fun cancelExport() {
+        if (exportJob?.isActive != true) return
+        stopExport(null)
+        _events.trySend(VideoEditEvent.Message(R.string.video_edit_export_cancelled))
+    }
+
+    override fun dismissExportResult() {
+        _state.update { if (it.export is ExportUiState.Finished) it.copy(export = null) else it }
+    }
+
+    private fun startExport(destination: ExportDestination) {
+        if (exportJob?.isActive == true) return
+        commit()
+        val project = _state.value.project
+        val settings = _state.value.exportSettings
+        _state.update { it.copy(export = ExportUiState.Running(ExportProgress(ExportStage.CHECKING))) }
+        notifiedPercent = Int.MIN_VALUE
+        VideoExportService.start(appContext)
+        exportJob = viewModelScope.launch {
+            try {
+                val outcome = exporter.export(project, settings, destination) { progress ->
+                    _state.update { state ->
+                        if (state.export is ExportUiState.Running) state.copy(export = ExportUiState.Running(progress)) else state
+                    }
+                    val percent = progress.percent ?: -1
+                    if (percent != notifiedPercent) {
+                        notifiedPercent = percent
+                        VideoExportService.progress(appContext, percent)
+                    }
+                }
+                // 取り消した直後に結果が返ってきても、取り消した表示を上書きしない。
+                if (isActive) _state.update { it.copy(export = ExportUiState.Finished(outcome)) }
+            } finally {
+                VideoExportService.stop(appContext)
+            }
+        }
+    }
+
+    /** 書き出しを止め、[outcome] があれば結果として見せる。 */
+    private fun stopExport(outcome: VideoExportOutcome?) {
+        val job = exportJob?.takeIf { it.isActive } ?: return
+        job.cancel()
+        _state.update { state -> state.copy(export = outcome?.let { ExportUiState.Finished(it) }) }
     }
 
     /** 新しいプロジェクトを反映し、消えたクリップの選択と、合わなくなったパネルを外す。 */

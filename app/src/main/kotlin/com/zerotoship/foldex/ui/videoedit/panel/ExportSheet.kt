@@ -19,8 +19,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -29,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -38,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.R
+import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.ui.imageedit.formatBytes
 import com.zerotoship.foldex.ui.videoedit.model.ExportEstimate
 import com.zerotoship.foldex.ui.videoedit.model.ExportEstimateResult
@@ -45,26 +45,38 @@ import com.zerotoship.foldex.ui.videoedit.model.ExportPreset
 import com.zerotoship.foldex.ui.videoedit.model.ExportResolution
 import com.zerotoship.foldex.ui.videoedit.model.ExportSettings
 import com.zerotoship.foldex.ui.videoedit.model.VideoCodecChoice
+import com.zerotoship.foldex.ui.videoedit.model.VideoExportFailure
 import com.zerotoship.foldex.ui.videoedit.model.VideoProject
 import com.zerotoship.foldex.ui.videoedit.model.formatClock
+import com.zerotoship.foldex.ui.videoedit.plan.RenderPlanner
 import java.util.Locale
 
 /**
  * 書き出しの設定。解像度・fps・コーデック・容量を選ぶと、その場で映像のビットレートと容量の見積もりを出す。
- * 試作版は設定の画面だけで、書き出しの処理はまだ行わない。
+ * 書き出しの前に描画計画を作り、書き出せない理由と、編集画面と結果が変わる点をここで見せる。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExportSheet(
     settings: ExportSettings,
     project: VideoProject,
+    /** 「このフォルダに書き出す」の保存先。端末内の素材が無ければ null。 */
+    exportFolder: String?,
     onChange: (ExportSettings) -> Unit,
-    onExport: () -> Unit,
+    onExportHere: () -> Unit,
+    onExportElsewhere: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        ExportSettingsContent(settings = settings, project = project, onChange = onChange, onExport = onExport)
+        ExportSettingsContent(
+            settings = settings,
+            project = project,
+            exportFolder = exportFolder,
+            onChange = onChange,
+            onExportHere = onExportHere,
+            onExportElsewhere = onExportElsewhere,
+        )
     }
 }
 
@@ -72,12 +84,15 @@ fun ExportSheet(
 private fun ExportSettingsContent(
     settings: ExportSettings,
     project: VideoProject,
+    exportFolder: String?,
     onChange: (ExportSettings) -> Unit,
-    onExport: () -> Unit,
+    onExportHere: () -> Unit,
+    onExportElsewhere: () -> Unit,
 ) {
     val durationUs = project.durationUs
-    val losslessAvailable = remember(project) { ExportEstimate.isLosslessCandidate(project) }
     val estimate = remember(settings, durationUs) { ExportEstimate.estimate(settings, durationUs) }
+    val planned = remember(project, settings) { RenderPlanner.plan(project, settings) }
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Column(
         Modifier
             .fillMaxWidth()
@@ -92,11 +107,11 @@ private fun ExportSettingsContent(
             modifier = Modifier.semantics { heading() },
         )
         ChipRow {
-            ExportPreset.entries.forEach { preset ->
+            // 無劣化カットは未実装のため並べない (動かない機能を灰色で並べない)。
+            ExportPreset.entries.filter { it != ExportPreset.LOSSLESS_CUT }.forEach { preset ->
                 FilterChip(
                     selected = settings.preset == preset,
                     onClick = { onChange(settings.copy(preset = preset)) },
-                    enabled = preset != ExportPreset.LOSSLESS_CUT || losslessAvailable,
                     label = { Text(presetLabel(preset)) },
                 )
             }
@@ -150,27 +165,32 @@ private fun ExportSettingsContent(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        EstimateText(settings = settings, estimate = estimate, durationUs = durationUs, losslessAvailable = losslessAvailable, onChange = onChange)
-        if (settings.preset != ExportPreset.AUDIO_ONLY) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.video_edit_export_location),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(checked = settings.keepLocation, onCheckedChange = { onChange(settings.copy(keepLocation = it)) })
+        EstimateText(settings = settings, estimate = estimate, durationUs = durationUs, onChange = onChange)
+        when (planned) {
+            is Result.Success -> planned.value.notices.forEach { notice ->
+                Text(noticeText(notice), style = MaterialTheme.typography.bodyMedium, color = muted)
+            }
+            // 容量が小さすぎる理由は見積もりの行で出しているので、重ねて出さない。
+            is Result.Failure -> if (planned.error.reason != VideoExportFailure.TARGET_TOO_SMALL) {
+                Text(exportErrorMessage(planned.error), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             }
         }
-        Button(
-            onClick = onExport,
-            enabled = durationUs > 0L,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        ) { Text(stringResource(R.string.video_edit_export)) }
-        Text(
-            stringResource(R.string.video_edit_export_not_ready),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        val ready = planned is Result.Success
+        Text(stringResource(R.string.video_edit_export_original_safe), style = MaterialTheme.typography.bodySmall, color = muted)
+        val actionModifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        if (exportFolder != null) {
+            Text(stringResource(R.string.video_edit_export_folder, exportFolder), style = MaterialTheme.typography.bodySmall, color = muted)
+            Button(onClick = onExportHere, enabled = ready, modifier = actionModifier) {
+                Text(stringResource(R.string.video_edit_export_here))
+            }
+            OutlinedButton(onClick = onExportElsewhere, enabled = ready, modifier = actionModifier) {
+                Text(stringResource(R.string.video_edit_export_elsewhere))
+            }
+        } else {
+            Button(onClick = onExportElsewhere, enabled = ready, modifier = actionModifier) {
+                Text(stringResource(R.string.video_edit_export_elsewhere))
+            }
+        }
     }
 }
 
@@ -179,17 +199,11 @@ private fun EstimateText(
     settings: ExportSettings,
     estimate: ExportEstimateResult?,
     durationUs: Long,
-    losslessAvailable: Boolean,
     onChange: (ExportSettings) -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val error = MaterialTheme.colorScheme.error
     when {
-        settings.preset == ExportPreset.LOSSLESS_CUT -> Text(
-            stringResource(if (losslessAvailable) R.string.video_edit_export_lossless_note else R.string.video_edit_export_lossless_unavailable),
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (losslessAvailable) muted else error,
-        )
         estimate == null -> Unit
         settings.preset == ExportPreset.AUDIO_ONLY -> Text(
             stringResource(R.string.video_edit_export_audio_estimate, formatNumber(estimate.audioKbps), formatBytes(estimate.estimatedBytes)),
@@ -274,8 +288,10 @@ private fun ExportSettingsPreview() {
         ExportSettingsContent(
             settings = ExportSettings(preset = ExportPreset.TARGET_SIZE, targetMiB = 50, audioKbps = 128),
             project = VideoProject(),
+            exportFolder = "/storage/emulated/0/DCIM/Camera",
             onChange = {},
-            onExport = {},
+            onExportHere = {},
+            onExportElsewhere = {},
         )
     }
 }

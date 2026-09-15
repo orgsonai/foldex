@@ -8,6 +8,19 @@ import kotlin.math.roundToLong
 enum class AssetKind { VIDEO, IMAGE, AUDIO }
 
 /**
+ * 素材を追加したときのサイズと更新時刻。書き出しの直前に比べ、差し替えられた素材で黙って書き出さないために使う。
+ * 変更の検出が目的で、同じ内容であることの保証ではない。取れない項目は -1。
+ */
+data class AssetStamp(val sizeBytes: Long, val modifiedMs: Long) {
+    /** 両方で取れた項目だけを比べる。サイズか更新時刻のどちらかが違えば変更ありとみなす。 */
+    fun matches(current: AssetStamp): Boolean {
+        if (sizeBytes >= 0L && current.sizeBytes >= 0L && sizeBytes != current.sizeBytes) return false
+        if (modifiedMs > 0L && current.modifiedMs > 0L && modifiedMs != current.modifiedMs) return false
+        return true
+    }
+}
+
+/**
  * 素材 1 つ。映像や音のデータは持たず、場所と調べた情報だけを持つ。
  * [widthPx] / [heightPx] は回転情報を反映した「表示される向き」の寸法。
  */
@@ -22,6 +35,7 @@ data class MediaAsset(
     val widthPx: Int = 0,
     val heightPx: Int = 0,
     val hasAudio: Boolean = false,
+    val stamp: AssetStamp? = null,
 )
 
 /** キャンバスと素材の縦横比が違うときの収め方。 */

@@ -35,7 +35,8 @@ internal object MediaProbe {
         val asset = runCatching {
             if (kind == AssetKind.IMAGE) probeImage(context, source, uri, name, id) else probeMedia(context, source, uri, name, id, kind)
         }.getOrNull()
-        return Result(name, asset)
+        // 書き出しの直前に比べ、差し替えられた素材で黙って書き出さないために記録しておく。
+        return Result(name, asset?.copy(stamp = SourceStamps.read(context, source)))
     }
 
     private fun kindOf(mime: String?, name: String): AssetKind? = when {

@@ -28,6 +28,8 @@ import com.zerotoship.foldex.core.data.repo.UserSettings
 import com.zerotoship.foldex.core.model.ThemeMode
 import com.zerotoship.foldex.ui.theme.FoldexTheme
 import com.zerotoship.foldex.ui.videoedit.model.AssetKind
+import com.zerotoship.foldex.ui.videoedit.model.ExportPreset
+import com.zerotoship.foldex.ui.videoedit.model.VideoSaveNaming
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -75,6 +77,12 @@ class VideoEditActivity : ComponentActivity() {
                     }
                     viewModel.addSources(uris.map { it.toString() }, pendingAddAtUs)
                 }
+                // 「場所を選んで書き出す」。形式ごとに MIME が違うので、設定が変わったら登録し直す。
+                val exportMime = VideoSaveNaming.mimeType(state.exportSettings.preset == ExportPreset.AUDIO_ONLY)
+                val createDocument = remember(exportMime) { ActivityResultContracts.CreateDocument(exportMime) }
+                val documentCreator = rememberLauncherForActivityResult(createDocument) { uri ->
+                    if (uri != null) viewModel.exportToDocument(uri)
+                }
 
                 LaunchedEffect(Unit) { viewModel.load(paths, names) }
                 LaunchedEffect(Unit) {
@@ -99,6 +107,13 @@ class VideoEditActivity : ComponentActivity() {
                         }
                         try {
                             picker.launch(arrayOf(mime))
+                        } catch (_: ActivityNotFoundException) {
+                            Toast.makeText(this@VideoEditActivity, R.string.video_edit_picker_unavailable, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onExportElsewhere = { suggestedName ->
+                        try {
+                            documentCreator.launch(suggestedName)
                         } catch (_: ActivityNotFoundException) {
                             Toast.makeText(this@VideoEditActivity, R.string.video_edit_picker_unavailable, Toast.LENGTH_SHORT).show()
                         }

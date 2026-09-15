@@ -65,11 +65,15 @@ import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.R
 import com.zerotoship.foldex.ui.videoedit.model.AssetKind
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
+import com.zerotoship.foldex.ui.videoedit.model.ExportPreset
 import com.zerotoship.foldex.ui.videoedit.model.FrameRate
 import com.zerotoship.foldex.ui.videoedit.model.VideoEditOps
+import com.zerotoship.foldex.ui.videoedit.model.VideoSaveNaming
 import com.zerotoship.foldex.ui.videoedit.model.formatClock
 import com.zerotoship.foldex.ui.videoedit.model.formatTimecode
 import com.zerotoship.foldex.ui.videoedit.panel.EditPanelHost
+import com.zerotoship.foldex.ui.videoedit.panel.ExportProgressDialog
+import com.zerotoship.foldex.ui.videoedit.panel.ExportResultDialog
 import com.zerotoship.foldex.ui.videoedit.panel.ExportSheet
 import com.zerotoship.foldex.ui.videoedit.timeline.TimelineState
 import com.zerotoship.foldex.ui.videoedit.timeline.TimelineView
@@ -87,6 +91,8 @@ fun VideoEditScreen(
     actions: VideoEditActions,
     snackbar: SnackbarHostState,
     onAddMedia: (AssetKind, Long) -> Unit,
+    /** 「場所を選んで書き出す」。引数は最初に出す保存名。 */
+    onExportElsewhere: (String) -> Unit,
     onClose: () -> Unit,
     timeline: TimelineState = remember { TimelineState() },
 ) {
@@ -251,7 +257,7 @@ fun VideoEditScreen(
                             playing = false
                             showExport = true
                         },
-                        enabled = !state.loading && durationUs > 0L,
+                        enabled = !state.loading && durationUs > 0L && state.export == null,
                     ) { Text(stringResource(R.string.video_edit_export)) }
                 },
             )
@@ -307,13 +313,28 @@ fun VideoEditScreen(
     }
 
     if (showExport) {
+        val audioOnly = state.exportSettings.preset == ExportPreset.AUDIO_ONLY
         ExportSheet(
             settings = state.exportSettings,
             project = project,
+            exportFolder = remember(project) { VideoSaveNaming.localFolder(project) },
             onChange = actions::setExportSettings,
-            onExport = actions::requestExport,
+            onExportHere = {
+                showExport = false
+                actions.requestExport()
+            },
+            onExportElsewhere = {
+                showExport = false
+                onExportElsewhere(VideoSaveNaming.suggestedName(project, audioOnly))
+            },
             onDismiss = { showExport = false },
         )
+    }
+
+    when (val export = state.export) {
+        is ExportUiState.Running -> ExportProgressDialog(progress = export.progress, onCancel = actions::cancelExport)
+        is ExportUiState.Finished -> ExportResultDialog(outcome = export.outcome, onDismiss = actions::dismissExportResult)
+        null -> Unit
     }
 
     if (showExit) {

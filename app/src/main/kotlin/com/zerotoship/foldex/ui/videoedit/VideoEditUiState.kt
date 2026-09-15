@@ -4,6 +4,8 @@
 package com.zerotoship.foldex.ui.videoedit
 
 import androidx.annotation.StringRes
+import com.zerotoship.foldex.ui.videoedit.engine.ExportProgress
+import com.zerotoship.foldex.ui.videoedit.engine.VideoExportOutcome
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 import com.zerotoship.foldex.ui.videoedit.model.ExportSettings
 import com.zerotoship.foldex.ui.videoedit.model.VideoProject
@@ -21,10 +23,18 @@ data class VideoEditUiState(
     val exportSettings: ExportSettings = ExportSettings(),
     /** 追加した素材を調べている間 true。 */
     val adding: Boolean = false,
+    /** 書き出しの進み具合か結果。書き出していなければ null。 */
+    val export: ExportUiState? = null,
 )
 
 /** 下部に開く設定パネル。比率以外はクリップを選んでいるときだけ開ける。 */
 enum class EditPanel { SPEED, VOLUME, TRANSFORM, TEXT, CANVAS }
+
+sealed interface ExportUiState {
+    data class Running(val progress: ExportProgress) : ExportUiState
+
+    data class Finished(val outcome: VideoExportOutcome) : ExportUiState
+}
 
 sealed interface VideoEditEvent {
     data class Message(@StringRes val resId: Int, val args: List<String> = emptyList()) : VideoEditEvent
@@ -60,7 +70,12 @@ interface VideoEditActions {
 
     fun setExportSettings(settings: ExportSettings)
 
+    /** 最初の端末内の素材と同じフォルダへ、新しい名前で書き出す。 */
     fun requestExport()
+
+    fun cancelExport()
+
+    fun dismissExportResult()
 
     companion object {
         val None: VideoEditActions = object : VideoEditActions {
@@ -78,6 +93,8 @@ interface VideoEditActions {
             override fun addText(atUs: Long) = Unit
             override fun setExportSettings(settings: ExportSettings) = Unit
             override fun requestExport() = Unit
+            override fun cancelExport() = Unit
+            override fun dismissExportResult() = Unit
         }
     }
 }
