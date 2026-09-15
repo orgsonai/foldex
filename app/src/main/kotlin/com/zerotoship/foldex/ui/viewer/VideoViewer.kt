@@ -86,7 +86,8 @@ fun VideoViewer(
     // PlayerView 側へ「再生中だけスリープさせない」状態を流すための flag。
     var isPlaying by remember(playUri) { mutableStateOf(false) }
     val player = remember(playUri) {
-        ExoPlayer.Builder(context).build().apply {
+        // 端末の「使用状況と診断情報」経由で再生の統計を渡さない (PRIVACY.md §5)。
+        ExoPlayer.Builder(context).setUsePlatformDiagnostics(false).build().apply {
             setMediaItem(MediaItem.fromUri(playUri))
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {

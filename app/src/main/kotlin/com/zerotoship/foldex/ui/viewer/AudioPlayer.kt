@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.zerotoship.foldex.R
 import kotlinx.coroutines.delay
@@ -47,11 +48,13 @@ import java.io.File
 import java.util.Locale
 
 /** Media3 (ExoPlayer) による簡易音声プレーヤー。再生/一時停止/シーク/±10秒。 */
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun AudioPlayer(file: File, name: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val player = remember {
-        ExoPlayer.Builder(context).build().apply {
+        // 端末の「使用状況と診断情報」経由で再生の統計を渡さない (PRIVACY.md §5)。
+        ExoPlayer.Builder(context).setUsePlatformDiagnostics(false).build().apply {
             setMediaItem(MediaItem.fromUri(file.toURI().toString()))
             prepare()
             playWhenReady = true
