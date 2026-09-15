@@ -93,14 +93,12 @@ fun VideoEditScreen(
     onAddMedia: (AssetKind, Long) -> Unit,
     /** 「場所を選んで書き出す」。引数は最初に出す保存名。 */
     onExportElsewhere: (String) -> Unit,
-    onClose: () -> Unit,
     timeline: TimelineState = remember { TimelineState() },
 ) {
     val project = state.project
     val durationUs = project.durationUs
     var playing by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
-    var showExit by remember { mutableStateOf(false) }
 
     LaunchedEffect(durationUs) {
         if (timeline.playheadUs > durationUs) timeline.playheadUs = durationUs
@@ -132,8 +130,7 @@ fun VideoEditScreen(
         when {
             state.panel != null -> actions.openPanel(null)
             state.selection != null -> actions.select(null)
-            state.modified -> showExit = true
-            else -> onClose()
+            else -> actions.requestClose()
         }
     }
 
@@ -231,17 +228,24 @@ fun VideoEditScreen(
                     Column {
                         Text(stringResource(R.string.video_edit_title), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!state.loading) {
+                            val summary = stringResource(R.string.video_edit_summary, project.clipCount, formatClock(durationUs))
+                            val status = draftStatusText(state.draftStatus)
                             Text(
-                                stringResource(R.string.video_edit_summary, project.clipCount, formatClock(durationUs)),
+                                if (status == null) summary else "$summary · $status",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (state.draftStatus == VideoDraftStatus.FAILED) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { if (state.modified) showExit = true else onClose() }) {
+                    IconButton(onClick = actions::requestClose, enabled = !state.closing) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.navigate_back))
                     }
                 },
@@ -337,18 +341,25 @@ fun VideoEditScreen(
         null -> Unit
     }
 
-    if (showExit) {
+    if (state.exitPrompt) {
         VideoEditExitDialog(
-            onDiscard = {
-                showExit = false
-                onClose()
-            },
-            onDismiss = { showExit = false },
+            canKeepDraft = state.hasDraft,
+            onKeep = { actions.closeEditor(keepDraft = true) },
+            onDiscard = { actions.closeEditor(keepDraft = false) },
+            onDismiss = actions::dismissExitPrompt,
         )
     }
 }
 
 private fun togglePanel(current: EditPanel?, target: EditPanel): EditPanel? = if (current == target) null else target
+
+@Composable
+private fun draftStatusText(status: VideoDraftStatus): String? = when (status) {
+    VideoDraftStatus.NONE -> null
+    VideoDraftStatus.PENDING -> stringResource(R.string.video_draft_pending)
+    VideoDraftStatus.SAVED -> stringResource(R.string.video_draft_saved)
+    VideoDraftStatus.FAILED -> stringResource(R.string.video_draft_failed)
+}
 
 @Composable
 private fun PrototypeNotice(onDismiss: () -> Unit) {
@@ -419,7 +430,7 @@ private fun Timecode(timeline: TimelineState, durationUs: Long, rate: FrameRate,
 /** 長い選択肢を同じ幅で縦に並べ、狭い画面や大きな文字でも崩れないようにする (画像編集と同じ作り)。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun VideoEditExitDialog(onDiscard: () -> Unit, onDismiss: () -> Unit) {
+private fun VideoEditExitDialog(canKeepDraft: Boolean, onKeep: () -> Unit, onDiscard: () -> Unit, onDismiss: () -> Unit) {
     BasicAlertDialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(
@@ -432,21 +443,34 @@ private fun VideoEditExitDialog(onDiscard: () -> Unit, onDismiss: () -> Unit) {
                     modifier = Modifier.padding(bottom = 8.dp).semantics { heading() },
                 )
                 Text(
-                    stringResource(R.string.video_edit_exit_body),
+                    stringResource(if (canKeepDraft) R.string.video_edit_exit_body else R.string.video_edit_exit_body_unsaved),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
                 val actionModifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                Button(onClick = onDismiss, modifier = actionModifier, shape = MaterialTheme.shapes.small) {
-                    Text(stringResource(R.string.video_edit_exit_back), Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                if (canKeepDraft) {
+                    Button(onClick = onKeep, modifier = actionModifier, shape = MaterialTheme.shapes.small) {
+                        Text(stringResource(R.string.video_edit_exit_keep), Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    }
+                    TextButton(onClick = onDismiss, modifier = actionModifier) {
+                        Text(stringResource(R.string.video_edit_exit_back), Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    }
+                } else {
+                    Button(onClick = onDismiss, modifier = actionModifier, shape = MaterialTheme.shapes.small) {
+                        Text(stringResource(R.string.video_edit_exit_back), Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    }
                 }
                 TextButton(
                     onClick = onDiscard,
                     modifier = actionModifier,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {
-                    Text(stringResource(R.string.video_edit_exit_discard), Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    Text(
+                        stringResource(if (canKeepDraft) R.string.video_edit_exit_discard_draft else R.string.video_edit_exit_discard),
+                        Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                    )
                 }
             }
         }
@@ -472,5 +496,5 @@ private fun TransportBarPreview() {
 @Preview(name = "Exit dialog large text", showBackground = true, widthDp = 320, heightDp = 480, fontScale = 2f, locale = "ja")
 @Composable
 private fun VideoEditExitDialogPreview() {
-    MaterialTheme { VideoEditExitDialog(onDiscard = {}, onDismiss = {}) }
+    MaterialTheme { VideoEditExitDialog(canKeepDraft = true, onKeep = {}, onDiscard = {}, onDismiss = {}) }
 }

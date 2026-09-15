@@ -164,6 +164,11 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- 動画編集の下書きの一覧 (開く・削除・容量) -->
+        <activity
+            android:name=".ui.videoedit.VideoDraftsActivity"
+            android:exported="false" />
+
         <!-- ZIP の中身を展開せずに閲覧する内蔵アーカイブブラウザ -->
         <activity
             android:name=".ui.archive.ArchiveExplorerActivity"

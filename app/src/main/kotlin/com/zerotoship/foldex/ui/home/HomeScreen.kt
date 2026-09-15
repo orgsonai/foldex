@@ -184,6 +184,14 @@ fun HomeScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.video_drafts_title)) },
+                                onClick = {
+                                    menuOpen = false
+                                    draftContext.startActivity(android.content.Intent(draftContext,
+                                        com.zerotoship.foldex.ui.videoedit.VideoDraftsActivity::class.java))
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.home_show_hidden)) },
                                 leadingIcon = { Icon(Icons.Default.Restore, null) },
                                 enabled = hidden.isNotEmpty(),
