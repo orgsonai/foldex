@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
@@ -42,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,7 +61,7 @@ import com.zerotoship.foldex.ui.videoedit.model.ClipRef
 
 enum class ToolAction {
     ADD_VIDEO, ADD_IMAGE, ADD_AUDIO, ADD_TEXT, ADD_LAYER_VIDEO, ADD_LAYER_IMAGE, LAYER, CANVAS,
-    SPLIT, TRIM_BEFORE, TRIM_AFTER, SOURCE_RANGE, SPEED, VOLUME, TRANSFORM, EDIT_TEXT, DUPLICATE, DELETE, DESELECT,
+    SPLIT, TIMING, TRIM_BEFORE, TRIM_AFTER, SOURCE_RANGE, SPEED, VOLUME, TRANSFORM, EDIT_TEXT, DUPLICATE, DELETE, DESELECT,
 }
 
 private data class ToolItem(
@@ -85,6 +87,7 @@ fun VideoEditToolbar(
     canCut: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val scroll = key(selection) { rememberScrollState() }
     val items = when (selection) {
         null -> listOf(
             ToolItem(ToolAction.ADD_VIDEO, Icons.Default.VideoLibrary, R.string.video_edit_tool_video),
@@ -94,6 +97,7 @@ fun VideoEditToolbar(
         )
         is ClipRef.Main -> listOf(
             ToolItem(ToolAction.SPLIT, Icons.Default.ContentCut, R.string.video_edit_tool_split),
+            ToolItem(ToolAction.TIMING, Icons.Default.Timer, R.string.video_edit_tool_timing, EditPanel.TIMING),
             ToolItem(ToolAction.TRIM_BEFORE, Icons.Default.FirstPage, R.string.video_edit_trim_before),
             ToolItem(ToolAction.TRIM_AFTER, Icons.Default.LastPage, R.string.video_edit_trim_after),
             ToolItem(ToolAction.SOURCE_RANGE, Icons.Default.Edit, R.string.video_edit_source_range, EditPanel.SOURCE_RANGE),
@@ -105,6 +109,7 @@ fun VideoEditToolbar(
         )
         is ClipRef.Layer -> listOf(
             ToolItem(ToolAction.LAYER, Icons.Default.Layers, R.string.video_edit_layer_layout, EditPanel.LAYER),
+            ToolItem(ToolAction.TIMING, Icons.Default.Timer, R.string.video_edit_tool_timing, EditPanel.TIMING),
             ToolItem(ToolAction.SPLIT, Icons.Default.ContentCut, R.string.video_edit_tool_split),
             ToolItem(ToolAction.TRIM_BEFORE, Icons.Default.FirstPage, R.string.video_edit_trim_before),
             ToolItem(ToolAction.TRIM_AFTER, Icons.Default.LastPage, R.string.video_edit_trim_after),
@@ -117,6 +122,7 @@ fun VideoEditToolbar(
         )
         is ClipRef.Text -> listOf(
             ToolItem(ToolAction.EDIT_TEXT, Icons.Default.Edit, R.string.action_edit, EditPanel.TEXT),
+            ToolItem(ToolAction.TIMING, Icons.Default.Timer, R.string.video_edit_tool_timing, EditPanel.TIMING),
             ToolItem(ToolAction.SPLIT, Icons.Default.ContentCut, R.string.video_edit_tool_split),
             ToolItem(ToolAction.TRIM_BEFORE, Icons.Default.FirstPage, R.string.video_edit_trim_before),
             ToolItem(ToolAction.TRIM_AFTER, Icons.Default.LastPage, R.string.video_edit_trim_after),
@@ -125,6 +131,7 @@ fun VideoEditToolbar(
         )
         is ClipRef.Audio -> listOf(
             ToolItem(ToolAction.SPLIT, Icons.Default.ContentCut, R.string.video_edit_tool_split),
+            ToolItem(ToolAction.TIMING, Icons.Default.Timer, R.string.video_edit_tool_timing, EditPanel.TIMING),
             ToolItem(ToolAction.TRIM_BEFORE, Icons.Default.FirstPage, R.string.video_edit_trim_before),
             ToolItem(ToolAction.TRIM_AFTER, Icons.Default.LastPage, R.string.video_edit_trim_after),
             ToolItem(ToolAction.VOLUME, Icons.AutoMirrored.Filled.VolumeUp, R.string.video_edit_tool_volume, EditPanel.VOLUME),
@@ -141,7 +148,7 @@ fun VideoEditToolbar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AddMediaMenu(enabled, onAction)
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).horizontalScroll(scroll), verticalAlignment = Alignment.CenterVertically) {
                     if (selection != null) {
                         IconButton(onClick = { onAction(ToolAction.DESELECT) }, enabled = enabled) {
                             Icon(Icons.Default.Close, contentDescription = stringResource(R.string.video_edit_deselect))

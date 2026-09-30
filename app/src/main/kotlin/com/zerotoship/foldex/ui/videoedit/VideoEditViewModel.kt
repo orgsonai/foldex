@@ -514,6 +514,7 @@ class VideoEditViewModel @Inject constructor(
     }
 
     private fun panelFits(panel: EditPanel, selection: ClipRef?): Boolean = when (panel) {
+        EditPanel.TIMING -> selection != null
         EditPanel.CANVAS -> true
         EditPanel.TRANSFORM -> selection is ClipRef.Main || selection is ClipRef.Layer
         EditPanel.LAYER -> selection is ClipRef.Layer

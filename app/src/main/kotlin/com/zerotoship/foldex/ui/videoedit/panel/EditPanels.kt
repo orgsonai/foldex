@@ -51,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.R
@@ -87,6 +88,8 @@ fun EditPanelHost(
     selection: ClipRef?,
     panel: EditPanel?,
     actions: VideoEditActions,
+    playheadUs: Long = 0L,
+    onSeek: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val close = { actions.openPanel(null) }
@@ -96,6 +99,7 @@ fun EditPanelHost(
     } else actions
     when (panel) {
         null -> Unit
+        EditPanel.TIMING -> selection?.let { TimingPanel(project, it, playheadUs, onSeek, actions, close, modifier) }
         EditPanel.SOURCE_RANGE -> mainClipOf(project, selection)?.let { clip ->
             SourceRangePanel(project, clip, sourceActions, close, modifier)
         }
@@ -173,7 +177,7 @@ private fun mainClipOf(project: VideoProject, selection: ClipRef?): MainClip? =
     }
 
 @Composable
-private fun PanelSurface(
+internal fun PanelSurface(
     title: String,
     onDone: () -> Unit,
     modifier: Modifier,
@@ -497,18 +501,19 @@ private fun aspectLabel(aspect: CanvasAspect): String = when (aspect) {
 
 @Composable
 private fun ColorSwatch(color: Int, selected: Boolean, onClick: () -> Unit) {
+    val label = stringResource(R.string.video_edit_color_description, String.format(Locale.US, "%06X", color and 0xFFFFFF))
     Box(
         Modifier
-            .size(if (selected) 34.dp else 28.dp)
-            .clip(CircleShape)
-            .background(Color(color))
-            .border(
-                width = if (selected) 3.dp else 1.dp,
+            .size(48.dp)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = label; this.selected = selected },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(if (selected) 34.dp else 28.dp).clip(CircleShape).background(Color(color))
+            .border(width = if (selected) 3.dp else 1.dp,
                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                shape = CircleShape,
-            )
-            .clickable(onClick = onClick),
-    )
+                shape = CircleShape))
+    }
 }
 
 @Preview(name = "Speed", showBackground = true, widthDp = 360, locale = "ja")

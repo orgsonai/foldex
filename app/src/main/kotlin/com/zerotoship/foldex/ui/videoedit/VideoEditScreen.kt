@@ -53,6 +53,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -111,6 +112,7 @@ fun VideoEditScreen(
     var showExport by remember { mutableStateOf(false) }
     var showSeek by remember { mutableStateOf(false) }
     var timelineExpanded by remember { mutableStateOf(false) }
+    val panelScroll = key(state.panel, state.selection) { rememberScrollState() }
 
     fun seek(timeUs: Long) {
         preview?.pause()
@@ -206,7 +208,8 @@ fun VideoEditScreen(
 
     @Composable
     fun Panel() {
-        EditPanelHost(project = project, selection = state.selection, panel = state.panel, actions = actions)
+        EditPanelHost(project = project, selection = state.selection, panel = state.panel, actions = actions,
+            playheadUs = timeline.playheadUs, onSeek = ::seek)
     }
 
     @Composable
@@ -235,6 +238,7 @@ fun VideoEditScreen(
                     ToolAction.ADD_TEXT -> actions.addText(atUs)
                     ToolAction.CANVAS -> actions.openPanel(togglePanel(state.panel, EditPanel.CANVAS))
                     ToolAction.SPLIT -> actions.splitAt(atUs)
+                    ToolAction.TIMING -> actions.openPanel(togglePanel(state.panel, EditPanel.TIMING))
                     ToolAction.TRIM_BEFORE, ToolAction.TRIM_AFTER -> state.selection?.let { ref ->
                         actions.edit { ClipEditing.trimToPlayhead(it, ref, atUs, action == ToolAction.TRIM_BEFORE) }
                         if (action == ToolAction.TRIM_BEFORE && ref is ClipRef.Main) {
@@ -343,7 +347,7 @@ fun VideoEditScreen(
                             }
                             VerticalDivider()
                             Column(Modifier.width(320.dp).fillMaxHeight()) {
-                                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) { Panel() }
+                                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(panelScroll)) { Panel() }
                                 HorizontalDivider()
                                 Toolbar()
                             }
@@ -364,7 +368,7 @@ fun VideoEditScreen(
                             .verticalScroll(rememberScrollState())) { Timeline() }
                         if (state.panel != null) {
                             HorizontalDivider()
-                            Column(Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).verticalScroll(rememberScrollState())) {
+                            Column(Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).verticalScroll(panelScroll)) {
                                 Panel()
                             }
                         }
