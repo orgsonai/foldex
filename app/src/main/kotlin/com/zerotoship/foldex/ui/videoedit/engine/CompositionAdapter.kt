@@ -138,7 +138,10 @@ internal object CompositionAdapter {
             .build()
         val mediaItem = MediaItem.Builder().setUri(uri).setClippingConfiguration(clipping).build()
         val videoEffects = if (withVideo && item.kind == AssetKind.VIDEO) videoEffects(item, output) else emptyList()
-        val builder = EditedMediaItem.Builder(mediaItem).setEffects(Effects(audioProcessors(item.gain), videoEffects))
+        // CompositionPlayer は切り出し・速度変更前の長さを必要とする。クリップの終端までの長さを渡し、
+        // ClippingConfiguration と SpeedParameters が最終的な表示時間を計算する。
+        val builder = EditedMediaItem.Builder(mediaItem).setDurationUs(item.sourceOutUs)
+            .setEffects(Effects(audioProcessors(item.gain), videoEffects))
         // 動画ではコマ数の上限として働く。素材の fps が低ければ何もしない。
         if (withVideo && item.kind == AssetKind.VIDEO) builder.setFrameRate(output.frameRate)
         if (item.speed != 1.0) builder.setSpeed(SpeedParameters(ConstantSpeedProvider(item.speed.toFloat()), item.keepPitch))

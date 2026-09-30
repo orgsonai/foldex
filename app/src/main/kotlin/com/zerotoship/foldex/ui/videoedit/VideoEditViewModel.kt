@@ -19,6 +19,7 @@ import com.zerotoship.foldex.ui.videoedit.engine.VideoExportCoordinator
 import com.zerotoship.foldex.ui.videoedit.engine.VideoExportOutcome
 import com.zerotoship.foldex.ui.videoedit.model.CanvasAspect
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
+import com.zerotoship.foldex.ui.videoedit.model.ClipEditing
 import com.zerotoship.foldex.ui.videoedit.model.ExportSettings
 import com.zerotoship.foldex.ui.videoedit.model.LayerEditOps
 import com.zerotoship.foldex.ui.videoedit.model.ProjectHistory
@@ -284,13 +285,8 @@ class VideoEditViewModel @Inject constructor(
         val state = _state.value
         val selection = state.selection
         val id = newId()
-        val after = if (selection is ClipRef.Layer) {
-            LayerEditOps.split(state.project, selection.id, timeUs, id)
-        } else if (selection is ClipRef.Audio) {
-            VideoEditOps.splitAudioAt(state.project, selection.id, timeUs, id)
-        } else {
-            VideoEditOps.splitMainAt(state.project, timeUs, id)
-        }
+        val ref = selection ?: state.project.mainClipAt(timeUs)?.let { (index, _) -> ClipRef.Main(state.project.mainTrack[index].id) }
+        val after = if (ref == null) state.project else ClipEditing.split(state.project, ref, timeUs, id)
         if (after == state.project) {
             _events.trySend(VideoEditEvent.Message(R.string.video_edit_split_failed))
             return
@@ -299,6 +295,7 @@ class VideoEditViewModel @Inject constructor(
         select(when (selection) {
             is ClipRef.Layer -> ClipRef.Layer(id)
             is ClipRef.Audio -> ClipRef.Audio(id)
+            is ClipRef.Text -> ClipRef.Text(id)
             else -> ClipRef.Main(id)
         })
     }
@@ -518,7 +515,7 @@ class VideoEditViewModel @Inject constructor(
 
     private fun panelFits(panel: EditPanel, selection: ClipRef?): Boolean = when (panel) {
         EditPanel.CANVAS -> true
-        EditPanel.TRANSFORM -> selection is ClipRef.Main
+        EditPanel.TRANSFORM -> selection is ClipRef.Main || selection is ClipRef.Layer
         EditPanel.LAYER -> selection is ClipRef.Layer
         EditPanel.SOURCE_RANGE, EditPanel.SPEED -> selection is ClipRef.Main || selection is ClipRef.Layer
         EditPanel.VOLUME -> selection is ClipRef.Main || selection is ClipRef.Audio || selection is ClipRef.Layer

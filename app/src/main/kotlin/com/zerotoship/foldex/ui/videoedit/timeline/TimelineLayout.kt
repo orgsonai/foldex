@@ -139,6 +139,19 @@ fun trimHandleAt(x: Float, startX: Float, endX: Float, touchPx: Float): Boolean?
 
 data class RangeSnap(val startUs: Long, val targetUs: Long?)
 
+data class LaneInterval(val id: String, val startUs: Long, val endUs: Long)
+
+/** 同時に鳴る音・表示する文字を別の段へ置き、時間が重ならない区間は同じ段を使う。 */
+fun packTimelineLanes(intervals: List<LaneInterval>): Map<String, Int> {
+    val ends = ArrayList<Long>()
+    return intervals.sortedBy { it.startUs }.associate { interval ->
+        val free = ends.indexOfFirst { it <= interval.startUs }
+        val row = if (free < 0) ends.size.also { ends.add(interval.endUs) }
+            else free.also { ends[it] = interval.endUs }
+        interval.id to row
+    }
+}
+
 /** 両端のうち近い方を吸着させ、長さと非負の開始位置を保つ。 */
 fun snapMovingRange(startUs: Long, durationUs: Long, targetsUs: Iterable<Long>, thresholdUs: Long): RangeSnap {
     val start = startUs.coerceAtLeast(0L)

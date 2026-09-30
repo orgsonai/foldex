@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -27,7 +28,9 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.ZoomOutMap
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,6 +39,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -51,7 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -65,6 +70,8 @@ import androidx.compose.ui.unit.dp
 import com.zerotoship.foldex.R
 import com.zerotoship.foldex.ui.videoedit.model.AssetKind
 import com.zerotoship.foldex.ui.videoedit.model.ClipRef
+import com.zerotoship.foldex.ui.videoedit.model.ClipEditing
+import com.zerotoship.foldex.ui.videoedit.engine.PreviewStatus
 import com.zerotoship.foldex.ui.videoedit.model.ExportPreset
 import com.zerotoship.foldex.ui.videoedit.model.FrameRate
 import com.zerotoship.foldex.ui.videoedit.model.LayerEditOps
@@ -80,7 +87,7 @@ import com.zerotoship.foldex.ui.videoedit.timeline.TimelineState
 import com.zerotoship.foldex.ui.videoedit.timeline.TimelineView
 
 /**
- * 動画編集 (試作) の画面。
+ * 動画編集。プレビューと書き出しに同じ描画計画を使う。
  *
  * 縦画面は上から: トップバー → プレビュー → 時刻と再生の行 → タイムライン → 設定パネル → 操作列。
  * 横画面はプレビューの右に設定パネルと操作列を置き、タイムラインは下に全幅で置く。
@@ -98,8 +105,18 @@ fun VideoEditScreen(
 ) {
     val project = state.project
     val durationUs = project.durationUs
-    var playing by remember { mutableStateOf(false) }
+    val preview = if (LocalInspectionMode.current) null else rememberPreviewController(project, timeline,
+        allowed = state.export !is ExportUiState.Running && !state.exitPrompt && !state.closing)
+    val playing = preview?.playing == true
     var showExport by remember { mutableStateOf(false) }
+    var showSeek by remember { mutableStateOf(false) }
+    var timelineExpanded by remember { mutableStateOf(false) }
+
+    fun seek(timeUs: Long) {
+        preview?.pause()
+        timeline.playheadUs = timeUs.coerceIn(0L, durationUs)
+        preview?.seek(timeline.playheadUs)
+    }
 
     LaunchedEffect(durationUs, timeline.scrubbing) {
         // トリム中に表示位置を動かすと、つかんだ端が指から逃げる。確定後に範囲へ戻す。
@@ -108,29 +125,10 @@ fun VideoEditScreen(
     LaunchedEffect(state.loading) {
         if (!state.loading) timeline.requestFitAll()
     }
-    LaunchedEffect(timeline.scrubbing) {
-        if (timeline.scrubbing) playing = false
-    }
-    // 試作版の簡易再生: 再生位置だけを実時間で進める。音は出さず、映像は静止画を切り替える。
-    LaunchedEffect(playing) {
-        if (!playing) return@LaunchedEffect
-        if (timeline.playheadUs >= durationUs) timeline.playheadUs = 0L
-        val startUs = timeline.playheadUs
-        val startNanos = withFrameNanos { it }
-        while (playing) {
-            val elapsedUs = (withFrameNanos { it } - startNanos) / 1_000L
-            if (startUs + elapsedUs >= durationUs) {
-                timeline.playheadUs = durationUs
-                playing = false
-            } else {
-                timeline.playheadUs = startUs + elapsedUs
-            }
-        }
-    }
-
     BackHandler {
         when {
             state.panel != null -> actions.openPanel(null)
+            timelineExpanded -> timelineExpanded = false
             state.selection != null -> actions.select(null)
             else -> actions.requestClose()
         }
@@ -143,7 +141,7 @@ fun VideoEditScreen(
             timeline = timeline,
             coarse = playing || timeline.scrubbing,
             selectedTextId = (state.selection as? ClipRef.Text)?.id,
-            onSelectText = { id -> actions.select(ClipRef.Text(id)) },
+            onSelectText = { id -> preview?.pause(); actions.select(ClipRef.Text(id)) },
             onMoveText = { id, dx, dy ->
                 actions.preview { current ->
                     VideoEditOps.updateText(current, id) { text ->
@@ -156,12 +154,15 @@ fun VideoEditScreen(
             },
             onMoveTextEnd = actions::commit,
             selectedLayerId = (state.selection as? ClipRef.Layer)?.id,
-            onSelectLayer = { actions.select(ClipRef.Layer(it)) },
+            onSelectLayer = { preview?.pause(); actions.select(ClipRef.Layer(it)) },
             onMoveLayer = { id, dx, dy ->
                 actions.preview { current -> LayerEditOps.update(current, id) { layer ->
                     layer.copy(centerX = (layer.centerX + dx).coerceIn(0f, 1f), centerY = (layer.centerY + dy).coerceIn(0f, 1f))
                 } }
             },
+            renderedPreview = if (preview != null && project.mainTrack.isNotEmpty() && preview.matches(project) &&
+                preview.status != PreviewStatus.EMPTY && preview.status != PreviewStatus.FAILED &&
+                timeline.playheadUs <= preview.durationUs) ({ CompositionPreview(preview) }) else null,
             modifier = modifier,
         )
     }
@@ -174,11 +175,16 @@ fun VideoEditScreen(
             rate = project.frameRate,
             playing = playing,
             onStep = { frames ->
-                playing = false
+                preview?.pause()
                 timeline.stepFrames(frames, project.frameRate, durationUs)
+                preview?.seek(timeline.playheadUs)
             },
-            onPlayPause = { playing = !playing },
-            onFitAll = timeline::requestFitAll,
+            onPlayPause = { preview?.togglePlay() },
+            playEnabled = preview?.status == PreviewStatus.READY && preview.matches(project),
+            onBoundary = { forward -> seek(ClipEditing.neighborBoundary(project, timeline.playheadUs, forward)) },
+            onSeekDialog = { preview?.pause(); showSeek = true },
+            loop = preview?.loop == true,
+            onLoop = { preview?.updateLoop(it) },
         )
     }
 
@@ -194,6 +200,7 @@ fun VideoEditScreen(
             onCommit = actions::commit,
             onEdit = actions::edit,
             onSplitAtPlayhead = { actions.splitAt(timeline.playheadUs) },
+            onInteraction = { preview?.pause() },
         )
     }
 
@@ -204,14 +211,19 @@ fun VideoEditScreen(
 
     @Composable
     fun Toolbar() {
+        ClipSelectionInfo(project, state.selection, ::seek)
         VideoEditToolbar(
             selection = state.selection,
             sourceRangeAvailable = (project.mainTrack.firstOrNull { it.id == state.selection?.id }
                 ?: project.layers.firstOrNull { it.id == state.selection?.id }?.clip)
                 ?.let { project.assets[it.assetId]?.kind == AssetKind.VIDEO } == true,
+            audioAvailable = state.selection is ClipRef.Audio || (project.mainTrack.firstOrNull { it.id == state.selection?.id }
+                ?: project.layers.firstOrNull { it.id == state.selection?.id }?.clip)?.let { project.assets[it.assetId]?.hasAudio } == true,
+            canCut = ClipEditing.canCut(project, state.selection, timeline.playheadUs),
             activePanel = state.panel,
-            enabled = !state.adding,
+            enabled = !state.loading && !state.adding && !state.closing,
             onAction = { action ->
+                preview?.pause()
                 val atUs = timeline.playheadUs
                 when (action) {
                     ToolAction.ADD_VIDEO -> onAddMedia(AssetKind.VIDEO, atUs, false)
@@ -223,6 +235,12 @@ fun VideoEditScreen(
                     ToolAction.ADD_TEXT -> actions.addText(atUs)
                     ToolAction.CANVAS -> actions.openPanel(togglePanel(state.panel, EditPanel.CANVAS))
                     ToolAction.SPLIT -> actions.splitAt(atUs)
+                    ToolAction.TRIM_BEFORE, ToolAction.TRIM_AFTER -> state.selection?.let { ref ->
+                        actions.edit { ClipEditing.trimToPlayhead(it, ref, atUs, action == ToolAction.TRIM_BEFORE) }
+                        if (action == ToolAction.TRIM_BEFORE && ref is ClipRef.Main) {
+                            ClipEditing.range(state.project, ref)?.let { seek(it.first) }
+                        }
+                    }
                     ToolAction.SPEED -> actions.openPanel(togglePanel(state.panel, EditPanel.SPEED))
                     ToolAction.SOURCE_RANGE -> {
                         if (state.panel != EditPanel.SOURCE_RANGE) {
@@ -285,7 +303,7 @@ fun VideoEditScreen(
                     }
                     TextButton(
                         onClick = {
-                            playing = false
+                            preview?.pause()
                             showExport = true
                         },
                         enabled = !state.loading && durationUs > 0L && state.export == null,
@@ -298,18 +316,26 @@ fun VideoEditScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .consumeWindowInsets(padding),
+                .consumeWindowInsets(padding)
+                .imePadding(),
         ) {
             val landscape = maxWidth > maxHeight
             val panelMaxHeight = maxHeight * 0.3f
-            val timelineMaxHeight = maxHeight * if (state.panel == null) 0.32f else 0.22f
+            val timelineMaxHeight = maxHeight * if (state.panel != null) 0.15f else if (landscape) 0.22f else 0.32f
             Column(Modifier.fillMaxSize()) {
-                if (state.noticeVisible) PrototypeNotice(onDismiss = actions::dismissNotice)
+                if (state.adding || preview?.status == PreviewStatus.PREPARING) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (preview?.status == PreviewStatus.FAILED) {
+                    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.video_edit_preview_failed), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { preview.retry(timeline.playheadUs) }) { Text(stringResource(R.string.video_edit_preview_retry)) }
+                    }
+                }
                 when {
                     state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
-                    landscape -> {
+                    landscape && !timelineExpanded -> {
                         Row(Modifier.weight(1f).fillMaxWidth()) {
                             Column(Modifier.weight(1f).fillMaxHeight()) {
                                 PreviewArea(Modifier.weight(1f).fillMaxWidth())
@@ -323,13 +349,19 @@ fun VideoEditScreen(
                             }
                         }
                         HorizontalDivider()
+                        TimelineControls(timeline, project.frameRate, timelineExpanded, { timelineExpanded = !timelineExpanded })
+                        if (state.noticeVisible && state.panel == null && state.selection == null) EditingHint(timeline.movingClips, actions::dismissNotice)
                         Column(Modifier.fillMaxWidth().heightIn(max = timelineMaxHeight).verticalScroll(rememberScrollState())) { Timeline() }
                     }
                     else -> {
-                        PreviewArea(Modifier.weight(1f).fillMaxWidth())
+                        if (!timelineExpanded) PreviewArea(Modifier.weight(1f).fillMaxWidth())
                         Transport()
                         HorizontalDivider()
-                        Column(Modifier.fillMaxWidth().heightIn(max = timelineMaxHeight).verticalScroll(rememberScrollState())) { Timeline() }
+                        TimelineControls(timeline, project.frameRate, timelineExpanded, { timelineExpanded = !timelineExpanded })
+                        if (state.noticeVisible && state.panel == null && state.selection == null) EditingHint(timeline.movingClips, actions::dismissNotice)
+                        Column(Modifier.fillMaxWidth()
+                            .then(if (timelineExpanded) Modifier.weight(1f) else Modifier.heightIn(max = timelineMaxHeight))
+                            .verticalScroll(rememberScrollState())) { Timeline() }
                         if (state.panel != null) {
                             HorizontalDivider()
                             Column(Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).verticalScroll(rememberScrollState())) {
@@ -343,6 +375,8 @@ fun VideoEditScreen(
             }
         }
     }
+
+    if (showSeek) SeekPositionDialog(timeline.playheadUs, durationUs, project.frameRate, ::seek, { showSeek = false })
 
     if (showExport) {
         val audioOnly = state.exportSettings.preset == ExportPreset.AUDIO_ONLY
@@ -390,13 +424,13 @@ private fun draftStatusText(status: VideoDraftStatus): String? = when (status) {
 }
 
 @Composable
-private fun PrototypeNotice(onDismiss: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun EditingHint(movingClips: Boolean, onDismiss: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                stringResource(R.string.video_edit_prototype_notice),
+                stringResource(if (movingClips) R.string.video_edit_drag_hint else R.string.video_edit_scroll_hint),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f).padding(vertical = 8.dp),
             )
             IconButton(onClick = onDismiss) {
@@ -415,19 +449,23 @@ internal fun TransportBar(
     playing: Boolean,
     onStep: (Int) -> Unit,
     onPlayPause: () -> Unit,
-    onFitAll: () -> Unit,
+    playEnabled: Boolean,
+    onBoundary: (Boolean) -> Unit,
+    onSeekDialog: () -> Unit,
+    loop: Boolean,
+    onLoop: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val hasContent = durationUs > 0L
-    Row(
-        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Timecode(timeline = timeline, durationUs = durationUs, rate = rate, modifier = Modifier.weight(1f))
+    @Composable
+    fun Buttons() {
+        IconButton(onClick = { onBoundary(false) }, enabled = hasContent) {
+            Icon(Icons.Default.SkipPrevious, contentDescription = stringResource(R.string.video_edit_previous_cut))
+        }
         IconButton(onClick = { onStep(-1) }, enabled = hasContent) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.video_edit_frame_back))
         }
-        IconButton(onClick = onPlayPause, enabled = hasContent) {
+        IconButton(onClick = onPlayPause, enabled = hasContent && playEnabled) {
             if (playing) {
                 Icon(Icons.Default.Pause, contentDescription = stringResource(R.string.video_edit_pause))
             } else {
@@ -437,8 +475,28 @@ internal fun TransportBar(
         IconButton(onClick = { onStep(1) }, enabled = hasContent) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.video_edit_frame_forward))
         }
-        IconButton(onClick = onFitAll, enabled = hasContent) {
-            Icon(Icons.Default.ZoomOutMap, contentDescription = stringResource(R.string.video_edit_fit_all))
+        IconButton(onClick = { onBoundary(true) }, enabled = hasContent) {
+            Icon(Icons.Default.SkipNext, contentDescription = stringResource(R.string.video_edit_next_cut))
+        }
+        IconToggleButton(checked = loop, onCheckedChange = onLoop, enabled = hasContent) {
+            Icon(Icons.Default.Repeat, contentDescription = stringResource(R.string.video_edit_loop))
+        }
+    }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        if (maxWidth >= 520.dp) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onSeekDialog, enabled = hasContent, modifier = Modifier.weight(1f)) {
+                    Timecode(timeline, durationUs, rate)
+                }
+                Buttons()
+            }
+        } else {
+            Column(Modifier.fillMaxWidth()) {
+                TextButton(onClick = onSeekDialog, enabled = hasContent, modifier = Modifier.fillMaxWidth()) {
+                    Timecode(timeline, durationUs, rate)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { Buttons() }
+            }
         }
     }
 }
@@ -516,7 +574,11 @@ private fun TransportBarPreview() {
             playing = false,
             onStep = {},
             onPlayPause = {},
-            onFitAll = {},
+            playEnabled = true,
+            onBoundary = {},
+            onSeekDialog = {},
+            loop = false,
+            onLoop = {},
         )
     }
 }

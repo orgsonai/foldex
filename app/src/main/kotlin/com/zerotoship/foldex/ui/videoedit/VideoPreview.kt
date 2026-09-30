@@ -84,6 +84,7 @@ fun VideoPreview(
     selectedLayerId: String? = null,
     onSelectLayer: (String) -> Unit = {},
     onMoveLayer: (String, Float, Float) -> Unit = { _, _, _ -> },
+    renderedPreview: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // 再生位置が変わっても、表示するコマや文字の組み合わせが変わったときだけ描き直す。
@@ -149,7 +150,9 @@ fun VideoPreview(
                 },
         ) {
             val current = frame
-            if (current != null) {
+            if (renderedPreview != null) {
+                renderedPreview()
+            } else if (current != null) {
                 PreviewFrameImage(frame = current, widthPx = widthPx, heightPx = heightPx)
             } else if (project.mainTrack.isEmpty()) {
                 Text(
@@ -178,7 +181,7 @@ fun VideoPreview(
                         .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary) else Modifier)
                         .pointerInput(layer.id) { detectTapGestures { latestSelect(layer.id) } },
                     ) {
-                        Box(Modifier.align(Alignment.Center).requiredSize(sourceWidth, sourceHeight)
+                        if (renderedPreview == null) Box(Modifier.align(Alignment.Center).requiredSize(sourceWidth, sourceHeight)
                             .graphicsLayer { rotationZ = layer.clip.quarterTurns * 90f; alpha = layer.opacity }) {
                             PreviewFrameImage(layerFrame.copy(quarterTurns = 0),
                                 with(density) { sourceWidth.toPx() }, with(density) { sourceHeight.toPx() })
@@ -193,6 +196,7 @@ fun VideoPreview(
                         widthPx = widthPx,
                         heightPx = heightPx,
                         selected = clip.id == selectedTextId,
+                        rendered = renderedPreview != null,
                         onSelect = { onSelectText(clip.id) },
                     )
                 }
@@ -251,6 +255,7 @@ private fun TextOverlay(
     widthPx: Float,
     heightPx: Float,
     selected: Boolean,
+    rendered: Boolean,
     onSelect: () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -273,10 +278,10 @@ private fun TextOverlay(
             .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
         val style = TextStyle(fontSize = fontSize, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-        if (clip.outlined) {
+        if (clip.outlined && !rendered) {
             Text(clip.text, style = style.copy(color = Color.Black, drawStyle = Stroke(width = fontPx * 0.12f, join = StrokeJoin.Round)))
         }
-        Text(clip.text, style = style.copy(color = Color(clip.color)))
+        Text(clip.text, style = style.copy(color = if (rendered) Color.Transparent else Color(clip.color)))
     }
 }
 

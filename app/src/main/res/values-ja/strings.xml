@@ -1101,7 +1101,6 @@
     <string name="video_edit_open_local_only">NAS などにあるファイルは除きました。試作版は端末内のファイルだけを使えます。</string>
     <string name="video_edit_title">動画編集</string>
     <string name="video_edit_summary">クリップ %1$d · %2$s</string>
-    <string name="video_edit_prototype_notice">試作版：音の再生はまだできません。映像は静止画で表示し、音声の波形は仮の表示です。書き出しと下書きの自動保存は使えます。</string>
     <string name="video_edit_export">書き出し</string>
     <string name="video_edit_empty_hint">下のボタンから素材を追加してください</string>
     <string name="video_edit_frame_back">1 コマ戻る</string>
@@ -1260,4 +1259,34 @@
     <string name="video_edit_layer_backward">奥へ</string>
     <string name="video_edit_layer_hint">プレビューをドラッグして配置。時間は段の中央・両端をドラッグして調整。追加時の音声はミュートです。</string>
     <string name="video_edit_layer_number">レイヤー %1$d</string>
+
+    <!-- Video editor playback and precise editing -->
+    <string name="video_edit_add_media">素材を追加</string>
+    <string name="video_edit_trim_before">前を削る</string>
+    <string name="video_edit_trim_after">後を削る</string>
+    <string name="video_edit_move_mode">移動モード：選択したクリップをドラッグで移動</string>
+    <string name="video_edit_snapping">クリップの端を吸着</string>
+    <string name="video_edit_zoom_out">タイムラインを縮小</string>
+    <string name="video_edit_zoom_in">タイムラインを拡大</string>
+    <string name="video_edit_restore_preview">プレビューを表示</string>
+    <string name="video_edit_expand_timeline">タイムラインを広げる</string>
+    <string name="video_edit_clip_start">選択クリップの先頭へ</string>
+    <string name="video_edit_clip_end">選択クリップの最終コマへ</string>
+    <string name="video_edit_seek_title">指定した位置へ移動</string>
+    <string name="video_edit_seek_label">タイムコードまたは秒数</string>
+    <string name="video_edit_seek_hint">タイムコードか「12.5」のような秒数を入力。全体の長さ：%1$s</string>
+    <string name="video_edit_seek_go">移動</string>
+    <string name="video_edit_previous_cut">前の切れ目へ</string>
+    <string name="video_edit_next_cut">次の切れ目へ</string>
+    <string name="video_edit_loop">プレビューを繰り返す</string>
+    <string name="video_edit_preview_failed">この素材のプレビューを再生できません。静止画での編集は続けられます。</string>
+    <string name="video_edit_preview_retry">再試行</string>
+    <string name="video_edit_scroll_hint">横ドラッグで再生位置を移動 · 長押しでクリップ移動 · 両端でトリム</string>
+    <string name="video_edit_move_label">移動</string>
+    <string name="video_edit_snap_label">吸着</string>
+    <string name="video_edit_zoom_out_label">縮小</string>
+    <string name="video_edit_zoom_in_label">拡大</string>
+    <string name="video_edit_fit_label">全体</string>
+    <string name="video_edit_preview_label">映像</string>
+    <string name="video_edit_expand_label">広げる</string>
 </resources>

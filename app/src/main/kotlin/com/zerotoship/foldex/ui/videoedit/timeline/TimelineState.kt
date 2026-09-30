@@ -24,6 +24,15 @@ class TimelineState {
     /** 指でスクロール・トリム中、または慣性で動いている間 true。プレビューを軽い表示に切り替える。 */
     var scrubbing by mutableStateOf(false)
 
+    var snapping by mutableStateOf(true)
+
+    /** 通常は横ドラッグで時間移動。明示した移動モードか長押しでクリップを動かす。 */
+    var movingClips by mutableStateOf(false)
+
+    fun zoomBy(factor: Float, rate: FrameRate) {
+        pxPerSecond = TimelineLayout.clampZoom(pxPerSecond * factor, rate)
+    }
+
     /** 全体表示の要求。値が変わるたびに、表示幅に合わせて倍率を決め直す。 */
     var fitRequest by mutableIntStateOf(0)
         private set

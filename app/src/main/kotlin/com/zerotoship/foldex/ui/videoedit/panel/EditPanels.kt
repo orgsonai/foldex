@@ -114,11 +114,12 @@ fun EditPanelHost(
             TransformPanel(
                 clip = clip,
                 onRotate = { turns ->
-                    actions.edit { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(quarterTurns = (it.quarterTurns + turns).mod(4)) } }
+                    sourceActions.edit { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(quarterTurns = (it.quarterTurns + turns).mod(4)) } }
                 },
-                onFlip = { actions.edit { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(flipHorizontal = !it.flipHorizontal) } } },
-                onFill = { fill -> actions.edit { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(fill = fill) } } },
+                onFlip = { sourceActions.edit { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(flipHorizontal = !it.flipHorizontal) } } },
+                onFill = { fill -> sourceActions.edit { p -> VideoEditOps.updateMain(p, clip.id) { it.copy(fill = fill) } } },
                 onDone = close,
+                showFill = selection !is ClipRef.Layer,
                 modifier = modifier,
             )
         }
@@ -356,6 +357,7 @@ private fun TransformPanel(
     onFlip: () -> Unit,
     onFill: (FrameFill) -> Unit,
     onDone: () -> Unit,
+    showFill: Boolean,
     modifier: Modifier,
 ) {
     PanelSurface(stringResource(R.string.video_edit_tool_transform), onDone, modifier) {
@@ -370,7 +372,7 @@ private fun TransformPanel(
                 Icon(Icons.Default.Flip, contentDescription = stringResource(R.string.image_flip_horizontal))
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (showFill) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = clip.fill == FrameFill.FIT,
                 onClick = { onFill(FrameFill.FIT) },

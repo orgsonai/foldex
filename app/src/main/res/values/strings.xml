@@ -1104,14 +1104,13 @@
     <string name="image_mosaic_delete">Delete mosaic</string>
     <string name="image_mosaic_delete_body">Delete the selected mosaic. You can restore it with Undo.</string>
 
-    <!-- Video editor (prototype) -->
+    <!-- Video editor -->
     <string name="viewer_edit_video">Edit video</string>
     <string name="sel_open_video_editor">Open in video editor</string>
     <string name="video_edit_open_no_local_video">Select at least one video stored on this device.</string>
     <string name="video_edit_open_local_only">Files on NAS or other storage were skipped. The prototype only uses files on this device.</string>
     <string name="video_edit_title">Video editor</string>
     <string name="video_edit_summary">Clips: %1$d · %2$s</string>
-    <string name="video_edit_prototype_notice">Prototype: sound playback isn\'t available yet. Video is shown as still frames, and audio waveforms are placeholders. Export and automatic drafts work.</string>
     <string name="video_edit_export">Export</string>
     <string name="video_edit_empty_hint">Add media with the buttons below</string>
     <string name="video_edit_frame_back">Previous frame</string>
@@ -1270,4 +1269,34 @@
     <string name="video_edit_layer_backward">Send backward</string>
     <string name="video_edit_layer_hint">Drag the preview to position the layer. Drag its timeline body or edges to adjust timing. New layers start muted.</string>
     <string name="video_edit_layer_number">Layer %1$d</string>
+
+    <!-- Video editor playback and precise editing -->
+    <string name="video_edit_add_media">Add media</string>
+    <string name="video_edit_trim_before">Trim before</string>
+    <string name="video_edit_trim_after">Trim after</string>
+    <string name="video_edit_move_mode">Move clips: drag a selected clip to move it</string>
+    <string name="video_edit_snapping">Snap clip edges</string>
+    <string name="video_edit_zoom_out">Zoom out on timeline</string>
+    <string name="video_edit_zoom_in">Zoom in on timeline</string>
+    <string name="video_edit_restore_preview">Show preview</string>
+    <string name="video_edit_expand_timeline">Expand timeline</string>
+    <string name="video_edit_clip_start">Go to selected clip start</string>
+    <string name="video_edit_clip_end">Go to selected clip last frame</string>
+    <string name="video_edit_seek_title">Go to time</string>
+    <string name="video_edit_seek_label">Timecode or seconds</string>
+    <string name="video_edit_seek_hint">Enter a timecode or seconds, such as 12.5. Project length: %1$s.</string>
+    <string name="video_edit_seek_go">Go</string>
+    <string name="video_edit_previous_cut">Previous cut</string>
+    <string name="video_edit_next_cut">Next cut</string>
+    <string name="video_edit_loop">Loop preview</string>
+    <string name="video_edit_preview_failed">Could not play this preview. You can still edit using still frames.</string>
+    <string name="video_edit_preview_retry">Retry</string>
+    <string name="video_edit_scroll_hint">Drag to seek · Hold a clip to move · Drag edges to trim</string>
+    <string name="video_edit_move_label">Move</string>
+    <string name="video_edit_snap_label">Snap</string>
+    <string name="video_edit_zoom_out_label">Zoom −</string>
+    <string name="video_edit_zoom_in_label">Zoom +</string>
+    <string name="video_edit_fit_label">Fit all</string>
+    <string name="video_edit_preview_label">Preview</string>
+    <string name="video_edit_expand_label">Expand</string>
 </resources>

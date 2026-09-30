@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
@@ -73,11 +74,48 @@ class TimelineGesturesInstrumentedTest {
                 }
             }
         }
-        compose.runOnIdle { timeline.pxPerSecond = 15f * density }
+        compose.runOnIdle { timeline.pxPerSecond = 15f * density; timeline.movingClips = true }
     }
 
     private val node get() = compose.onNodeWithTag("timeline")
     private fun dp(value: Float) = value * density
+
+    @Test
+    fun overlappingCaptionsCanBeSelectedOnSeparateRows() {
+        show(text = true)
+        compose.runOnIdle { project = project.copy(texts = project.texts + TextClip("overlap", S, 2 * S, "Overlap")) }
+        node.performTouchInput { click(Offset(centerX + dp(30f), dp(132f))) }
+        compose.runOnIdle { assertEquals(ClipRef.Text("overlap"), selection) }
+        node.performTouchInput { click(Offset(centerX + dp(30f), dp(100f))) }
+        compose.runOnIdle { assertEquals(ClipRef.Text("text"), selection) }
+    }
+
+    @Test
+    fun overlappingAudioClipsCanBeSelectedOnSeparateRows() {
+        show()
+        compose.runOnIdle {
+            project = project.copy(audioTrack = listOf(AudioClip("bgm", "video", 0L, 0L, 6 * S), AudioClip("sfx", "video", S, 0L, S)))
+        }
+        node.performTouchInput { click(Offset(centerX + dp(22.5f), dp(144f))) }
+        compose.runOnIdle { assertEquals(ClipRef.Audio("sfx"), selection) }
+        node.performTouchInput { click(Offset(centerX + dp(22.5f), dp(104f))) }
+        compose.runOnIdle { assertEquals(ClipRef.Audio("bgm"), selection) }
+    }
+
+    @Test
+    fun normalDragSeeksWithoutMovingSelectedClip() {
+        show()
+        val before = project
+        compose.runOnIdle { timeline.movingClips = false; timeline.playheadUs = 2 * S }
+        node.performTouchInput {
+            down(Offset(centerX + dp(40f), dp(54f)))
+            moveTo(Offset(centerX + dp(35f), dp(54f)), delayMillis = 100)
+            moveTo(Offset(centerX + dp(5f), dp(54f)), delayMillis = 500)
+            moveTo(Offset(centerX, dp(54f)), delayMillis = 500)
+            up()
+        }
+        compose.runOnIdle { assertEquals(before, project); assertTrue(timeline.playheadUs > 2 * S); assertEquals(0, edits) }
+    }
 
     @Test
     fun leftTrimKeepsRulerAndFollowingClipStillWhileFingerIsDown() {
