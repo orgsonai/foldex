@@ -3,6 +3,11 @@
 
 package com.zerotoship.foldex.ui.videoedit
 
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.media.ImageReader
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -17,6 +22,7 @@ import com.zerotoship.foldex.ui.videoedit.plan.RenderPlanner
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.sin
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -77,6 +83,110 @@ class PreviewInstrumentedTest {
         } finally {
             instrumentation.runOnMainSync { controller?.release() }
             file.delete()
+        }
+    }
+
+    @Test fun videoSurfaceCanBeAttachedAgainAfterTheFirstFrame() = withVideoPreview(false)
+
+    @Test fun layeredVideoSurfaceCanBeAttachedAgainAfterTheFirstFrame() = withVideoPreview(true)
+
+    /** 音声だけでは映像グラフが初期化されず、再描画による再生スレッドのクラッシュを検出できない。 */
+    private fun withVideoPreview(layered: Boolean) {
+        val folder = File(context.cacheDir, "preview-surface-${System.nanoTime()}").apply { mkdirs() }
+        var controller: PreviewController? = null
+        val pixel = AtomicInteger(Color.TRANSPARENT)
+        val frames = AtomicInteger()
+        val readers = mutableListOf<ImageReader>()
+        fun reader(width: Int, height: Int, pixel: AtomicInteger, frames: AtomicInteger): ImageReader =
+            ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2).also { output ->
+                readers += output
+                output.setOnImageAvailableListener({ available ->
+                    available.acquireLatestImage()?.use { image ->
+                        val plane = image.planes.single()
+                        val offset = image.height / 2 * plane.rowStride + image.width / 2 * plane.pixelStride
+                        val buffer = plane.buffer
+                        pixel.set(Color.rgb(buffer.get(offset).toInt() and 255,
+                            buffer.get(offset + 1).toInt() and 255, buffer.get(offset + 2).toInt() and 255))
+                        frames.incrementAndGet()
+                    }
+                }, Handler(Looper.getMainLooper()))
+            }
+        try {
+            fun copy(name: String): File = File(folder, name).also { file ->
+                instrumentation.context.assets.open("videoedit/$name").use { input ->
+                    file.outputStream().use { input.copyTo(it) }
+                }
+            }
+            val baseFile = copy("main-blue.mp4")
+            val base = MediaAsset("base", AssetKind.VIDEO, baseFile.path, baseFile.name, 4_000_000L, 320, 180, true)
+            val overlayFile = if (layered) copy("overlay-red-green.mp4") else null
+            val overlay = overlayFile?.let {
+                MediaAsset("overlay", AssetKind.VIDEO, it.path, it.name, 2_000_000L, 160, 160, true)
+            }
+            val project = VideoProject(
+                assets = listOfNotNull(base, overlay).associateBy { it.id },
+                mainTrack = listOf(MainClip("main", base.id, 0L, base.durationUs)),
+                layers = if (overlay == null) emptyList() else listOf(
+                    LayerClip(MainClip("layer", overlay.id, 0L, overlay.durationUs, muted = true), 0L),
+                ),
+            )
+            val first = reader(320, 180, pixel, frames)
+            instrumentation.runOnMainSync {
+                controller = PreviewController(context)
+                controller!!.attach(first.surface, first.width, first.height)
+                controller!!.update(project, 0L)
+            }
+            // 先頭の画素まで待ち、未初期化のグラフでは redraw が無視される抜け道を防ぐ。
+            awaitColor(controller!!, pixel, if (layered) Color.RED else Color.BLUE)
+            val firstFrameCount = frames.get()
+            instrumentation.runOnMainSync {
+                controller!!.attach(first.surface, first.width, first.height)
+                controller!!.seek(1_500_000L)
+            }
+            await { frames.get() > firstFrameCount }
+            awaitColor(controller!!, pixel, if (layered) Color.GREEN else Color.BLUE)
+
+            // 画面の再生成・サイズ変更でも新しい出力先に映像を出せる。
+            val secondPixel = AtomicInteger(Color.TRANSPARENT)
+            val secondFrames = AtomicInteger()
+            val second = reader(240, 136, secondPixel, secondFrames)
+            instrumentation.runOnMainSync {
+                controller!!.detach(first.surface)
+                controller!!.attach(second.surface, second.width, second.height)
+                controller!!.seek(500_000L)
+            }
+            await { secondFrames.get() > 0 }
+            awaitColor(controller!!, secondPixel, if (layered) Color.RED else Color.BLUE)
+            val beforeStaleDetach = secondFrames.get()
+            instrumentation.runOnMainSync {
+                controller!!.detach(first.surface)
+                controller!!.seek(1_500_000L)
+            }
+            await { secondFrames.get() > beforeStaleDetach }
+            awaitColor(controller!!, secondPixel, if (layered) Color.GREEN else Color.BLUE)
+            instrumentation.runOnMainSync {
+                assertFalse(controller!!.playing)
+                assertEquals(1_500_000L, controller!!.positionUs)
+                controller!!.setActive(false)
+                controller!!.setActive(true)
+            }
+            await { controller!!.status == PreviewStatus.READY || controller!!.status == PreviewStatus.FAILED }
+            instrumentation.runOnMainSync { assertEquals(PreviewStatus.READY, controller!!.status) }
+        } finally {
+            instrumentation.runOnMainSync { controller?.release() }
+            readers.forEach { it.close() }
+            folder.deleteRecursively()
+        }
+    }
+
+    private fun awaitColor(controller: PreviewController, pixel: AtomicInteger, expected: Int) {
+        await {
+            assertNotEquals("Preview failed: ${controller.errorCode}", PreviewStatus.FAILED, controller.status)
+            val actual = pixel.get()
+            controller.status == PreviewStatus.READY &&
+                kotlin.math.abs(Color.red(actual) - Color.red(expected)) < 38 &&
+                kotlin.math.abs(Color.green(actual) - Color.green(expected)) < 38 &&
+                kotlin.math.abs(Color.blue(actual) - Color.blue(expected)) < 38
         }
     }
 

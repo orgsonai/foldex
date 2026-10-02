@@ -91,7 +91,6 @@ internal class PreviewController(context: Context) {
         try {
             val current = player ?: CompositionPlayer.Builder(context)
                 .setVideoGraphFactory(MultipleInputVideoGraph.Factory())
-                .experimentalSetEnableReplayableCache(true)
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
                 .build().also { created ->
@@ -133,14 +132,17 @@ internal class PreviewController(context: Context) {
         this.surface = surface
         surfaceSize = Size(width, height)
         if (surface.isValid) player?.let {
+            // MultipleInputVideoGraph 1.11.1 の redraw は未対応。experimentalRedrawLastFrame は
+            // 再生スレッドで例外になり、ここで捕捉してもプロセスが落ちる。Surface の更新だけを渡す。
             it.setVideoSurface(surface, surfaceSize)
-            it.experimentalRedrawLastFrame()
         }
     }
 
     fun detach(surface: Surface) {
         if (this.surface !== surface) return
-        player?.clearVideoSurface()
+        // CompositionPlayer 1.11.1 は接続中の Surface と一致する引数を要求する。
+        // 引数なしの clearVideoSurface() は null を渡すため IllegalArgumentException になる。
+        player?.clearVideoSurface(surface)
         this.surface = null
     }
 
