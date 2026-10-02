@@ -35,6 +35,7 @@ enum class PreviewStatus { EMPTY, PREPARING, READY, FAILED }
 internal class PreviewController(context: Context) {
     private val context = PreviewContext(context.applicationContext)
     private var player: CompositionPlayer? = null
+    private var multipleInputs = false
     private var surface: Surface? = null
     private var surfaceSize = Size(0, 0)
     private var project: VideoProject? = null
@@ -61,7 +62,7 @@ internal class PreviewController(context: Context) {
 
     fun update(next: VideoProject, atUs: Long) {
         if (!active) { pendingProject = next; pendingTimeUs = atUs; return }
-        if (project == next && status != PreviewStatus.FAILED) {
+        if (player != null && project == next && status != PreviewStatus.FAILED) {
             if (needsPrepare) { player?.prepare(); needsPrepare = false }
             return
         }
@@ -89,18 +90,29 @@ internal class PreviewController(context: Context) {
         positionUs = atUs.coerceIn(0L, durationUs)
         status = PreviewStatus.PREPARING
         try {
-            val current = player ?: CompositionPlayer.Builder(context)
-                .setVideoGraphFactory(MultipleInputVideoGraph.Factory())
+            val requiresMultipleInputs = plan.layers.isNotEmpty()
+            // 1.11.1 の複数入力グラフは flush で合成器を初期化しないため、構成変更も作り直す。
+            if (multipleInputs || multipleInputs != requiresMultipleInputs) releasePlayer()
+            multipleInputs = requiresMultipleInputs
+            val current = player ?: CompositionPlayer.Builder(context).apply {
+                if (multipleInputs) setVideoGraphFactory(MultipleInputVideoGraph.Factory())
+            }
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
                 .build().also { created ->
                     player = created
                     created.addListener(object : Player.Listener {
                         override fun onPlaybackStateChanged(playbackState: Int) {
+                            if (player !== created) return
                             when (playbackState) {
                                 Player.STATE_BUFFERING -> status = PreviewStatus.PREPARING
                                 Player.STATE_READY -> status = PreviewStatus.READY
                                 Player.STATE_ENDED -> {
+                                    if (loop) {
+                                        retry(0L)
+                                        player?.play()
+                                        return
+                                    }
                                     positionUs = durationUs
                                     pause()
                                     ended = true
@@ -108,16 +120,17 @@ internal class PreviewController(context: Context) {
                             }
                         }
                         override fun onIsPlayingChanged(isPlaying: Boolean) {
-                            playing = isPlaying
+                            if (player === created) playing = isPlaying
                         }
                         override fun onPlayerError(error: PlaybackException) {
-                            fail(error.errorCodeName)
+                            if (player === created) fail(error.errorCodeName)
                         }
                     })
                     surface?.takeIf { it.isValid }?.let { created.setVideoSurface(it, surfaceSize) }
                 }
             current.setComposition(CompositionAdapter.build(plan), positionUs / 1_000L)
-            current.repeatMode = if (loop) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
+            current.repeatMode = Player.REPEAT_MODE_OFF
+            current.setScrubbingModeEnabled(scrubbing)
             current.prepare()
             needsPrepare = false
             appliedProject = next
@@ -149,7 +162,15 @@ internal class PreviewController(context: Context) {
     fun seek(atUs: Long) {
         ended = false
         positionUs = atUs.coerceIn(0L, durationUs)
-        if (status != PreviewStatus.FAILED) player?.seekTo(positionUs / 1_000L)
+        if (status == PreviewStatus.FAILED) return
+        if (multipleInputs) {
+            // 複数入力グラフの seek は描画が止まる。新しいグラフを指定位置から準備する。
+            val current = project ?: return
+            releasePlayer()
+            update(current, positionUs)
+        } else {
+            player?.seekTo(positionUs / 1_000L)
+        }
     }
 
     fun scrub(enabled: Boolean) {
@@ -166,8 +187,9 @@ internal class PreviewController(context: Context) {
         if (current.playWhenReady) pause() else {
             if (scrubbing) scrub(false)
             if (positionUs >= durationUs || current.playbackState == Player.STATE_ENDED) seek(0L)
-            if (needsPrepare) { current.prepare(); needsPrepare = false }
-            current.play()
+            val ready = player ?: return
+            if (needsPrepare) { ready.prepare(); needsPrepare = false }
+            ready.play()
         }
     }
 
@@ -178,7 +200,6 @@ internal class PreviewController(context: Context) {
 
     fun updateLoop(enabled: Boolean) {
         loop = enabled
-        player?.repeatMode = if (enabled) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
     }
 
     fun poll(): Long {
@@ -192,14 +213,14 @@ internal class PreviewController(context: Context) {
         if (!active) {
             pause()
             // 画面が裏に回ったらデコーダを解放する。前面へ戻っても自動再生しない。
-            player?.stop()
+            releasePlayer()
             needsPrepare = true
         } else if (pendingProject != null) {
             val pending = pendingProject!!
             pendingProject = null
             update(pending, pendingTimeUs)
         } else if (needsPrepare && status != PreviewStatus.FAILED) {
-            player?.prepare()
+            if (player == null) project?.let { update(it, positionUs) } else player?.prepare()
             needsPrepare = false
         }
     }
@@ -217,11 +238,11 @@ internal class PreviewController(context: Context) {
     }
 
     private fun releasePlayer() {
-        player?.release()
+        val previous = player
         player = null
+        previous?.release()
         appliedProject = null
         playing = false
-        scrubbing = false
     }
 
     private fun fail(code: String) {

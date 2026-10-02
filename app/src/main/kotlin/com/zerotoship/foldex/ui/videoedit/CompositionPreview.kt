@@ -29,6 +29,7 @@ internal fun rememberPreviewController(project: VideoProject, timeline: Timeline
     val controller = remember { PreviewController(context) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val latestAllowed = rememberUpdatedState(allowed)
+    val latestProject = rememberUpdatedState(project)
     DisposableEffect(controller, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -53,6 +54,8 @@ internal fun rememberPreviewController(project: VideoProject, timeline: Timeline
     LaunchedEffect(controller, timeline) {
         snapshotFlow { timeline.scrubbing to timeline.playheadUs }.collectLatest { (scrubbing, timeUs) ->
             controller.scrub(scrubbing)
+            // レイヤー合成の seek はグラフを再生成する。ドラッグ中は最新の位置だけ反映する。
+            if (scrubbing && latestProject.value.layers.any { it.visible }) delay(120L)
             if (!controller.playing && timeUs != controller.positionUs) controller.seek(timeUs)
         }
     }

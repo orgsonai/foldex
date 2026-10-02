@@ -9,6 +9,7 @@ import android.media.ImageReader
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.zerotoship.foldex.core.common.Result
@@ -26,12 +27,15 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.sin
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class, androidx.media3.common.util.ExperimentalApi::class)
 class PreviewInstrumentedTest {
+    // Android 15 以降、音声フォーカスは前面の Activity を持つアプリに限られる。
+    @get:Rule val compose = createComposeRule()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
@@ -164,14 +168,45 @@ class PreviewInstrumentedTest {
             }
             await { secondFrames.get() > beforeStaleDetach }
             awaitColor(controller!!, secondPixel, if (layered) Color.GREEN else Color.BLUE)
+            val beforeResume = secondFrames.get()
             instrumentation.runOnMainSync {
                 assertFalse(controller!!.playing)
                 assertEquals(1_500_000L, controller!!.positionUs)
                 controller!!.setActive(false)
                 controller!!.setActive(true)
             }
-            await { controller!!.status == PreviewStatus.READY || controller!!.status == PreviewStatus.FAILED }
-            instrumentation.runOnMainSync { assertEquals(PreviewStatus.READY, controller!!.status) }
+            await { secondFrames.get() > beforeResume || controller!!.status == PreviewStatus.FAILED }
+            awaitColor(controller!!, secondPixel, if (layered) Color.GREEN else Color.BLUE)
+            if (layered) {
+                // レイヤーを消して戻すときも、各構成に合う映像グラフへ切り替える。
+                instrumentation.runOnMainSync { controller!!.update(project.copy(layers = emptyList()), 500_000L) }
+                awaitColor(controller!!, secondPixel, Color.BLUE)
+                instrumentation.runOnMainSync { controller!!.update(project, 1_500_000L) }
+                awaitColor(controller!!, secondPixel, Color.GREEN)
+            }
+            val beforeScrub = secondFrames.get()
+            instrumentation.runOnMainSync {
+                controller!!.scrub(true)
+                controller!!.seek(500_000L)
+                controller!!.scrub(false)
+            }
+            await { secondFrames.get() > beforeScrub || controller!!.status == PreviewStatus.FAILED }
+            awaitColor(controller!!, secondPixel, if (layered) Color.RED else Color.BLUE)
+            instrumentation.runOnMainSync {
+                assertFalse(controller!!.playing)
+                controller!!.updateLoop(true)
+                controller!!.seek(3_800_000L)
+            }
+            awaitColor(controller!!, secondPixel, Color.BLUE)
+            val beforeLoop = secondFrames.get()
+            instrumentation.runOnMainSync { controller!!.togglePlay() }
+            await(description = { "Loop failed: status=${controller!!.status}, playing=${controller!!.playing}, " +
+                "position=${controller!!.poll()}, frames=${secondFrames.get()}, error=${controller!!.errorCode}" }) {
+                assertNotEquals("Preview failed: ${controller!!.errorCode}", PreviewStatus.FAILED, controller!!.status)
+                controller!!.playing && controller!!.poll() < 1_000_000L && secondFrames.get() > beforeLoop + 3
+            }
+            awaitColor(controller!!, secondPixel, if (layered) Color.RED else Color.BLUE)
+            instrumentation.runOnMainSync { controller!!.pause(); controller!!.updateLoop(false) }
         } finally {
             instrumentation.runOnMainSync { controller?.release() }
             readers.forEach { it.close() }
@@ -190,7 +225,7 @@ class PreviewInstrumentedTest {
         }
     }
 
-    private fun await(predicate: () -> Boolean) {
+    private fun await(description: () -> String = { "Preview did not reach the expected state" }, predicate: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 10_000L
         while (SystemClock.elapsedRealtime() < deadline) {
             var success = false
@@ -198,7 +233,9 @@ class PreviewInstrumentedTest {
             if (success) return
             SystemClock.sleep(50L)
         }
-        fail("Preview did not reach the expected state")
+        var message = ""
+        instrumentation.runOnMainSync { message = description() }
+        fail(message)
     }
 
     /** 先頭1秒は無音、後半1秒はピーク0.5の440Hz。外部ツールやネットワークなしで再現する。 */

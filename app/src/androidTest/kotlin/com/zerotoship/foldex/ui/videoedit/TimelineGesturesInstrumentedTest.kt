@@ -110,8 +110,9 @@ class TimelineGesturesInstrumentedTest {
         node.performTouchInput {
             down(Offset(centerX + dp(40f), dp(54f)))
             moveTo(Offset(centerX + dp(35f), dp(54f)), delayMillis = 100)
-            moveTo(Offset(centerX + dp(5f), dp(54f)), delayMillis = 500)
-            moveTo(Offset(centerX, dp(54f)), delayMillis = 500)
+            // touchSlop を超える前に長押し時間を過ぎると、通常ドラッグではなく移動になる。
+            moveTo(Offset(centerX + dp(5f), dp(54f)), delayMillis = 100)
+            moveTo(Offset(centerX, dp(54f)), delayMillis = 100)
             up()
         }
         compose.runOnIdle { assertEquals(before, project); assertTrue(timeline.playheadUs > 2 * S); assertEquals(0, edits) }
