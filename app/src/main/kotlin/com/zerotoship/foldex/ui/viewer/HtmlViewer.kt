@@ -6,6 +6,7 @@ package com.zerotoship.foldex.ui.viewer
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.view.ViewGroup
 import android.webkit.MimeTypeMap
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -51,6 +52,10 @@ internal fun HtmlViewer(file: File, modifier: Modifier = Modifier, site: HtmlSit
             modifier = modifier.fillMaxSize(),
             factory = { ctx ->
                 WebView(ctx).apply {
+                    // AndroidView の既定 (WRAP_CONTENT) のままだと、WebView は中身に合わせて伸びる前提で高さを決め、
+                    // CSS の 100vh / 100dvh が画面の高さにならない。高さを画面に合わせるページ (portal.html など) で
+                    // 本文が縦に引き伸ばされ、ヘッダーとフッターしか見えなくなるため、親いっぱいを明示する。
+                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     @Suppress("SetJavaScriptEnabled")
                     settings.javaScriptEnabled = true
                     // localStorage / sessionStorage を使うページがあるため
