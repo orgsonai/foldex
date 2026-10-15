@@ -28,6 +28,7 @@ import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
 import com.zerotoship.foldex.fileop.FileOpService
 import com.zerotoship.foldex.storage.StorageProviderRouter
+import com.zerotoship.foldex.ui.common.SavedFileChanges
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -315,6 +316,22 @@ class FileBrowserViewModel @Inject constructor(
     fun refresh() {
         val uri = _state.value.currentUri ?: return
         loadFiles(uri)
+    }
+
+    /** この一覧が最後に確かめた保存の番号。画像編集などで保存されると [SavedFileChanges] 側が進む。 */
+    private var seenSavedVersion = SavedFileChanges.version
+
+    /**
+     * 前面に戻ったときに呼ぶ。別の画面で保存があれば今のフォルダを読み直し、別名で保存したファイルを出す。
+     * 一覧を空にしてから読む [refresh] と違い、表示中の一覧を残したまま差し替える。
+     */
+    fun refreshIfFilesSaved() {
+        val version = SavedFileChanges.version
+        if (version == seenSavedVersion) return
+        seenSavedVersion = version
+        val uri = _state.value.currentUri ?: return
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch { loadFilesSync(uri) }
     }
 
     /** プルダウン更新。上端スピナーだけ出し、完了後に下げる。 */
@@ -1663,6 +1680,31 @@ class FileBrowserViewModel @Inject constructor(
         }
         _state.value = _state.value.copy(pendingPathInput = null)
         open(target, name)
+    }
+
+    /**
+     * 選んだ順に、端末内の動画・画像・音声を動画編集 (試作) へ渡す。
+     * NAS・SAF の素材は編集前の取り込み (設計書 §10) が未実装のため、試作版では除く。
+     */
+    fun openSelectedInVideoEditor() {
+        val current = _state.value
+        val byUri = current.files.associateBy { it.uri.toStorageString() }
+        val allowed = setOf(Category.VIDEO, Category.IMAGE, Category.AUDIO)
+        val media = current.selectedUris.mapNotNull { byUri[it] }.filter { node ->
+            node.type == NodeType.FILE && FileTypeRegistry.categorize(node.name) in allowed
+        }
+        val local = media.filter { it.uri is FileUri.Local }
+        if (local.none { FileTypeRegistry.categorize(it.name) == Category.VIDEO }) {
+            emit(SnackbarEvent(text(R.string.video_edit_open_no_local_video)))
+            return
+        }
+        if (local.size < media.size) emit(SnackbarEvent(text(R.string.video_edit_open_local_only)))
+        val paths = local.map { (it.uri as FileUri.Local).absolutePath }
+        val names = local.map { it.name }
+        viewModelScope.launch {
+            _openRequests.send(OpenRequest.VideoEditor(localPaths = paths, names = names))
+            clearSelection()
+        }
     }
 
     /** 選択中ノードを「リモートはローカルにDLしてから」FileProvider 経由で他アプリに共有する。 */

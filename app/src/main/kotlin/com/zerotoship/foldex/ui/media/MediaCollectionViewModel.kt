@@ -18,6 +18,7 @@ import com.zerotoship.foldex.core.model.FileNode
 import com.zerotoship.foldex.core.model.FileUri
 import com.zerotoship.foldex.core.model.NodeType
 import com.zerotoship.foldex.core.model.Permissions
+import com.zerotoship.foldex.ui.common.SavedFileChanges
 import com.zerotoship.foldex.ui.common.SharedClipboard
 import com.zerotoship.foldex.ui.filebrowser.ClipboardOperation
 import com.zerotoship.foldex.R
@@ -70,10 +71,42 @@ class MediaCollectionViewModel @Inject constructor(
     fun reload() {
         _state.value = _state.value.copy(isLoading = true, error = null)
         viewModelScope.launch {
-            val items = withContext(Dispatchers.IO) { runCatching { query() }.getOrElse { emptyList() } }
-            val folders = computeFolders(items)
-            _state.value = _state.value.copy(items = items, folders = folders, isLoading = false)
+            loadItems()
+            _state.value = _state.value.copy(isLoading = false)
         }
+    }
+
+    /** プルダウン更新。一覧を残したまま上端のスピナーだけ出して読み直す。 */
+    fun pullRefresh() {
+        val current = _state.value
+        if (!current.hasPermission || current.isLoading || current.isRefreshing) return
+        _state.value = current.copy(isRefreshing = true)
+        viewModelScope.launch {
+            try {
+                loadItems()
+            } finally {
+                _state.value = _state.value.copy(isRefreshing = false)
+            }
+        }
+    }
+
+    /** この一覧が最後に確かめた保存の番号。画像編集などで保存されると [SavedFileChanges] 側が進む。 */
+    private var seenSavedVersion = SavedFileChanges.version
+
+    /** 前面に戻ったときに呼ぶ。別の画面で保存があれば、一覧を残したまま読み直す。 */
+    fun refreshIfFilesSaved() {
+        val version = SavedFileChanges.version
+        if (version == seenSavedVersion) return
+        seenSavedVersion = version
+        val current = _state.value
+        if (!current.hasPermission || current.isLoading) return
+        viewModelScope.launch { loadItems() }
+    }
+
+    private suspend fun loadItems() {
+        val items = withContext(Dispatchers.IO) { runCatching { query() }.getOrElse { emptyList() } }
+        val folders = computeFolders(items)
+        _state.value = _state.value.copy(items = items, folders = folders)
     }
 
     /** 指定パス配下に「入る」(= フォルダごとビューから一覧へ)。`null` で全フォルダ一覧に戻る。 */
@@ -409,6 +442,8 @@ data class MediaCollectionState(
     val folders: List<MediaFolder> = emptyList(),
     val openedFolder: String? = null,
     val isLoading: Boolean = false,
+    /** プルダウン更新中 (上端のスピナー)。 */
+    val isRefreshing: Boolean = false,
     val hasPermission: Boolean = false,
     val error: String? = null,
     val selectedUris: Set<String> = emptySet(),

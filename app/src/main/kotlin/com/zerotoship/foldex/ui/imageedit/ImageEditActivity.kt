@@ -105,6 +105,14 @@ class ImageEditActivity : ComponentActivity() {
                                     if (event.metadataWarning) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
                                 ).show()
                                 setResult(Activity.RESULT_OK)
+                                com.zerotoship.foldex.ui.common.SavedFileChanges.notifySaved()
+                                // 端末内に保存したときは、ホームの「画像」一覧 (MediaStore) にもすぐ載るよう登録を頼む。
+                                // 登録は非同期なので、終わったら一覧の読み直しをもう一度促す。
+                                if (event.displayPath.startsWith("/")) {
+                                    android.media.MediaScannerConnection.scanFile(this@ImageEditActivity, arrayOf(event.displayPath), null) { _, _ ->
+                                        com.zerotoship.foldex.ui.common.SavedFileChanges.notifySaved()
+                                    }
+                                }
                             }
                             is ImageEditEvent.ChooseDestination -> {
                                 try {

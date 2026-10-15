@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
@@ -152,6 +153,7 @@ class ViewerActivity : ComponentActivity() {
                     onOpenExternallyId = { id -> openIdExternally(id) },
                     onSaveRemote = sourceUri?.let { buildRemoteSaver(it) },
                     onEditImage = { path, name2 -> openImageEditor(path, name2, sourceUri?.toStorageString()) },
+                    onEditVideo = { path, name2 -> openVideoEditor(path, name2) },
                 )
             }
         }
@@ -291,6 +293,19 @@ class ViewerActivity : ComponentActivity() {
                     localPath = localPath,
                     name = name,
                     sourceUriString = sourceUriString,
+                ),
+            )
+        }
+    }
+
+    /** 動画編集 (試作) を開く。試作版は元のファイルに書き込まないので、戻っても一覧の更新は要らない。 */
+    private fun openVideoEditor(localPath: String, name: String) {
+        runCatching {
+            startActivity(
+                com.zerotoship.foldex.ui.videoedit.VideoEditActivity.intent(
+                    context = this,
+                    localPaths = listOf(localPath),
+                    names = listOf(name),
                 ),
             )
         }
@@ -438,6 +453,8 @@ private fun ViewerScreen(
     onSaveRemote: (suspend (File) -> Boolean)? = null,
     /** 内蔵画像エディタを開く (ローカル実体のパス, 表示名)。画像以外では呼ばれない。 */
     onEditImage: ((String, String) -> Unit)? = null,
+    /** 動画編集 (試作) を開く (端末内の実ファイルのパス, 表示名)。動画以外では呼ばれない。 */
+    onEditVideo: ((String, String) -> Unit)? = null,
 ) {
     // Markdown / HTML はソース編集をデフォルトにし、プレビューはトグルで切替える
     // (HANDOFF §10-E / §10-F: 「ソース表示とプレビュー表示の切替」)。
@@ -478,6 +495,11 @@ private fun ViewerScreen(
         }
     }
 
+    // 動画編集 (試作) に渡せる端末内の実ファイル。NAS からのストリーミング再生中は実体が無いので出さない。
+    val editableVideoTarget: String? = remember(category, streamingMediaUri, file) {
+        if (category == Category.VIDEO && streamingMediaUri.isNullOrBlank() && file.isFile) file.absolutePath else null
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -511,6 +533,11 @@ private fun ViewerScreen(
                     if (editableImageTarget != null && onEditImage != null) {
                         IconButton(onClick = { onEditImage(editableImageTarget, displayedName) }) {
                             Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.viewer_edit_image))
+                        }
+                    }
+                    if (editableVideoTarget != null && onEditVideo != null) {
+                        IconButton(onClick = { onEditVideo(editableVideoTarget, displayedName) }) {
+                            Icon(Icons.Default.ContentCut, contentDescription = stringResource(R.string.viewer_edit_video))
                         }
                     }
                     IconButton(onClick = { onOpenExternallyId(displayedId) }) {

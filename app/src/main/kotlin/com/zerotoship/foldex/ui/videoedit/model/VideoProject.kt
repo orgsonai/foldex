@@ -1,0 +1,201 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Zero to Ship
+
+package com.zerotoship.foldex.ui.videoedit.model
+
+import kotlin.math.roundToLong
+
+enum class AssetKind { VIDEO, IMAGE, AUDIO }
+
+/**
+ * 素材を追加したときのサイズと更新時刻。書き出しの直前に比べ、差し替えられた素材で黙って書き出さないために使う。
+ * 変更の検出が目的で、同じ内容であることの保証ではない。取れない項目は -1。
+ */
+data class AssetStamp(val sizeBytes: Long, val modifiedMs: Long) {
+    /** 両方で取れた項目だけを比べる。サイズか更新時刻のどちらかが違えば変更ありとみなす。 */
+    fun matches(current: AssetStamp): Boolean {
+        if (sizeBytes >= 0L && current.sizeBytes >= 0L && sizeBytes != current.sizeBytes) return false
+        if (modifiedMs > 0L && current.modifiedMs > 0L && modifiedMs != current.modifiedMs) return false
+        return true
+    }
+}
+
+/**
+ * 素材 1 つ。映像や音のデータは持たず、場所と調べた情報だけを持つ。
+ * [widthPx] / [heightPx] は回転情報を反映した「表示される向き」の寸法。
+ */
+data class MediaAsset(
+    val id: String,
+    val kind: AssetKind,
+    /** 端末内の絶対パス、または content:// URI。 */
+    val source: String,
+    val name: String,
+    /** 映像・音声の長さ。静止画は 0。 */
+    val durationUs: Long,
+    val widthPx: Int = 0,
+    val heightPx: Int = 0,
+    val hasAudio: Boolean = false,
+    val stamp: AssetStamp? = null,
+)
+
+/** キャンバスと素材の縦横比が違うときの収め方。 */
+enum class FrameFill { FIT, FILL }
+
+enum class CanvasAspect(val width: Int, val height: Int) {
+    R16_9(16, 9),
+    R9_16(9, 16),
+    R1_1(1, 1),
+    R4_5(4, 5),
+    R4_3(4, 3),
+    ;
+
+    val ratio: Float get() = width.toFloat() / height
+}
+
+/**
+ * メイントラックのクリップ。タイムライン上の位置は持たず、前にあるクリップの長さの合計で決まる (前詰め)。
+ * 位置を持たないので、途中のクリップを削除・トリムしても後ろが自動で詰まる。
+ */
+data class MainClip(
+    val id: String,
+    val assetId: String,
+    val sourceInUs: Long,
+    val sourceOutUs: Long,
+    val speed: Double = 1.0,
+    val keepPitch: Boolean = true,
+    val volume: Float = 1f,
+    val muted: Boolean = false,
+    val fadeInUs: Long = 0L,
+    val fadeOutUs: Long = 0L,
+    val quarterTurns: Int = 0,
+    val flipHorizontal: Boolean = false,
+    val fill: FrameFill = FrameFill.FIT,
+) {
+    val sourceDurationUs: Long get() = sourceOutUs - sourceInUs
+
+    /** タイムライン上の長さ = 素材の区間 ÷ 速度。 */
+    val durationUs: Long get() = (sourceDurationUs / speed).roundToLong()
+
+    /** クリップ内の時刻 → 素材の時刻。 */
+    fun sourceTimeAt(localUs: Long): Long = sourceInUs + (localUs.coerceIn(0L, durationUs) * speed).roundToLong()
+}
+
+data class TextClip(
+    val id: String,
+    val startUs: Long,
+    val durationUs: Long,
+    val text: String,
+    /** キャンバスの高さに対する文字の大きさ。 */
+    val sizeFraction: Float = 0.08f,
+    val color: Int = 0xFFFFFFFF.toInt(),
+    val outlined: Boolean = true,
+    /** キャンバスに対する文字の中心 (0〜1)。 */
+    val centerX: Float = 0.5f,
+    val centerY: Float = 0.8f,
+) {
+    val endUs: Long get() = startUs + durationUs
+}
+
+/** メイン映像に重ねる動画・画像。リストの後ろほど手前。時間と配置はメインから独立する。 */
+data class LayerClip(
+    val clip: MainClip,
+    val startUs: Long,
+    val centerX: Float = 0.5f,
+    val centerY: Float = 0.5f,
+    /** 回転後の幅 / キャンバス幅。縦横比を保って拡大する。 */
+    val widthFraction: Float = 0.45f,
+    val opacity: Float = 1f,
+    /** 非表示では音声も止める。 */
+    val visible: Boolean = true,
+) {
+    val id: String get() = clip.id
+    val durationUs: Long get() = clip.durationUs
+    val endUs: Long get() = startUs + durationUs
+
+    fun isActiveAt(timeUs: Long): Boolean = visible && timeUs >= startUs && timeUs < endUs
+
+    fun aspectRatio(asset: MediaAsset): Float {
+        val ratio = if (asset.widthPx > 0 && asset.heightPx > 0) asset.widthPx.toFloat() / asset.heightPx else 1f
+        return if (clip.quarterTurns.mod(2) == 0) ratio else 1f / ratio
+    }
+}
+
+/** 音声トラックのクリップ。メインと違い、タイムライン上の開始時刻を自分で持つ。 */
+data class AudioClip(
+    val id: String,
+    val assetId: String,
+    val startUs: Long,
+    val sourceInUs: Long,
+    val sourceOutUs: Long,
+    val volume: Float = 1f,
+    val muted: Boolean = false,
+    val fadeInUs: Long = 0L,
+    val fadeOutUs: Long = 0L,
+) {
+    val durationUs: Long get() = sourceOutUs - sourceInUs
+    val endUs: Long get() = startUs + durationUs
+}
+
+/** 選択中のクリップ。種類ごとに探す場所が違うので型で区別する。 */
+sealed interface ClipRef {
+    val id: String
+
+    data class Main(override val id: String) : ClipRef
+
+    data class Text(override val id: String) : ClipRef
+
+    data class Audio(override val id: String) : ClipRef
+
+    data class Layer(override val id: String) : ClipRef
+}
+
+/** 編集中のプロジェクト全体。画素や音のデータを含まないので、丸ごと Undo 履歴に積める。 */
+data class VideoProject(
+    val assets: Map<String, MediaAsset> = emptyMap(),
+    val mainTrack: List<MainClip> = emptyList(),
+    val texts: List<TextClip> = emptyList(),
+    val audioTrack: List<AudioClip> = emptyList(),
+    val aspect: CanvasAspect = CanvasAspect.R16_9,
+    val background: Int = 0xFF000000.toInt(),
+    val frameRate: FrameRate = FrameRate.FPS_30,
+    val layers: List<LayerClip> = emptyList(),
+) {
+    val mainDurationUs: Long get() = mainTrack.sumOf { it.durationUs }
+
+    val durationUs: Long
+        get() = maxOf(
+            mainDurationUs,
+            texts.maxOfOrNull { it.endUs } ?: 0L,
+            maxOf(audioTrack.maxOfOrNull { it.endUs } ?: 0L, layers.maxOfOrNull { it.endUs } ?: 0L),
+        )
+
+    val clipCount: Int get() = mainTrack.size + texts.size + audioTrack.size + layers.size
+
+    /** [index] 番目のメインクリップの開始時刻。 */
+    fun mainStartUs(index: Int): Long = mainTrack.take(index).sumOf { it.durationUs }
+
+    fun mainIndexOf(id: String): Int = mainTrack.indexOfFirst { it.id == id }
+
+    /**
+     * [timeUs] にあるメインクリップの番号と、クリップ内の時刻。
+     * 全体の末尾ちょうどは、最後のクリップの終わりとして扱う。
+     */
+    fun mainClipAt(timeUs: Long): Pair<Int, Long>? {
+        var start = 0L
+        mainTrack.forEachIndexed { index, clip ->
+            val end = start + clip.durationUs
+            if (timeUs < end || (index == mainTrack.lastIndex && timeUs == end)) {
+                return index to (timeUs - start).coerceAtLeast(0L)
+            }
+            start = end
+        }
+        return null
+    }
+
+    fun contains(ref: ClipRef): Boolean = when (ref) {
+        is ClipRef.Main -> mainTrack.any { it.id == ref.id }
+        is ClipRef.Text -> texts.any { it.id == ref.id }
+        is ClipRef.Audio -> audioTrack.any { it.id == ref.id }
+        is ClipRef.Layer -> layers.any { it.id == ref.id }
+    }
+}

@@ -182,6 +182,8 @@ fun FileBrowserScreen(
     // 編集されていれば自動でアップロードバックする。
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         viewModel.checkPendingUploads()
+        // 画像編集の別名保存などで増えたファイルを、ホームへ戻らなくても出す。
+        viewModel.refreshIfFilesSaved()
     }
 
     // 「ファイルを開く」要求 (内蔵ビューア / 外部アプリ / APK インストール) を処理
@@ -219,6 +221,12 @@ fun FileBrowserScreen(
                         context = context,
                         localZipPath = req.localPath,
                         name = req.name,
+                    )
+                is OpenRequest.VideoEditor ->
+                    com.zerotoship.foldex.ui.videoedit.VideoEditActivity.intent(
+                        context = context,
+                        localPaths = req.localPaths,
+                        names = req.names,
                     )
             }
             if (runCatching { context.startActivity(intent) }.isFailure) {
@@ -549,6 +557,16 @@ fun FileBrowserScreen(
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
                         enabled = singleFile,
                         onClick = { viewModel.openSelectedExternally(); dismiss() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.sel_open_video_editor)) },
+                        leadingIcon = { Icon(Icons.Outlined.Movie, null) },
+                        enabled = sel.any {
+                            it.type == com.zerotoship.foldex.core.model.NodeType.FILE &&
+                                com.zerotoship.foldex.core.model.filetype.FileTypeRegistry.categorize(it.name) ==
+                                com.zerotoship.foldex.core.model.filetype.Category.VIDEO
+                        },
+                        onClick = { viewModel.openSelectedInVideoEditor(); dismiss() },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.action_properties)) },

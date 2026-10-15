@@ -1,0 +1,6 @@
+1.14.8
+- Added a video editor in testing (cut, split, speed, volume, text, video layers, export, drafts)
+- HTML preview now runs JavaScript and loads linked CSS, scripts, images, and other pages
+- Files saved under a new name in the image editor now appear in the list without going home
+- Added pull-to-refresh to the Images and Videos lists on the home screen
+- Stopped sending playback diagnostics from the video and audio players

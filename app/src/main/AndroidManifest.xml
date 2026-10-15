@@ -28,6 +28,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- 動画編集の書き出し (Android 15 以降の前景サービスの種別 mediaProcessing) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 定期同期のアラームを端末再起動後に貼り直すため (アラームは再起動で消える) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -98,6 +100,13 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
+        <!-- 動画の書き出し中に端末を起こし続ける前景サービス。
+             Android 15 以降は mediaProcessing、14 以前は dataSync で起動する (VideoExportService)。 -->
+        <service
+            android:name=".ui.videoedit.service.VideoExportService"
+            android:foregroundServiceType="dataSync|mediaProcessing"
+            android:exported="false" />
+
         <!-- 時刻指定同期 (毎日/毎週/毎月/日時) のアラーム発火を受けて即時実行する。
              自前の明示インテントのみ届くので exported=false。 -->
         <receiver
@@ -147,6 +156,18 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- 動画編集 (テスト中)。プレビューは Media3 CompositionPlayer、書き出しは Transformer、下書きは VideoProjectStore -->
+        <activity
+            android:name=".ui.videoedit.VideoEditActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- 動画編集の下書きの一覧 (開く・削除・容量) -->
+        <activity
+            android:name=".ui.videoedit.VideoDraftsActivity"
+            android:exported="false" />
 
         <!-- ZIP の中身を展開せずに閲覧する内蔵アーカイブブラウザ -->
         <activity
