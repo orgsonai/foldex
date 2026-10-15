@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -51,11 +52,14 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -119,6 +123,11 @@ fun MediaCollectionScreen(
             }
         }
         if (ok) viewModel.setPermissionGranted(true)
+    }
+
+    // 画像編集の別名保存などで増えたファイルを、ホームへ戻らなくても出す。
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.refreshIfFilesSaved()
     }
 
     // snackbar (削除完了などの通知)
@@ -247,23 +256,24 @@ fun MediaCollectionScreen(
             state.isLoading -> Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            state.openedFolder == null -> {
+            // プルダウン更新: 上から下に引くと端末の画像・動画を読み直す。
+            state.openedFolder == null -> PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = viewModel::pullRefresh,
+                modifier = Modifier.fillMaxSize().padding(inner),
+            ) {
                 // フォルダごとビュー (トップ)
                 if (state.folders.isEmpty()) {
-                    Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
-                        Text(
-                            stringResource(if (state.kind == MediaKind.IMAGE) R.string.media_no_images else R.string.media_no_videos),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    PullableMessage(
+                        stringResource(if (state.kind == MediaKind.IMAGE) R.string.media_no_images else R.string.media_no_videos),
+                    )
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 140.dp),
                         contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxSize().padding(inner),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
                         items(state.folders, key = { it.path }) { folder ->
                             FolderTile(
@@ -277,20 +287,22 @@ fun MediaCollectionScreen(
                     }
                 }
             }
-            else -> {
+            else -> PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = viewModel::pullRefresh,
+                modifier = Modifier.fillMaxSize().padding(inner),
+            ) {
                 // フォルダ詳細 (中の画像/動画)
                 val visible = state.visibleItems
                 if (visible.isEmpty()) {
-                    Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
-                        Text(stringResource(R.string.folder_empty), style = MaterialTheme.typography.bodyMedium)
-                    }
+                    PullableMessage(stringResource(R.string.folder_empty))
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 110.dp),
                         contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxSize().padding(inner),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
                         items(visible, key = { it.contentUri.toString() }) { item ->
                             MediaTile(
@@ -309,6 +321,21 @@ fun MediaCollectionScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 空のときの案内。PullToRefreshBox は子がスクロールに参加しないと引っぱりを検知できないので、
+ * 中身が画面に収まっていても LazyColumn で包む (ファイル一覧の EmptyContent と同じ)。
+ */
+@Composable
+private fun PullableMessage(text: String) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
