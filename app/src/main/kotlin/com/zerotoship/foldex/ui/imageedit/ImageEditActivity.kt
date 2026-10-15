@@ -105,6 +105,7 @@ class ImageEditActivity : ComponentActivity() {
                                     if (event.metadataWarning) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
                                 ).show()
                                 setResult(Activity.RESULT_OK)
+                                com.zerotoship.foldex.ui.common.SavedFileChanges.notifySaved()
                             }
                             is ImageEditEvent.ChooseDestination -> {
                                 try {

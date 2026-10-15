@@ -28,6 +28,7 @@ import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
 import com.zerotoship.foldex.fileop.FileOpService
 import com.zerotoship.foldex.storage.StorageProviderRouter
+import com.zerotoship.foldex.ui.common.SavedFileChanges
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -315,6 +316,22 @@ class FileBrowserViewModel @Inject constructor(
     fun refresh() {
         val uri = _state.value.currentUri ?: return
         loadFiles(uri)
+    }
+
+    /** この一覧が最後に確かめた保存の番号。画像編集などで保存されると [SavedFileChanges] 側が進む。 */
+    private var seenSavedVersion = SavedFileChanges.version
+
+    /**
+     * 前面に戻ったときに呼ぶ。別の画面で保存があれば今のフォルダを読み直し、別名で保存したファイルを出す。
+     * 一覧を空にしてから読む [refresh] と違い、表示中の一覧を残したまま差し替える。
+     */
+    fun refreshIfFilesSaved() {
+        val version = SavedFileChanges.version
+        if (version == seenSavedVersion) return
+        seenSavedVersion = version
+        val uri = _state.value.currentUri ?: return
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch { loadFilesSync(uri) }
     }
 
     /** プルダウン更新。上端スピナーだけ出し、完了後に下げる。 */

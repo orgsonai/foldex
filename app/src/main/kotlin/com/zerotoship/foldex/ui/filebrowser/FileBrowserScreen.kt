@@ -182,6 +182,8 @@ fun FileBrowserScreen(
     // 編集されていれば自動でアップロードバックする。
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         viewModel.checkPendingUploads()
+        // 画像編集の別名保存などで増えたファイルを、ホームへ戻らなくても出す。
+        viewModel.refreshIfFilesSaved()
     }
 
     // 「ファイルを開く」要求 (内蔵ビューア / 外部アプリ / APK インストール) を処理

@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.common.Result
+import com.zerotoship.foldex.ui.common.SavedFileChanges
 import com.zerotoship.foldex.ui.videoedit.engine.ExportDestination
 import com.zerotoship.foldex.ui.videoedit.engine.ExportProgress
 import com.zerotoship.foldex.ui.videoedit.engine.ExportStage
@@ -369,6 +370,7 @@ class VideoEditViewModel @Inject constructor(
                     }
                 }
                 // 取り消した直後に結果が返ってきても、取り消した表示を上書きしない。
+                if (outcome is VideoExportOutcome.Saved) SavedFileChanges.notifySaved()
                 if (isActive) _state.update { it.copy(export = ExportUiState.Finished(outcome)) }
             } finally {
                 VideoExportService.stop(appContext)

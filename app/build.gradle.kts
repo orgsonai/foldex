@@ -29,8 +29,8 @@ android {
         applicationId = "com.zerotoship.foldex"
         minSdk = 26
         targetSdk = 35
-        versionCode = 111
-        versionName = "1.14.6"
+        versionCode = 112
+        versionName = "1.14.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
