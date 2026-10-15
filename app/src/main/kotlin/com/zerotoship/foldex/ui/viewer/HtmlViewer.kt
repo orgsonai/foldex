@@ -34,12 +34,15 @@ import java.io.FileInputStream
  * Android が予約しているローカル用ホスト ([LOCAL_HOST]) の https URL に見せかけ、
  * [WebViewClient.shouldInterceptRequest] で [siteRoot] 配下の実ファイルを返す。
  * これで `../css/a.css` のような上位フォルダ参照も、ページ間リンクも普通のサイトと同じに動く。
+ * `/css/a.css` のような `/` 始まりの参照は、開いた HTML のフォルダから上へ順にサイトの起点を探して解決する
+ * ([fallbackBases])。
  * WebView 自身のファイルアクセス (allowFileAccess) は無効のまま。
  */
 @Composable
 fun HtmlViewer(file: File, modifier: Modifier = Modifier) {
     key(file) {
         val root = remember { siteRoot(file) }
+        val fallbacks = remember { fallbackBases(root, file) }
         var webView by remember { mutableStateOf<WebView?>(null) }
         var canGoBack by remember { mutableStateOf(false) }
 
@@ -71,7 +74,7 @@ fun HtmlViewer(file: File, modifier: Modifier = Modifier) {
                         ): WebResourceResponse? {
                             val url = request.url
                             if (url.host != LOCAL_HOST) return null
-                            return serveLocal(root, url)
+                            return serveLocal(root, fallbacks, url)
                         }
 
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -119,6 +122,19 @@ private fun siteRoot(file: File): File {
     return File(volume ?: target.parentFile?.path ?: "/").canonicalFile
 }
 
+/**
+ * `/` 始まりの参照用に、URL パスを当てはめてみるフォルダの候補。
+ * 開いた HTML のフォルダから [root] の手前まで、近い順に並べる。
+ * 例: `/storage/emulated/0/site/sub/page.html` なら `site/sub` → `site`。
+ * サブページを直接開いても、サイトの一番上にある `/css/a.css` が見つかる。
+ */
+private fun fallbackBases(root: File, file: File): List<File> {
+    val start = runCatching { file.canonicalFile }.getOrElse { file.absoluteFile }.parentFile
+    return generateSequence(start) { it.parentFile }
+        .takeWhile { it.path.startsWith(root.path + File.separator) }
+        .toList()
+}
+
 private fun localUrl(root: File, file: File): String {
     val relative = file.canonicalFile.path.removePrefix(root.path).trimStart('/')
     return Uri.Builder()
@@ -129,19 +145,14 @@ private fun localUrl(root: File, file: File): String {
         .toString()
 }
 
-/** [url] のパスを [root] 配下の実ファイルとして返す。root の外や存在しないものは 404。 */
-private fun serveLocal(root: File, url: Uri): WebResourceResponse {
+/**
+ * [url] のパスを実ファイルとして返す。まず [root] 基準で探し (通常の相対参照・`../` はこれで当たる)、
+ * 無ければ [fallbacks] 基準で探す (`/` 始まりの参照)。root の外や見つからないものは 404。
+ */
+private fun serveLocal(root: File, fallbacks: List<File>, url: Uri): WebResourceResponse {
     val relative = url.path.orEmpty().trimStart('/')
-    val requested = runCatching { File(root, relative).canonicalFile }.getOrNull()
-    val inside = requested != null &&
-        (requested.path == root.path || requested.path.startsWith(root.path + File.separator))
-    val target = when {
-        !inside -> null
-        requested!!.isDirectory -> File(requested, "index.html").takeIf { it.isFile }
-        requested.isFile -> requested
-        else -> null
-    }
-    if (target == null || !target.canRead()) return notFound()
+    val target = (listOf(root) + fallbacks).firstNotNullOfOrNull { base -> resolveIn(root, base, relative) }
+        ?: return notFound()
 
     val mime = mimeTypeOf(target)
     return runCatching {
@@ -153,6 +164,18 @@ private fun serveLocal(root: File, url: Uri): WebResourceResponse {
             WebResourceResponse(mime, null, FileInputStream(target))
         }
     }.getOrElse { notFound() }
+}
+
+/** [base] 基準で [relative] を解決する。フォルダなら中の index.html。[root] の外・存在しない・読めないものは null。 */
+private fun resolveIn(root: File, base: File, relative: String): File? {
+    val requested = runCatching { File(base, relative).canonicalFile }.getOrNull() ?: return null
+    val inside = requested.path == root.path || requested.path.startsWith(root.path + File.separator)
+    if (!inside) return null
+    val target = when {
+        requested.isDirectory -> File(requested, "index.html")
+        else -> requested
+    }
+    return target.takeIf { it.isFile && it.canRead() }
 }
 
 private fun notFound(): WebResourceResponse =
