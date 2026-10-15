@@ -815,6 +815,8 @@
     <string name="viewer_loading">Loading %1$s…</string>
     <string name="viewer_edit_source">Edit source</string>
     <string name="viewer_preview">Preview</string>
+    <string name="html_page_errors">%1$d page errors: %2$s</string>
+    <string name="html_page_errors_title">Page errors</string>
     <string name="viewer_edit_image">Edit image</string>
     <string name="viewer_unsupported_file">This file cannot be displayed in the app.\nUse “Open in another app” in the top-right corner.</string>
     <!-- Text viewer and editor -->
