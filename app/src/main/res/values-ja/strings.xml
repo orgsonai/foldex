@@ -806,6 +806,8 @@
     <string name="viewer_loading">%1$s を読み込み中…</string>
     <string name="viewer_edit_source">ソースを編集</string>
     <string name="viewer_preview">プレビュー</string>
+    <string name="html_page_errors">ページのエラー %1$d 件: %2$s</string>
+    <string name="html_page_errors_title">ページのエラー</string>
     <string name="viewer_edit_image">画像を編集</string>
     <string name="viewer_unsupported_file">このファイルはアプリ内で表示できません。\n右上の「別のアプリで開く」を使ってください。</string>
     <!-- テキストビューア・エディタ -->
