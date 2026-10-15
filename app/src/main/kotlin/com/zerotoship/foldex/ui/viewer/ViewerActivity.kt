@@ -119,6 +119,16 @@ class ViewerActivity : ComponentActivity() {
         val initialImageId: String = intent.getStringExtra(EXTRA_INITIAL_ID) ?: file.absolutePath
         val sourceUri: FileUri? = intent.getStringExtra(EXTRA_SOURCE_URI)
             ?.let { FileUri.fromStorageStringOrNull(it) }
+        // SAF・NAS の HTML は、パンくずをたどってリンク先を元の場所から読む。
+        val htmlSite: HtmlSite? = run {
+            val uris = intent.getStringArrayExtra(EXTRA_HTML_FOLDER_URIS)?.map { FileUri.fromStorageStringOrNull(it) }
+            val names = intent.getStringArrayExtra(EXTRA_HTML_FOLDER_NAMES)?.toList()
+            if (category != Category.HTML || uris.isNullOrEmpty() || names == null || uris.size != names.size || uris.any { it == null }) {
+                null
+            } else {
+                StorageHtmlSite(storage, uris.map { it!! }.zip(names), name, file)
+            }
+        }
 
         enableEdgeToEdge()
         setContent {
@@ -154,6 +164,7 @@ class ViewerActivity : ComponentActivity() {
                     onSaveRemote = sourceUri?.let { buildRemoteSaver(it) },
                     onEditImage = { path, name2 -> openImageEditor(path, name2, sourceUri?.toStorageString()) },
                     onEditVideo = { path, name2 -> openVideoEditor(path, name2) },
+                    htmlSite = htmlSite,
                 )
             }
         }
@@ -333,6 +344,8 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_INITIAL_ID = "foldex.viewer.initial_id"
         private const val EXTRA_STREAMING_URI = "foldex.viewer.streaming_uri"
         private const val EXTRA_SOURCE_URI = "foldex.viewer.source_uri"
+        private const val EXTRA_HTML_FOLDER_URIS = "foldex.viewer.html_folder_uris"
+        private const val EXTRA_HTML_FOLDER_NAMES = "foldex.viewer.html_folder_names"
 
         fun intent(
             context: Context,
@@ -349,6 +362,9 @@ class ViewerActivity : ComponentActivity() {
             initialImageId: String? = null,
             streamingMediaUri: String? = null,
             sourceUriString: String? = null,
+            /** SAF・NAS の HTML 用。起点から HTML のあるフォルダまでのパンくず (storage 文字列と表示名、同じ順)。 */
+            htmlFolderUris: List<String> = emptyList(),
+            htmlFolderNames: List<String> = emptyList(),
         ): Intent =
             Intent(context, ViewerActivity::class.java)
                 .putExtra(EXTRA_PATH, localPath)
@@ -364,6 +380,10 @@ class ViewerActivity : ComponentActivity() {
                     }
                     if (!sourceUriString.isNullOrBlank()) {
                         putExtra(EXTRA_SOURCE_URI, sourceUriString)
+                    }
+                    if (htmlFolderUris.isNotEmpty() && htmlFolderUris.size == htmlFolderNames.size) {
+                        putExtra(EXTRA_HTML_FOLDER_URIS, htmlFolderUris.toTypedArray())
+                        putExtra(EXTRA_HTML_FOLDER_NAMES, htmlFolderNames.toTypedArray())
                     }
                 }
     }
@@ -455,6 +475,8 @@ private fun ViewerScreen(
     onEditImage: ((String, String) -> Unit)? = null,
     /** 動画編集 (試作) を開く (端末内の実ファイルのパス, 表示名)。動画以外では呼ばれない。 */
     onEditVideo: ((String, String) -> Unit)? = null,
+    /** SAF・NAS の HTML のリンク先を読む置き場。null なら端末内のファイルとして読む。 */
+    htmlSite: HtmlSite? = null,
 ) {
     // Markdown / HTML はソース編集をデフォルトにし、プレビューはトグルで切替える
     // (HANDOFF §10-E / §10-F: 「ソース表示とプレビュー表示の切替」)。
@@ -568,7 +590,7 @@ private fun ViewerScreen(
                         modifier = Modifier.fillMaxSize(),
                     )
                 Category.HTML ->
-                    if (previewMode) HtmlViewer(file, Modifier.fillMaxSize())
+                    if (previewMode) HtmlViewer(file, Modifier.fillMaxSize(), htmlSite)
                     else TextViewer(
                         file = file,
                         editable = editable,

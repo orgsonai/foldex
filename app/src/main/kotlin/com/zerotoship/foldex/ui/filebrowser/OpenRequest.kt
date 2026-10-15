@@ -39,6 +39,11 @@ sealed interface OpenRequest {
          * Remote/SAF の編集起動時にのみセットされる。ローカルファイル直編集時は null。
          */
         val sourceUri: FileUri? = null,
+        /**
+         * SAF・NAS の HTML を開くときの、起点から HTML のあるフォルダまでのパンくず。
+         * HTML ビューアがこれをたどって、リンク先の CSS・JS・画像を読む。端末内のファイルでは空。
+         */
+        val htmlFolders: List<BreadcrumbItem> = emptyList(),
     ) : OpenRequest
 
     /** 外部アプリで ACTION_VIEW する。[chooser] が true ならアプリ選択ダイアログを毎回出す。 */
