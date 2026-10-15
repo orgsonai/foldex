@@ -313,6 +313,17 @@ class FileBrowserViewModel @Inject constructor(
         return mode to subtree
     }
 
+    /**
+     * SAF・NAS の HTML を今のフォルダの一覧から開いたときだけ、パンくずを渡す。
+     * 検索結果のように親フォルダが今のフォルダと違うときは、道筋が分からないので渡さない (その 1 枚だけを表示)。
+     */
+    private fun htmlFoldersFor(node: FileNode, category: Category): List<BreadcrumbItem> {
+        val state = _state.value
+        if (category != Category.HTML || node.uri is FileUri.Local || state.isSearchActive) return emptyList()
+        if (state.files.none { it.uri == node.uri }) return emptyList()
+        return state.breadcrumbs
+    }
+
     fun refresh() {
         val uri = _state.value.currentUri ?: return
         loadFiles(uri)
@@ -447,6 +458,7 @@ class FileBrowserViewModel @Inject constructor(
                         // ローカル直編集時 (= FileUri.Local) は localFile == 実体なので
                         // 即時アップロードは不要。Remote / SAF のときだけ sourceUri を渡す。
                         sourceUri = node.uri.takeUnless { it is FileUri.Local },
+                        htmlFolders = htmlFoldersFor(node, category),
                     )
                 else -> external(chooser = true)
             }

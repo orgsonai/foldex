@@ -202,6 +202,8 @@ fun FileBrowserScreen(
                         initialImageId = req.initialId,
                         streamingMediaUri = req.streamingMediaUri,
                         sourceUriString = req.sourceUri?.toStorageString(),
+                        htmlFolderUris = req.htmlFolders.map { it.uri.toStorageString() },
+                        htmlFolderNames = req.htmlFolders.map { it.displayName },
                     )
                 is OpenRequest.External -> {
                     // 外部アプリで開く: WRITE 権限も付ける (テキスト系の外部エディタが保存
