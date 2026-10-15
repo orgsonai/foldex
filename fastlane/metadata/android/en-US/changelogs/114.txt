@@ -1,0 +1,2 @@
+1.14.9
+- HTML files in SAF folders (other apps' storage) and on NAS now load linked CSS, scripts, images, and other pages
