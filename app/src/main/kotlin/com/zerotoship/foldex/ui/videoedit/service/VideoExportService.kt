@@ -38,9 +38,14 @@ class VideoExportService : Service() {
             ACTION_PROGRESS -> notifyProgress(intent.getIntExtra(EXTRA_PERCENT, -1))
             ACTION_CANCEL -> VideoExportSignals.emit(VideoExportSignal.CANCEL_REQUESTED)
             ACTION_STOP -> stopNow()
-            else -> {
+            else -> try {
                 startForegroundCompat()
                 acquireWakeLock()
+            } catch (_: IllegalStateException) {
+                // Android 15 以降、mediaProcessing の 1 日の上限を使い切っていると開始できず例外になる。
+                // アプリを落とさず、上限に達したときと同じく書き出しを止める。
+                VideoExportSignals.emit(VideoExportSignal.TIME_LIMIT)
+                stopSelf()
             }
         }
         // 一度きりの処理なので、終了させられても自動で再起動しない。

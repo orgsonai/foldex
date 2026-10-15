@@ -157,7 +157,7 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- 動画編集 (試作)。書き出しは Media3 Transformer。音の再生とプロジェクトの保存は未実装 -->
+        <!-- 動画編集 (テスト中)。プレビューは Media3 CompositionPlayer、書き出しは Transformer、下書きは VideoProjectStore -->
         <activity
             android:name=".ui.videoedit.VideoEditActivity"
             android:exported="false"

@@ -1095,11 +1095,13 @@
     <string name="image_mosaic_delete_body">選んだモザイクを削除します。削除後も「元に戻す」で戻せます。</string>
 
     <!-- 動画編集 (試作) -->
-    <string name="viewer_edit_video">動画を編集</string>
-    <string name="sel_open_video_editor">動画編集で開く</string>
+    <string name="viewer_edit_video">動画を編集（テスト中）</string>
+    <string name="sel_open_video_editor">動画編集で開く（テスト中）</string>
     <string name="video_edit_open_no_local_video">端末内の動画を 1 つ以上選んでください。</string>
-    <string name="video_edit_open_local_only">NAS などにあるファイルは除きました。試作版は端末内のファイルだけを使えます。</string>
-    <string name="video_edit_title">動画編集</string>
+    <string name="video_edit_open_local_only">NAS などにあるファイルは除きました。テスト中の動画編集は端末内のファイルだけを使えます。</string>
+    <string name="video_edit_title">動画編集（テスト中）</string>
+    <!-- 素材の名前が無い下書きの名前。テスト中の表記は付けない (保存されて残るため) -->
+    <string name="video_draft_default_name">動画編集</string>
     <string name="video_edit_summary">クリップ %1$d · %2$s</string>
     <string name="video_edit_export">書き出し</string>
     <string name="video_edit_empty_hint">下のボタンから素材を追加してください</string>
@@ -1227,7 +1229,7 @@
     <string name="video_edit_exit_body_unsaved">下書きを保存できなかったため、閉じると編集した内容は失われます。</string>
     <string name="video_edit_exit_keep">下書きを残して閉じる</string>
     <string name="video_edit_exit_discard_draft">下書きを削除して閉じる</string>
-    <string name="video_drafts_title">動画編集の下書き</string>
+    <string name="video_drafts_title">動画編集の下書き（テスト中）</string>
     <string name="video_drafts_storage">%1$d 件 · %2$s 使用</string>
     <string name="video_drafts_description">下書きには編集内容だけを保存します。素材のファイルはコピーせず元の場所を参照するので、移動・削除すると書き出せなくなります。</string>
     <string name="video_drafts_empty">下書きはまだありません。動画編集の内容は自動で保存されます。</string>

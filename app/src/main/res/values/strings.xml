@@ -1105,11 +1105,12 @@
     <string name="image_mosaic_delete_body">Delete the selected mosaic. You can restore it with Undo.</string>
 
     <!-- Video editor -->
-    <string name="viewer_edit_video">Edit video</string>
-    <string name="sel_open_video_editor">Open in video editor</string>
+    <string name="viewer_edit_video">Edit video (testing)</string>
+    <string name="sel_open_video_editor">Open in video editor (testing)</string>
     <string name="video_edit_open_no_local_video">Select at least one video stored on this device.</string>
-    <string name="video_edit_open_local_only">Files on NAS or other storage were skipped. The prototype only uses files on this device.</string>
-    <string name="video_edit_title">Video editor</string>
+    <string name="video_edit_open_local_only">Files on NAS or other storage were skipped. The video editor is in testing and only uses files on this device.</string>
+    <string name="video_edit_title">Video editor (testing)</string>
+    <string name="video_draft_default_name">Video edit</string>
     <string name="video_edit_summary">Clips: %1$d · %2$s</string>
     <string name="video_edit_export">Export</string>
     <string name="video_edit_empty_hint">Add media with the buttons below</string>
@@ -1237,7 +1238,7 @@
     <string name="video_edit_exit_body_unsaved">The draft couldn\'t be saved. Your edits will be lost.</string>
     <string name="video_edit_exit_keep">Keep draft and close</string>
     <string name="video_edit_exit_discard_draft">Delete draft and close</string>
-    <string name="video_drafts_title">Video editing drafts</string>
+    <string name="video_drafts_title">Video editing drafts (testing)</string>
     <string name="video_drafts_storage">%1$d drafts · %2$s used</string>
     <string name="video_drafts_description">Drafts store your edits only. Media files aren\'t copied; drafts refer to their original location, so moving or deleting a file prevents export.</string>
     <string name="video_drafts_empty">No drafts yet. Video edits are saved automatically.</string>

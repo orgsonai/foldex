@@ -93,8 +93,12 @@ object VideoEditOps {
         return project.copy(mainTrack = list.toMutableList().apply { add(to, removeAt(from)) })
     }
 
+    /** タイムライン上で 1 コマより短くなる速さにはしない。例: 素材 4 コマ分 → 上限 4 倍。 */
     fun setMainSpeed(project: VideoProject, id: String, speed: Double): VideoProject =
-        updateMain(project, id) { it.copy(speed = speed.coerceIn(MIN_SPEED, MAX_SPEED)).clampFades() }
+        updateMain(project, id) { clip ->
+            val fastest = (clip.sourceDurationUs.toDouble() / project.frameRate.frameDurationUs).coerceIn(MIN_SPEED, MAX_SPEED)
+            clip.copy(speed = speed.coerceIn(MIN_SPEED, fastest)).clampFades()
+        }
 
     fun setMainFades(project: VideoProject, id: String, fadeInUs: Long, fadeOutUs: Long): VideoProject =
         updateMain(project, id) { it.copy(fadeInUs = fadeInUs, fadeOutUs = fadeOutUs).clampFades() }

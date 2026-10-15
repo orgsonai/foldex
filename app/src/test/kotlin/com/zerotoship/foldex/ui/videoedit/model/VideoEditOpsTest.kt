@@ -31,6 +31,16 @@ class VideoEditOpsTest {
     }
 
     @Test
+    fun `速くしてもタイムライン上で 1 コマ未満にならない`() {
+        val frame = FrameRate.FPS_30.frameDurationUs
+        val fast = VideoEditOps.setMainSpeed(project(clip("c", 0, 4 * frame)), "c", 16.0).mainTrack.single()
+        assertEquals(4.0, fast.speed, 1e-9)
+        assertEquals(frame, fast.durationUs)
+        val normal = VideoEditOps.setMainSpeed(project(clip("c", 0, 10 * S)), "c", 2.0).mainTrack.single()
+        assertEquals(2.0, normal.speed, 1e-9)
+    }
+
+    @Test
     fun `2 倍速のクリップは素材の時刻を 2 倍進めた位置で分ける`() {
         val after = VideoEditOps.splitMainAt(project(clip("c1", 0, 10 * S, speed = 2.0)), 2 * S, "n")
         assertEquals(4 * S, after.mainTrack[0].sourceOutUs)

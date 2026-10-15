@@ -62,7 +62,6 @@ import kotlinx.coroutines.withContext
  *
  * 編集の実体は [VideoProject] の差し替えだけで、素材のファイルには一切書き込まない。
  * 下書きは [VideoProjectStore]、書き出しは [VideoExportCoordinator] に任せ、ここは開始・保存の時機・結果の表示を持つ。
- * 音の再生は未実装。
  */
 @HiltViewModel
 class VideoEditViewModel @Inject constructor(
@@ -487,7 +486,7 @@ class VideoEditViewModel @Inject constructor(
     }
 
     private fun draftName(project: VideoProject): String =
-        VideoSaveNaming.sourceAsset(project)?.name ?: appContext.getString(R.string.video_edit_title)
+        VideoSaveNaming.sourceAsset(project)?.name ?: appContext.getString(R.string.video_draft_default_name)
 
     private fun draftOpenError(reason: VideoDraftFailure): Int = when (reason) {
         VideoDraftFailure.BUSY -> R.string.video_draft_open_busy
