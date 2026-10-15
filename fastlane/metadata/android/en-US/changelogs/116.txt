@@ -1,0 +1,3 @@
+1.14.11
+- HTML preview now shows JavaScript errors from the page at the top (tap to view and copy them)
+- Fixed the HTML preview size so pages that use the full screen height display correctly
