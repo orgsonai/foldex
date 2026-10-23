@@ -532,10 +532,8 @@ fun FileBrowserScreen(
                 val sel = state.selectedNodes
                 val hasFile = sel.any { it.type == com.zerotoship.foldex.core.model.NodeType.FILE }
                 val singleFile = sel.size == 1 && sel[0].type == com.zerotoship.foldex.core.model.NodeType.FILE
-                val localFolders = sel.filter {
-                    it.type == com.zerotoship.foldex.core.model.NodeType.DIRECTORY &&
-                        it.uri is FileUri.Local
-                }
+                // HOME に置けるのはローカルのフォルダとファイル。
+                val localFolders = sel.filter { it.uri is FileUri.Local }
                 val onlyZip = sel.singleOrNull()?.let {
                     it.type == com.zerotoship.foldex.core.model.NodeType.FILE && ZipOps.isLikelyZip(it.name)
                 } == true

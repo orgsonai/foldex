@@ -1754,10 +1754,13 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
-    /** 選択中のローカルフォルダを HOME のタイルとして追加する。 */
+    /**
+     * 選択中のローカルのフォルダとファイルを HOME のタイルとして追加する。
+     * ファイルは「自動」(ファイル一覧と同じ開き方) で置き、開き方はタイルの ⋮ から変える。
+     */
     fun addSelectedFoldersToHome() {
         val folders = _state.value.selectedNodes.filter {
-            it.type == NodeType.DIRECTORY && it.uri is FileUri.Local
+            (it.type == NodeType.DIRECTORY || it.type == NodeType.FILE) && it.uri is FileUri.Local
         }
         if (folders.isEmpty()) {
             emit(SnackbarEvent(text(R.string.home_local_folders_only)))
@@ -1766,7 +1769,11 @@ class FileBrowserViewModel @Inject constructor(
         viewModelScope.launch {
             for (n in folders) {
                 val path = (n.uri as FileUri.Local).absolutePath
-                homeShortcutRepo.addLocalFolder(n.name, path)
+                if (n.type == NodeType.FILE) {
+                    homeShortcutRepo.addLocalFile(n.name, path)
+                } else {
+                    homeShortcutRepo.addLocalFolder(n.name, path)
+                }
             }
             emit(SnackbarEvent(quantity(R.plurals.home_folders_added, folders.size, folders.size)))
             clearSelection()

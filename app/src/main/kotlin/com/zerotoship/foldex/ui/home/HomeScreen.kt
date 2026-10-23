@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderSpecial
+import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Settings
@@ -65,6 +68,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -92,6 +96,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zerotoship.foldex.core.model.Connection
 import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.home.FileOpenTarget
 import com.zerotoship.foldex.core.model.home.HomeFunction
 import com.zerotoship.foldex.core.model.home.HomeShortcut
 import com.zerotoship.foldex.ui.components.AppDrawerContent
@@ -139,6 +144,7 @@ fun HomeScreen(
     var showAdd by remember { mutableStateOf(false) }
     var pendingRemove by remember { mutableStateOf<HomeShortcut?>(null) }
     var pendingRename by remember { mutableStateOf<HomeShortcut?>(null) }
+    var pendingOpenWith by remember { mutableStateOf<HomeShortcut.LocalFile?>(null) }
     var showHiddenDialog by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -241,6 +247,17 @@ fun HomeScreen(
                             onClick = {
                                 when (sc) {
                                     is HomeShortcut.LocalFolder -> onOpenLocalFolder(sc.path)
+                                    is HomeShortcut.LocalFile -> scope.launch {
+                                        val intent = viewModel.openIntentFor(sc)
+                                        val error = when {
+                                            intent == null -> R.string.home_file_missing
+                                            runCatching { draftContext.startActivity(intent) }.isFailure -> R.string.file_no_opening_app
+                                            else -> null
+                                        }
+                                        if (error != null) {
+                                            android.widget.Toast.makeText(draftContext, error, android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                     is HomeShortcut.SafFolder -> onOpenUri(FileUri.Saf(sc.documentUri), sc.label)
                                     is HomeShortcut.RemoteConnection -> {
                                         connections.firstOrNull { it.id == sc.connectionId }
@@ -253,6 +270,8 @@ fun HomeScreen(
                             onHide = { viewModel.setHidden(sc.id, true) },
                             onRemove = { pendingRemove = sc },
                             onRename = { pendingRename = sc },
+                            onChangeOpenWith = (sc as? HomeShortcut.LocalFile)?.let { file -> { pendingOpenWith = file } },
+                            openWithLabel = (sc as? HomeShortcut.LocalFile)?.let { openTargetLabel(it.openWith, viewModel::appLabel) },
                         )
                     }
                 }
@@ -319,6 +338,19 @@ fun HomeScreen(
             onRestore = { id -> viewModel.setHidden(id, false) },
         )
     }
+    pendingOpenWith?.let { target ->
+        OpenWithDialog(
+            current = target.openWith,
+            showBuiltIn = remember(target) { viewModel.hasBuiltInViewer(target) },
+            apps = remember(target) { viewModel.appsFor(target) },
+            appLabel = viewModel::appLabel,
+            onDismiss = { pendingOpenWith = null },
+            onSelect = { choice ->
+                viewModel.setFileOpenTarget(target.id, choice)
+                pendingOpenWith = null
+            },
+        )
+    }
     pendingRename?.let { target ->
         RenameShortcutDialog(
             current = target.label,
@@ -368,8 +400,12 @@ private fun ShortcutTile(
     onHide: () -> Unit,
     onRemove: () -> Unit,
     onRename: () -> Unit,
+    /** ファイルのタイルだけ。開き方を選ぶダイアログを出す。 */
+    onChangeOpenWith: (() -> Unit)? = null,
+    /** ファイルのタイルの下に出す、いまの開き方。 */
+    openWithLabel: String? = null,
 ) {
-    val style = homeTileStyle(sc)
+    val style = homeTileStyle(sc, openWithLabel)
     var menuOpen by remember { mutableStateOf(false) }
     Box {
         Card(
@@ -457,6 +493,13 @@ private fun ShortcutTile(
                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                 onClick = { onRename(); menuOpen = false },
             )
+            if (onChangeOpenWith != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.home_change_open_with)) },
+                    leadingIcon = { Icon(Icons.Default.OpenWith, null) },
+                    onClick = { onChangeOpenWith(); menuOpen = false },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.home_hide)) },
                 leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
@@ -487,11 +530,13 @@ private data class HomeTileStyle(
  * フォルダ=primary / メディア・SAF追加=secondary / ネットワーク=tertiary / ゴミ箱=error / システム=neutral。
  */
 @Composable
-private fun homeTileStyle(sc: HomeShortcut): HomeTileStyle {
+private fun homeTileStyle(sc: HomeShortcut, openWithLabel: String?): HomeTileStyle {
     val cs = MaterialTheme.colorScheme
     return when (sc) {
         is HomeShortcut.LocalFolder ->
             HomeTileStyle(Icons.Rounded.Folder, cs.primaryContainer, cs.onPrimaryContainer, sc.path)
+        is HomeShortcut.LocalFile ->
+            HomeTileStyle(Icons.Rounded.InsertDriveFile, cs.secondaryContainer, cs.onSecondaryContainer, openWithLabel)
         is HomeShortcut.SafFolder ->
             HomeTileStyle(Icons.Rounded.FolderSpecial, cs.primaryContainer, cs.onPrimaryContainer, "SAF")
         is HomeShortcut.RemoteConnection ->
@@ -517,6 +562,57 @@ private fun homeTileStyle(sc: HomeShortcut): HomeTileStyle {
                 HomeTileStyle(Icons.Rounded.VideoLibrary, cs.secondaryContainer, cs.onSecondaryContainer, null)
         }
     }
+}
+
+/** 開き方の表示名。アプリ指定はアプリ名を出す。 */
+@Composable
+private fun openTargetLabel(target: FileOpenTarget, appLabel: (String) -> String): String = when (target) {
+    FileOpenTarget.Auto -> stringResource(R.string.open_with_default)
+    FileOpenTarget.BuiltIn -> stringResource(R.string.open_with_builtin)
+    FileOpenTarget.Ask -> stringResource(R.string.open_with_ask)
+    is FileOpenTarget.App -> remember(target.packageName) { appLabel(target.packageName) }
+}
+
+/**
+ * HOME に置いたファイルの開き方を選ぶ。行を押したらその場で決まる。
+ * 内蔵ビューアで開けない種類のファイルには「内蔵ビューア」を出さない。
+ */
+@Composable
+private fun OpenWithDialog(
+    current: FileOpenTarget,
+    showBuiltIn: Boolean,
+    apps: List<HomeViewModel.AppChoice>,
+    appLabel: (String) -> String,
+    onDismiss: () -> Unit,
+    onSelect: (FileOpenTarget) -> Unit,
+) {
+    val choices = buildList {
+        add(FileOpenTarget.Auto)
+        if (showBuiltIn) add(FileOpenTarget.BuiltIn)
+        add(FileOpenTarget.Ask)
+        apps.forEach { add(FileOpenTarget.App(it.packageName)) }
+        // アンインストールなどで一覧から消えたアプリも、いまの指定として見せる。
+        if (current is FileOpenTarget.App && apps.none { it.packageName == current.packageName }) add(current)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.home_change_open_with)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                choices.forEach { choice ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(choice) },
+                    ) {
+                        RadioButton(selected = choice == current, onClick = { onSelect(choice) })
+                        Text(openTargetLabel(choice, appLabel), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

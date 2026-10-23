@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.zerotoship.foldex.core.model.home.FileOpenTarget
 import com.zerotoship.foldex.core.model.home.HomeFunction
 import com.zerotoship.foldex.core.model.home.HomeShortcut
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -68,6 +69,30 @@ class HomeShortcutRepository @Inject constructor(
         }
     }
 
+    suspend fun addLocalFile(label: String, path: String, openWith: FileOpenTarget = FileOpenTarget.Auto) {
+        val sc = HomeShortcut.LocalFile(
+            id = UUID.randomUUID().toString(),
+            label = label.trim().ifEmpty { path.substringAfterLast('/') },
+            path = path,
+            openWith = openWith,
+        )
+        ds.edit {
+            it[KEY_ITEMS] = (it[KEY_ITEMS] ?: emptySet()) + encode(sc)
+            it[KEY_ORDER] = appendToOrder(it[KEY_ORDER], sc.id)
+        }
+    }
+
+    /** HOME に置いたファイルの開き方を変える。 */
+    suspend fun setFileOpenTarget(id: String, target: FileOpenTarget) {
+        ds.edit { prefs ->
+            val cur = prefs[KEY_ITEMS] ?: return@edit
+            prefs[KEY_ITEMS] = cur.map { raw ->
+                val sc = decode(raw)
+                if (sc is HomeShortcut.LocalFile && sc.id == id) encode(sc.copy(openWith = target)) else raw
+            }.toSet()
+        }
+    }
+
     suspend fun addSafFolder(label: String, documentUri: String) {
         val sc = HomeShortcut.SafFolder(
             id = UUID.randomUUID().toString(),
@@ -107,6 +132,7 @@ class HomeShortcutRepository @Inject constructor(
                 if (sc != null && sc.id == id) {
                     val renamed = when (sc) {
                         is HomeShortcut.LocalFolder -> sc.copy(label = trimmed)
+                        is HomeShortcut.LocalFile -> sc.copy(label = trimmed)
                         is HomeShortcut.SafFolder -> sc.copy(label = trimmed)
                         is HomeShortcut.RemoteConnection -> sc.copy(label = trimmed)
                         is HomeShortcut.Function -> sc.copy(label = trimmed)
@@ -184,6 +210,13 @@ class HomeShortcutRepository @Inject constructor(
             put("label", sc.label)
             put("path", sc.path)
         }.toString()
+        is HomeShortcut.LocalFile -> JSONObject().apply {
+            put("kind", "file")
+            put("id", sc.id)
+            put("label", sc.label)
+            put("path", sc.path)
+            put("openWith", sc.openWith.encode())
+        }.toString()
         is HomeShortcut.SafFolder -> JSONObject().apply {
             put("kind", "saf")
             put("id", sc.id)
@@ -210,6 +243,7 @@ class HomeShortcutRepository @Inject constructor(
         val label = o.getString("label")
         when (o.getString("kind")) {
             "local" -> HomeShortcut.LocalFolder(id, label, o.getString("path"))
+            "file" -> HomeShortcut.LocalFile(id, label, o.getString("path"), FileOpenTarget.parse(o.optString("openWith")))
             "saf" -> HomeShortcut.SafFolder(id, label, o.getString("documentUri"))
             "remote" -> HomeShortcut.RemoteConnection(id, label, o.getString("connectionId"))
             "fn" -> HomeShortcut.Function(id, label, HomeFunction.valueOf(o.getString("fn")))

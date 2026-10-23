@@ -214,6 +214,8 @@
     <string name="home_termux_note">This belongs to another app. Root access or sharing from Termux is required.</string>
     <string name="home_sd_card">SD card</string>
     <string name="home_all_files_required">All files access is required</string>
+    <string name="home_change_open_with">Open with</string>
+    <string name="home_file_missing">File not found. It may have been moved or deleted</string>
 
     <!-- File browser and drawer -->
     <string name="drawer_quick_access">Quick access</string>
@@ -330,8 +332,8 @@
     <string name="folder_not_found">Folder not found: %1$s</string>
     <string name="share_chooser_title">Share</string>
     <string name="share_failed">Could not share: %1$s</string>
-    <string name="home_local_folders_only">Only local folders can be added to Home</string>
-    <plurals name="home_folders_added"><item quantity="one">Added %d folder to Home</item><item quantity="other">Added %d folders to Home</item></plurals>
+    <string name="home_local_folders_only">Only folders and files on this device can be added to Home</string>
+    <plurals name="home_folders_added"><item quantity="one">Added %d item to Home</item><item quantity="other">Added %d items to Home</item></plurals>
     <string name="operation_compressing">Compressing…</string>
     <string name="operation_compress_failed">Compression failed: %1$s</string>
     <string name="operation_destination_unresolved">Could not resolve the destination</string>

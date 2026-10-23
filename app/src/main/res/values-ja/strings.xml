@@ -210,6 +210,8 @@
     <string name="home_termux_note">別アプリの領域。root か Termux 側の共有設定が必要。</string>
     <string name="home_sd_card">SDカード</string>
     <string name="home_all_files_required">全ファイルへのアクセス権限が必要</string>
+    <string name="home_change_open_with">開き方</string>
+    <string name="home_file_missing">ファイルが見つかりません。移動か削除された可能性があります</string>
 
     <!-- ファイル一覧とドロワー -->
     <string name="drawer_quick_access">クイックアクセス</string>
@@ -326,7 +328,7 @@
     <string name="folder_not_found">フォルダが見つかりません: %1$s</string>
     <string name="share_chooser_title">共有</string>
     <string name="share_failed">共有できませんでした: %1$s</string>
-    <string name="home_local_folders_only">HOME に追加できるのはローカルフォルダだけです</string>
+    <string name="home_local_folders_only">HOME に追加できるのは端末内のフォルダとファイルだけです</string>
     <plurals name="home_folders_added"><item quantity="other">%d 件を HOME に追加しました</item></plurals>
     <string name="operation_compressing">圧縮中…</string>
     <string name="operation_compress_failed">圧縮失敗: %1$s</string>
