@@ -5,8 +5,10 @@ package com.zerotoship.foldex.core.data.repo
 
 import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.core.model.PopupPlayerMode
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.core.model.VideoSkip
 
 /**
  * ユーザー設定のスナップショット。[SettingsRepository] から `Flow<UserSettings>` として観測する。
@@ -83,4 +85,8 @@ data class UserSettings(
      * ファイル一覧には影響しない。
      */
     val hiddenMediaFolders: Set<String> = emptySet(),
+    /** 動画のポップアップ再生を Android 標準の小窓で行うか、Foldex 自身の小窓で行うか。 */
+    val popupPlayerMode: PopupPlayerMode = PopupPlayerMode.SYSTEM,
+    /** 動画の早送り・巻き戻しで飛ばす量 (秒数 or 長さに対する %)。全画面・小窓で共通。 */
+    val videoSkip: VideoSkip = VideoSkip.DEFAULT,
 )

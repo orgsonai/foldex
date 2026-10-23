@@ -64,8 +64,10 @@ import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.update.UpdateStatus
 import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.core.model.PopupPlayerMode
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.core.model.VideoSkip
 import com.zerotoship.foldex.ui.theme.appColorThemeSwatch
 import com.zerotoship.foldex.ui.viewer.UNLIMITED_EDITABLE_LIMIT_KB
 
@@ -389,6 +391,51 @@ fun SettingsScreen(
                 HorizontalDivider()
             }
             item(contentType = "header") {
+                SettingsSectionHeader(stringResource(R.string.settings_section_video))
+            }
+            item(contentType = "row") {
+                SettingRow(
+                    title = stringResource(R.string.settings_popup_player),
+                    subtitle = stringResource(R.string.settings_popup_player_sub),
+                    wide = true,
+                ) {
+                    ChipsControl {
+                        PopupPlayerMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = settings.popupPlayerMode == mode,
+                                onClick = { viewModel.setPopupPlayerMode(mode) },
+                                label = { Text(stringResource(mode.labelRes)) },
+                            )
+                        }
+                    }
+                }
+            }
+            item(contentType = "row") {
+                SettingRow(
+                    title = stringResource(R.string.settings_video_skip),
+                    subtitle = stringResource(R.string.settings_video_skip_sub),
+                    wide = true,
+                ) {
+                    ChipsControl {
+                        VideoSkip.CHOICES.forEach { skip ->
+                            FilterChip(
+                                selected = settings.videoSkip == skip,
+                                onClick = { viewModel.setVideoSkip(skip) },
+                                label = {
+                                    Text(
+                                        if (skip.percent) "${skip.amount}%"
+                                        else pluralStringResource(R.plurals.settings_seconds, skip.amount, skip.amount),
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            item(contentType = "divider") {
+                HorizontalDivider()
+            }
+            item(contentType = "header") {
                 SettingsSectionHeader(stringResource(R.string.settings_section_files))
             }
             item(contentType = "row") {
@@ -610,6 +657,13 @@ private val DeleteBehavior.labelRes: Int
         DeleteBehavior.TRASH -> R.string.delete_behavior_trash
         DeleteBehavior.PERMANENT -> R.string.delete_behavior_permanent
         DeleteBehavior.ASK -> R.string.delete_behavior_ask
+    }
+
+@get:StringRes
+private val PopupPlayerMode.labelRes: Int
+    get() = when (this) {
+        PopupPlayerMode.SYSTEM -> R.string.popup_player_system
+        PopupPlayerMode.FLOATING -> R.string.popup_player_floating
     }
 
 @get:StringRes

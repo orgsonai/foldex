@@ -12,8 +12,10 @@ import com.zerotoship.foldex.core.data.update.UpdateChecker
 import com.zerotoship.foldex.core.data.update.UpdateStatus
 import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.core.model.PopupPlayerMode
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.core.model.VideoSkip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -136,4 +138,6 @@ class SettingsViewModel @Inject constructor(
     fun setLogFramePerformance(enabled: Boolean) = viewModelScope.launch { repo.setLogFramePerformance(enabled) }
     fun setSyncQueueTimeoutEnabled(enabled: Boolean) = viewModelScope.launch { repo.setSyncQueueTimeoutEnabled(enabled) }
     fun setSyncQueueTimeoutMinutes(minutes: Int) = viewModelScope.launch { repo.setSyncQueueTimeoutMinutes(minutes) }
+    fun setPopupPlayerMode(mode: PopupPlayerMode) = viewModelScope.launch { repo.setPopupPlayerMode(mode) }
+    fun setVideoSkip(skip: VideoSkip) = viewModelScope.launch { repo.setVideoSkip(skip) }
 }
