@@ -1,0 +1,4 @@
+1.14.13
+- The pop-up player can now use a Foldex window (Settings → Video). Resize it freely and place it anywhere. The first time, allow display over other apps
+- The pop-up window has play/pause in the center and rewind/fast-forward on each side (the Android standard pop-up too, on devices that allow it)
+- Choose how far fast-forward and rewind jump, in seconds or as a share (%) of the video length (Settings → Video → Skip amount)
