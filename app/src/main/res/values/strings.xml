@@ -1108,6 +1108,9 @@
 
     <!-- Video editor -->
     <string name="viewer_edit_video">Edit video (testing)</string>
+    <string name="viewer_pip">Pop-up player</string>
+    <string name="viewer_pip_pause">Pause</string>
+    <string name="viewer_pip_play">Play</string>
     <string name="sel_open_video_editor">Open in video editor (testing)</string>
     <string name="video_edit_open_no_local_video">Select at least one video stored on this device.</string>
     <string name="video_edit_open_local_only">Files on NAS or other storage were skipped. The video editor is in testing and only uses files on this device.</string>

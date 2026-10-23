@@ -3,10 +3,20 @@
 
 package com.zerotoship.foldex.ui.viewer
 
+import android.app.PendingIntent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.drawable.Icon as GraphicsIcon
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,10 +59,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
@@ -68,6 +83,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.lang.ref.WeakReference
 import javax.inject.Inject
 
 /**
@@ -97,8 +113,110 @@ class ViewerActivity : ComponentActivity() {
         if (result.resultCode == RESULT_OK) finish()
     }
 
+    // --- ポップアップ再生 (Picture-in-Picture) ---
+
+    /** 小窓で再生中か。Compose 側でトップバーと操作バーを隠すのに使う。 */
+    private val inPipState = mutableStateOf(false)
+
+    /** 表示中の動画のプレーヤー。動画以外・破棄後は null。 */
+    private var videoPlayer: Player? = null
+
+    private val videoPlayerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) = updatePipParams()
+        override fun onVideoSizeChanged(videoSize: VideoSize) = updatePipParams()
+    }
+
+    /** 小窓の「再生 / 一時停止」ボタンから届く。 */
+    private val pipActionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val player = videoPlayer ?: return
+            if (player.isPlaying) player.pause() else player.play()
+        }
+    }
+    private var pipReceiverRegistered = false
+
+    private val pipSupported: Boolean by lazy {
+        packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+    }
+
+    private fun onVideoPlayerChanged(player: Player?) {
+        videoPlayer?.removeListener(videoPlayerListener)
+        videoPlayer = player
+        player?.addListener(videoPlayerListener)
+        if (player != null && !pipReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this, pipActionReceiver, IntentFilter(ACTION_PIP_TOGGLE), ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            pipReceiverRegistered = true
+        }
+        updatePipParams()
+    }
+
+    private fun buildPipParams(): PictureInPictureParams {
+        val player = videoPlayer
+        val playing = player?.isPlaying == true
+        val builder = PictureInPictureParams.Builder()
+        player?.videoSize?.takeIf { it.width > 0 && it.height > 0 }?.let { size ->
+            // 小窓の縦横比は 1:2.39〜2.39:1 の範囲でないと例外になるので収める。
+            val ratio = (size.width * size.pixelWidthHeightRatio / size.height).coerceIn(1f / 2.39f, 2.39f)
+            builder.setAspectRatio(Rational((ratio * 1000).toInt(), 1000))
+        }
+        val action = RemoteAction(
+            GraphicsIcon.createWithResource(
+                this,
+                if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            ),
+            getString(if (playing) R.string.viewer_pip_pause else R.string.viewer_pip_play),
+            getString(if (playing) R.string.viewer_pip_pause else R.string.viewer_pip_play),
+            PendingIntent.getBroadcast(
+                this, 0, Intent(ACTION_PIP_TOGGLE).setPackage(packageName),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ),
+        )
+        builder.setActions(listOf(action))
+        // Android 12 以降は、再生中にホームへ戻ると自動で小窓になる。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) builder.setAutoEnterEnabled(playing)
+        return builder.build()
+    }
+
+    private fun updatePipParams() {
+        if (!pipSupported || videoPlayer == null) return
+        runCatching { setPictureInPictureParams(buildPipParams()) }
+    }
+
+    private fun enterPip() {
+        if (!pipSupported || videoPlayer == null) return
+        runCatching { enterPictureInPictureMode(buildPipParams()) }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // Android 11 以前は自動で小窓にならないので、再生中にホームへ戻ったらここで切り替える。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && videoPlayer?.isPlaying == true) enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        inPipState.value = isInPictureInPictureMode
+        if (isInPictureInPictureMode) {
+            pipActivity = WeakReference(this)
+        } else if (lifecycle.currentState == Lifecycle.State.CREATED) {
+            // 小窓を「×」で閉じると、画面に戻らず止まったまま残る。再生も止めて片付ける。
+            videoPlayer?.pause()
+            finish()
+        }
+    }
+
+    override fun onDestroy() {
+        if (pipReceiverRegistered) runCatching { unregisterReceiver(pipActionReceiver) }
+        videoPlayer?.removeListener(videoPlayerListener)
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 小窓で再生中に別のファイルを開いたら、2 本同時に鳴らないよう小窓を閉じる。
+        pipActivity?.get()?.takeIf { it !== this && it.isInPictureInPictureMode }?.finish()
         // 他アプリの「アプリで開く」(ACTION_VIEW) から起動されたケース。
         // 渡された content:// / file:// URI をキャッシュへコピーしてから内蔵ビューアで開く。
         if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
@@ -165,6 +283,9 @@ class ViewerActivity : ComponentActivity() {
                     onEditImage = { path, name2 -> openImageEditor(path, name2, sourceUri?.toStorageString()) },
                     onEditVideo = { path, name2 -> openVideoEditor(path, name2) },
                     htmlSite = htmlSite,
+                    inPip = inPipState.value,
+                    onEnterPip = if (pipSupported) ::enterPip else null,
+                    onVideoPlayerChanged = ::onVideoPlayerChanged,
                 )
             }
         }
@@ -236,6 +357,9 @@ class ViewerActivity : ComponentActivity() {
                         onOpenExternally = { f -> openExternally(f, f.name) },
                         onOpenExternallyId = { id -> openIdExternally(id) },
                         onSaveRemote = null,
+                        inPip = inPipState.value,
+                        onEnterPip = if (pipSupported) ::enterPip else null,
+                        onVideoPlayerChanged = ::onVideoPlayerChanged,
                     )
                 }
             }
@@ -335,6 +459,11 @@ class ViewerActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val ACTION_PIP_TOGGLE = "com.zerotoship.foldex.viewer.PIP_TOGGLE"
+
+        /** 小窓で再生中のビューア。別のファイルを開いたときに閉じるため。 */
+        private var pipActivity: WeakReference<ViewerActivity>? = null
+
         private const val EXTRA_PATH = "foldex.viewer.path"
         private const val EXTRA_NAME = "foldex.viewer.name"
         private const val EXTRA_CATEGORY = "foldex.viewer.category"
@@ -477,6 +606,12 @@ private fun ViewerScreen(
     onEditVideo: ((String, String) -> Unit)? = null,
     /** SAF・NAS の HTML のリンク先を読む置き場。null なら端末内のファイルとして読む。 */
     htmlSite: HtmlSite? = null,
+    /** ポップアップ再生 (PiP) の小窓に出ているか。小窓ではトップバーを隠して動画だけにする。 */
+    inPip: Boolean = false,
+    /** ポップアップ再生を始める。端末が対応していなければ null (ボタンを出さない)。 */
+    onEnterPip: (() -> Unit)? = null,
+    /** 動画のプレーヤーを Activity へ渡す (小窓の再生 / 一時停止ボタン用)。 */
+    onVideoPlayerChanged: (Player?) -> Unit = {},
 ) {
     // Markdown / HTML はソース編集をデフォルトにし、プレビューはトグルで切替える
     // (HANDOFF §10-E / §10-F: 「ソース表示とプレビュー表示の切替」)。
@@ -524,7 +659,7 @@ private fun ViewerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (!inPip) TopAppBar(
                 title = {
                     Column {
                         Text(displayedName, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -555,6 +690,11 @@ private fun ViewerScreen(
                     if (editableImageTarget != null && onEditImage != null) {
                         IconButton(onClick = { onEditImage(editableImageTarget, displayedName) }) {
                             Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.viewer_edit_image))
+                        }
+                    }
+                    if (category == Category.VIDEO && onEnterPip != null) {
+                        IconButton(onClick = onEnterPip) {
+                            Icon(Icons.Default.PictureInPictureAlt, contentDescription = stringResource(R.string.viewer_pip))
                         }
                     }
                     if (editableVideoTarget != null && onEditVideo != null) {
@@ -612,6 +752,8 @@ private fun ViewerScreen(
                     mediaUri = streamingMediaUri,
                     modifier = Modifier.fillMaxSize(),
                     onOpenExternally = onOpenExternally,
+                    inPip = inPip,
+                    onPlayerChanged = onVideoPlayerChanged,
                 )
                 Category.PDF -> PdfViewer(file, Modifier.fillMaxSize())
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

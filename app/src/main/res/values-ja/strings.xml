@@ -1098,6 +1098,9 @@
 
     <!-- 動画編集 (試作) -->
     <string name="viewer_edit_video">動画を編集（テスト中）</string>
+    <string name="viewer_pip">ポップアップ再生</string>
+    <string name="viewer_pip_pause">一時停止</string>
+    <string name="viewer_pip_play">再生</string>
     <string name="sel_open_video_editor">動画編集で開く（テスト中）</string>
     <string name="video_edit_open_no_local_video">端末内の動画を 1 つ以上選んでください。</string>
     <string name="video_edit_open_local_only">NAS などにあるファイルは除きました。テスト中の動画編集は端末内のファイルだけを使えます。</string>
