@@ -36,6 +36,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
@@ -162,6 +163,8 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
         super.onDestroy()
     }
 
+    // setUsePlatformDiagnostics は Media3 で試験的 (UnstableApi) 扱い。全画面のビューアと同じく使う。
+    @androidx.annotation.OptIn(UnstableApi::class)
     private fun start(intent: Intent) {
         val src = Source(
             localPath = intent.getStringExtra(EXTRA_PATH).orEmpty(),
