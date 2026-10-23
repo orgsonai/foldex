@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
@@ -66,6 +67,7 @@ class SettingsRepository @Inject constructor(
             syncQueueTimeoutEnabled = p[KEY_SYNC_QUEUE_TIMEOUT_ON] ?: true,
             syncQueueTimeoutMinutes = p[KEY_SYNC_QUEUE_TIMEOUT_MIN] ?: 10,
             permanentLogUri = p[KEY_PERMANENT_LOG_URI],
+            hiddenMediaFolders = p[KEY_HIDDEN_MEDIA_FOLDERS] ?: emptySet(),
         )
     }
 
@@ -129,6 +131,15 @@ class SettingsRepository @Inject constructor(
         if (uri.isNullOrBlank()) it.remove(KEY_PERMANENT_LOG_URI) else it[KEY_PERMANENT_LOG_URI] = uri
     }
 
+    /** HOME の「画像」「動画」から、このフォルダとその中のフォルダをまとめて隠す。 */
+    suspend fun hideMediaFolder(path: String) = edit {
+        it[KEY_HIDDEN_MEDIA_FOLDERS] = (it[KEY_HIDDEN_MEDIA_FOLDERS] ?: emptySet()) + path
+    }
+
+    suspend fun unhideMediaFolder(path: String) = edit {
+        it[KEY_HIDDEN_MEDIA_FOLDERS] = (it[KEY_HIDDEN_MEDIA_FOLDERS] ?: emptySet()) - path
+    }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         ds.edit(block)
     }
@@ -154,5 +165,6 @@ class SettingsRepository @Inject constructor(
         val KEY_SYNC_QUEUE_TIMEOUT_MIN = intPreferencesKey("sync_queue_timeout_minutes")
         val KEY_PERMANENT_LOG_URI = stringPreferencesKey("permanent_log_uri")
         val KEY_LOG_FRAME_PERF = booleanPreferencesKey("log_frame_performance")
+        val KEY_HIDDEN_MEDIA_FOLDERS = stringSetPreferencesKey("hidden_media_folders")
     }
 }

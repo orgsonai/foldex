@@ -801,6 +801,15 @@
     <string name="media_permission_required">メディアにアクセスするには権限が必要です</string>
     <string name="media_permission_help">「すべてのファイルへのアクセス」を許可済みの場合は\n一度戻って再度開いてください。</string>
     <string name="media_permission_grant">メディアアクセスを許可</string>
+    <string name="media_hide_folder">非表示にする</string>
+    <string name="media_hide_title">どこから隠しますか</string>
+    <string name="media_hide_help">選んだフォルダと、その中のフォルダをまとめて「画像」「動画」から隠します。ファイルは消えず、ファイル一覧にはそのまま出ます。</string>
+    <string name="media_hide_choice_count">%1$d フォルダ・%2$d 件が隠れます</string>
+    <string name="media_folder_hidden">「%1$s」を非表示にしました</string>
+    <string name="media_hidden_folders">非表示のフォルダ</string>
+    <string name="media_hidden_folders_help">ここで「表示する」を押すと、また一覧に出ます。画像と動画で共通です。</string>
+    <string name="media_hidden_count">%1$d 件</string>
+    <string name="media_unhide">表示する</string>
     <!-- ビューア共通 -->
     <string name="viewer_external_open_failed">このファイルを開けませんでした。</string>
     <string name="viewer_loading">%1$s を読み込み中…</string>

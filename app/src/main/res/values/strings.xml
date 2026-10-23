@@ -810,6 +810,15 @@
     <string name="media_permission_required">Permission is required to access media</string>
     <string name="media_permission_help">If you have already granted “All files access,” go back and open this screen again.</string>
     <string name="media_permission_grant">Allow media access</string>
+    <string name="media_hide_folder">Hide</string>
+    <string name="media_hide_title">Hide from which folder?</string>
+    <string name="media_hide_help">The chosen folder and every folder inside it are hidden from Images and Videos. No files are deleted, and they still appear in the file list.</string>
+    <string name="media_hide_choice_count">Hides %1$d folders · %2$d items</string>
+    <string name="media_folder_hidden">Hid “%1$s”</string>
+    <string name="media_hidden_folders">Hidden folders</string>
+    <string name="media_hidden_folders_help">Tap Show to bring a folder back. This list is shared by Images and Videos.</string>
+    <string name="media_hidden_count">%1$d items</string>
+    <string name="media_unhide">Show</string>
     <!-- Viewer shell -->
     <string name="viewer_external_open_failed">Could not open this file.</string>
     <string name="viewer_loading">Loading %1$s…</string>
