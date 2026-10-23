@@ -62,6 +62,7 @@ Foldex がリクエストする Android 権限とその用途:
 | `INTERNET` / `ACCESS_NETWORK_STATE` / `ACCESS_WIFI_STATE` | リモート接続 (SMB/SFTP/FTP/WebDAV) と同期 |
 | `REQUEST_INSTALL_PACKAGES` | APK ファイル選択時のインストール起動 |
 | `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` | 同期ジョブ / 自機 SFTP/FTP サーバーのフォアグラウンド実行 |
+| `SYSTEM_ALERT_WINDOW` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | 動画を Foldex の小窓で再生する (設定で選び、ユーザーが許可したときのみ) |
 | `POST_NOTIFICATIONS` | 同期完了 / 操作完了 / フォアグラウンドサービスの通知 |
 | `RECEIVE_BOOT_COMPLETED` | 端末再起動後の定期同期スケジュール復元 |
 | `WAKE_LOCK` | 同期ジョブの完走 (Doze モード対策) |

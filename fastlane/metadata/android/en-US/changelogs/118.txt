@@ -1,0 +1,8 @@
+1.14.13
+- Pop-up player can use a Foldex window you can resize and place freely (Settings → Video)
+- Pop-up window: play/pause in the center, rewind/fast-forward on the sides
+- Skip amount in seconds or % of the video length
+- Videos resume where you stopped ("Start over" to restart)
+- Playback speed button (0.5x–2x)
+- Double-tap left/right to rewind/fast-forward
+- Swipe up/down for brightness (left) or volume (right)

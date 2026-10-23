@@ -14,8 +14,10 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.zerotoship.foldex.core.model.AppColorTheme
 import com.zerotoship.foldex.core.model.DeleteBehavior
+import com.zerotoship.foldex.core.model.PopupPlayerMode
 import com.zerotoship.foldex.core.model.SyncBackupPolicy
 import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.core.model.VideoSkip
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +70,11 @@ class SettingsRepository @Inject constructor(
             syncQueueTimeoutMinutes = p[KEY_SYNC_QUEUE_TIMEOUT_MIN] ?: 10,
             permanentLogUri = p[KEY_PERMANENT_LOG_URI],
             hiddenMediaFolders = p[KEY_HIDDEN_MEDIA_FOLDERS] ?: emptySet(),
+            popupPlayerMode = p[KEY_POPUP_PLAYER_MODE]?.let { runCatching { PopupPlayerMode.valueOf(it) }.getOrNull() }
+                ?: PopupPlayerMode.SYSTEM,
+            videoSkip = p[KEY_VIDEO_SKIP_AMOUNT]?.takeIf { it > 0 }
+                ?.let { VideoSkip(it, percent = p[KEY_VIDEO_SKIP_PERCENT] ?: false) }
+                ?: VideoSkip.DEFAULT,
         )
     }
 
@@ -140,6 +147,13 @@ class SettingsRepository @Inject constructor(
         it[KEY_HIDDEN_MEDIA_FOLDERS] = (it[KEY_HIDDEN_MEDIA_FOLDERS] ?: emptySet()) - path
     }
 
+    suspend fun setPopupPlayerMode(mode: PopupPlayerMode) = edit { it[KEY_POPUP_PLAYER_MODE] = mode.name }
+
+    suspend fun setVideoSkip(skip: VideoSkip) = edit {
+        it[KEY_VIDEO_SKIP_AMOUNT] = skip.amount
+        it[KEY_VIDEO_SKIP_PERCENT] = skip.percent
+    }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         ds.edit(block)
     }
@@ -166,5 +180,8 @@ class SettingsRepository @Inject constructor(
         val KEY_PERMANENT_LOG_URI = stringPreferencesKey("permanent_log_uri")
         val KEY_LOG_FRAME_PERF = booleanPreferencesKey("log_frame_performance")
         val KEY_HIDDEN_MEDIA_FOLDERS = stringSetPreferencesKey("hidden_media_folders")
+        val KEY_POPUP_PLAYER_MODE = stringPreferencesKey("popup_player_mode")
+        val KEY_VIDEO_SKIP_AMOUNT = intPreferencesKey("video_skip_amount")
+        val KEY_VIDEO_SKIP_PERCENT = booleanPreferencesKey("video_skip_percent")
     }
 }

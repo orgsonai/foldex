@@ -16,6 +16,7 @@ import android.graphics.drawable.Icon as GraphicsIcon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Rational
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -50,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,7 +75,9 @@ import com.zerotoship.foldex.core.common.Result
 import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.data.repo.UserSettings
 import com.zerotoship.foldex.core.model.FileUri
+import com.zerotoship.foldex.core.model.PopupPlayerMode
 import com.zerotoship.foldex.core.model.ThemeMode
+import com.zerotoship.foldex.core.model.VideoSkip
 import com.zerotoship.foldex.core.model.WriteMode
 import com.zerotoship.foldex.core.model.filetype.Category
 import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
@@ -126,11 +131,15 @@ class ViewerActivity : ComponentActivity() {
         override fun onVideoSizeChanged(videoSize: VideoSize) = updatePipParams()
     }
 
-    /** 小窓の「再生 / 一時停止」ボタンから届く。 */
+    /** 小窓の「巻き戻し / 再生・一時停止 / 早送り」ボタンから届く。 */
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val player = videoPlayer ?: return
-            if (player.isPlaying) player.pause() else player.play()
+            when (intent.action) {
+                ACTION_PIP_REWIND -> seekVideoBy(player, -1)
+                ACTION_PIP_FORWARD -> seekVideoBy(player, 1)
+                else -> if (player.isPlaying) player.pause() else player.play()
+            }
         }
     }
     private var pipReceiverRegistered = false
@@ -139,13 +148,39 @@ class ViewerActivity : ComponentActivity() {
         packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
     }
 
+    /** 読み込み済みの設定。起動直後でまだ読めていなければ既定値。 */
+    private val currentSettings: UserSettings get() = settingsRepo.loaded.value ?: UserSettings()
+
+    /** Foldex の小窓へ渡す、表示中の動画。動画以外では null。 */
+    private var videoSource: FloatingVideoService.Source? = null
+
+    /** 「他のアプリの上に重ねて表示」の説明を出しているか。 */
+    private val overlayPermissionDialog = mutableStateOf(false)
+
+    /** 許可の設定画面から戻ったら、小窓での再生を始める。 */
+    private var awaitingOverlayPermission = false
+
+    /** [direction] が負なら巻き戻し、正なら早送り。量は設定のスキップ量。 */
+    private fun seekVideoBy(player: Player, direction: Int) {
+        val duration = player.duration
+        val target = player.currentPosition + direction * currentSettings.videoSkip.incrementMs(duration)
+        player.seekTo(if (duration > 0) target.coerceIn(0, duration) else target.coerceAtLeast(0))
+    }
+
     private fun onVideoPlayerChanged(player: Player?) {
         videoPlayer?.removeListener(videoPlayerListener)
         videoPlayer = player
         player?.addListener(videoPlayerListener)
         if (player != null && !pipReceiverRegistered) {
             ContextCompat.registerReceiver(
-                this, pipActionReceiver, IntentFilter(ACTION_PIP_TOGGLE), ContextCompat.RECEIVER_NOT_EXPORTED,
+                this,
+                pipActionReceiver,
+                IntentFilter().apply {
+                    addAction(ACTION_PIP_TOGGLE)
+                    addAction(ACTION_PIP_REWIND)
+                    addAction(ACTION_PIP_FORWARD)
+                },
+                ContextCompat.RECEIVER_NOT_EXPORTED,
             )
             pipReceiverRegistered = true
         }
@@ -161,21 +196,36 @@ class ViewerActivity : ComponentActivity() {
             val ratio = (size.width * size.pixelWidthHeightRatio / size.height).coerceIn(1f / 2.39f, 2.39f)
             builder.setAspectRatio(Rational((ratio * 1000).toInt(), 1000))
         }
-        val action = RemoteAction(
-            GraphicsIcon.createWithResource(
-                this,
-                if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
-            ),
-            getString(if (playing) R.string.viewer_pip_pause else R.string.viewer_pip_play),
-            getString(if (playing) R.string.viewer_pip_pause else R.string.viewer_pip_play),
+        fun action(icon: Int, label: Int, intentAction: String, requestCode: Int) = RemoteAction(
+            GraphicsIcon.createWithResource(this, icon),
+            getString(label),
+            getString(label),
             PendingIntent.getBroadcast(
-                this, 0, Intent(ACTION_PIP_TOGGLE).setPackage(packageName),
+                this, requestCode, Intent(intentAction).setPackage(packageName),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             ),
         )
-        builder.setActions(listOf(action))
-        // Android 12 以降は、再生中にホームへ戻ると自動で小窓になる。
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) builder.setAutoEnterEnabled(playing)
+        val toggle = action(
+            if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            if (playing) R.string.viewer_pip_pause else R.string.viewer_pip_play,
+            ACTION_PIP_TOGGLE,
+            0,
+        )
+        // 中央に再生・一時停止、左右に巻き戻し・早送り。ボタンを 3 つ置けない端末では再生・一時停止だけ。
+        val actions = if (maxNumPictureInPictureActions >= 3) {
+            listOf(
+                action(android.R.drawable.ic_media_rew, R.string.viewer_pip_rewind, ACTION_PIP_REWIND, 1),
+                toggle,
+                action(android.R.drawable.ic_media_ff, R.string.viewer_pip_forward, ACTION_PIP_FORWARD, 2),
+            )
+        } else {
+            listOf(toggle)
+        }
+        builder.setActions(actions)
+        // Android 12 以降は、再生中にホームへ戻ると自動で小窓になる (Foldex の小窓を使う設定のときは onUserLeaveHint で出す)。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(playing && currentSettings.popupPlayerMode == PopupPlayerMode.SYSTEM)
+        }
         return builder.build()
     }
 
@@ -189,10 +239,57 @@ class ViewerActivity : ComponentActivity() {
         runCatching { enterPictureInPictureMode(buildPipParams()) }
     }
 
+    /** トップバーの小窓ボタン。設定に従って Android 標準か Foldex の小窓で再生する。 */
+    private fun enterPopup() {
+        if (currentSettings.popupPlayerMode == PopupPlayerMode.FLOATING) startFloating() else enterPip()
+    }
+
+    /** Foldex の小窓へ再生を引き継いで、この画面を閉じる。許可が無ければ説明を出す。 */
+    private fun startFloating(askPermission: Boolean = true) {
+        val player = videoPlayer ?: return
+        val source = videoSource ?: return
+        if (!Settings.canDrawOverlays(this)) {
+            if (askPermission) overlayPermissionDialog.value = true
+            return
+        }
+        FloatingVideoService.start(
+            context = this,
+            source = source,
+            positionMs = player.currentPosition,
+            playing = player.playWhenReady,
+            speed = player.playbackParameters.speed,
+            skip = currentSettings.videoSkip,
+        )
+        player.pause()
+        finish()
+    }
+
+    private fun openOverlayPermissionSettings() {
+        overlayPermissionDialog.value = false
+        awaitingOverlayPermission = true
+        runCatching {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri()))
+        }.onFailure { awaitingOverlayPermission = false }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (awaitingOverlayPermission) {
+            awaitingOverlayPermission = false
+            startFloating(askPermission = false)
+        }
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Android 11 以前は自動で小窓にならないので、再生中にホームへ戻ったらここで切り替える。
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && videoPlayer?.isPlaying == true) enterPip()
+        if (videoPlayer?.isPlaying != true) return
+        if (currentSettings.popupPlayerMode == PopupPlayerMode.FLOATING) {
+            // ホームへ戻るところなので、許可が無くても説明は出さない。
+            startFloating(askPermission = false)
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            // Android 11 以前は自動で小窓にならないので、再生中にホームへ戻ったらここで切り替える。
+            enterPip()
+        }
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
@@ -217,6 +314,7 @@ class ViewerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // 小窓で再生中に別のファイルを開いたら、2 本同時に鳴らないよう小窓を閉じる。
         pipActivity?.get()?.takeIf { it !== this && it.isInPictureInPictureMode }?.finish()
+        FloatingVideoService.stop(this)
         // 他アプリの「アプリで開く」(ACTION_VIEW) から起動されたケース。
         // 渡された content:// / file:// URI をキャッシュへコピーしてから内蔵ビューアで開く。
         if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
@@ -238,6 +336,10 @@ class ViewerActivity : ComponentActivity() {
         val sourceUri: FileUri? = intent.getStringExtra(EXTRA_SOURCE_URI)
             ?.let { FileUri.fromStorageStringOrNull(it) }
         // SAF・NAS の HTML は、パンくずをたどってリンク先を元の場所から読む。
+        if (category == Category.VIDEO) videoSource = FloatingVideoService.Source(path, name, streamingMediaUri)
+        val startPositionMs = intent.getLongExtra(EXTRA_START_POSITION, 0L)
+        val startPlaying = intent.getBooleanExtra(EXTRA_START_PLAYING, true)
+        val startSpeed = intent.getFloatExtra(EXTRA_START_SPEED, 1f)
         val htmlSite: HtmlSite? = run {
             val uris = intent.getStringArrayExtra(EXTRA_HTML_FOLDER_URIS)?.map { FileUri.fromStorageStringOrNull(it) }
             val names = intent.getStringArrayExtra(EXTRA_HTML_FOLDER_NAMES)?.toList()
@@ -284,9 +386,14 @@ class ViewerActivity : ComponentActivity() {
                     onEditVideo = { path, name2 -> openVideoEditor(path, name2) },
                     htmlSite = htmlSite,
                     inPip = inPipState.value,
-                    onEnterPip = if (pipSupported) ::enterPip else null,
+                    onEnterPip = popupHandler(settings),
                     onVideoPlayerChanged = ::onVideoPlayerChanged,
+                    videoSkip = settings.videoSkip,
+                    startPositionMs = startPositionMs,
+                    startPlaying = startPlaying,
+                    initialVideoSpeed = startSpeed,
                 )
+                OverlayPermissionDialog()
             }
         }
     }
@@ -358,15 +465,20 @@ class ViewerActivity : ComponentActivity() {
                         onOpenExternallyId = { id -> openIdExternally(id) },
                         onSaveRemote = null,
                         inPip = inPipState.value,
-                        onEnterPip = if (pipSupported) ::enterPip else null,
+                        onEnterPip = popupHandler(settings),
                         onVideoPlayerChanged = ::onVideoPlayerChanged,
+                        videoSkip = settings.videoSkip,
                     )
                 }
+                OverlayPermissionDialog()
             }
         }
 
         lifecycleScope.launch {
             val copied = withContext(Dispatchers.IO) { copyUriToCache(uri, name) }
+            if (copied != null && category == Category.VIDEO) {
+                videoSource = FloatingVideoService.Source(copied.absolutePath, name, null)
+            }
             if (copied != null) fileState.value = copied else errorState.value = true
         }
     }
@@ -383,6 +495,31 @@ class ViewerActivity : ComponentActivity() {
             }
         }
     }.getOrNull()
+
+    /** 小窓ボタンの動作。Android 標準の小窓が使えない端末で、Foldex の小窓も選んでいなければ null (ボタンを出さない)。 */
+    private fun popupHandler(settings: UserSettings): (() -> Unit)? =
+        if (pipSupported || settings.popupPlayerMode == PopupPlayerMode.FLOATING) ::enterPopup else null
+
+    /** Foldex の小窓に要る「他のアプリの上に重ねて表示」の許可を、設定画面へ案内する前に説明する。 */
+    @Composable
+    private fun OverlayPermissionDialog() {
+        if (!overlayPermissionDialog.value) return
+        AlertDialog(
+            onDismissRequest = { overlayPermissionDialog.value = false },
+            title = { Text(stringResource(R.string.popup_overlay_permission_title)) },
+            text = { Text(stringResource(R.string.popup_overlay_permission_body)) },
+            confirmButton = {
+                TextButton(onClick = ::openOverlayPermissionSettings) {
+                    Text(stringResource(R.string.popup_overlay_permission_open))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { overlayPermissionDialog.value = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
 
     /** URI の中身を `cacheDir/external-view/<name>` へコピーして返す。失敗時 null。 */
     private fun copyUriToCache(uri: Uri, name: String): File? = runCatching {
@@ -460,6 +597,8 @@ class ViewerActivity : ComponentActivity() {
 
     companion object {
         private const val ACTION_PIP_TOGGLE = "com.zerotoship.foldex.viewer.PIP_TOGGLE"
+        private const val ACTION_PIP_REWIND = "com.zerotoship.foldex.viewer.PIP_REWIND"
+        private const val ACTION_PIP_FORWARD = "com.zerotoship.foldex.viewer.PIP_FORWARD"
 
         /** 小窓で再生中のビューア。別のファイルを開いたときに閉じるため。 */
         private var pipActivity: WeakReference<ViewerActivity>? = null
@@ -475,6 +614,9 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_SOURCE_URI = "foldex.viewer.source_uri"
         private const val EXTRA_HTML_FOLDER_URIS = "foldex.viewer.html_folder_uris"
         private const val EXTRA_HTML_FOLDER_NAMES = "foldex.viewer.html_folder_names"
+        private const val EXTRA_START_POSITION = "foldex.viewer.start_position"
+        private const val EXTRA_START_PLAYING = "foldex.viewer.start_playing"
+        private const val EXTRA_START_SPEED = "foldex.viewer.start_speed"
 
         fun intent(
             context: Context,
@@ -494,6 +636,10 @@ class ViewerActivity : ComponentActivity() {
             /** SAF・NAS の HTML 用。起点から HTML のあるフォルダまでのパンくず (storage 文字列と表示名、同じ順)。 */
             htmlFolderUris: List<String> = emptyList(),
             htmlFolderNames: List<String> = emptyList(),
+            /** 動画を再生し始める位置と、すぐ再生するか (Foldex の小窓から全画面に戻すとき)。 */
+            startPositionMs: Long = 0L,
+            startPlaying: Boolean = true,
+            startSpeed: Float = 1f,
         ): Intent =
             Intent(context, ViewerActivity::class.java)
                 .putExtra(EXTRA_PATH, localPath)
@@ -501,6 +647,9 @@ class ViewerActivity : ComponentActivity() {
                 .putExtra(EXTRA_CATEGORY, category.name)
                 .putExtra(EXTRA_EDITABLE, editable)
                 .putExtra(EXTRA_EDITABLE_LIMIT_KB, editableLimitKb)
+                .putExtra(EXTRA_START_POSITION, startPositionMs)
+                .putExtra(EXTRA_START_PLAYING, startPlaying)
+                .putExtra(EXTRA_START_SPEED, startSpeed)
                 .apply {
                     if (siblings.isNotEmpty()) putExtra(EXTRA_SIBLINGS, siblings.toTypedArray())
                     if (!initialImageId.isNullOrBlank()) putExtra(EXTRA_INITIAL_ID, initialImageId)
@@ -612,11 +761,19 @@ private fun ViewerScreen(
     onEnterPip: (() -> Unit)? = null,
     /** 動画のプレーヤーを Activity へ渡す (小窓の再生 / 一時停止ボタン用)。 */
     onVideoPlayerChanged: (Player?) -> Unit = {},
+    /** 動画の巻き戻し・早送りで飛ばす量。 */
+    videoSkip: VideoSkip = VideoSkip.DEFAULT,
+    /** 動画を再生し始める位置と、すぐ再生するか。 */
+    startPositionMs: Long = 0L,
+    startPlaying: Boolean = true,
+    /** 動画の再生速度の初期値 (Foldex の小窓から戻したとき、小窓の速度を引き継ぐ)。 */
+    initialVideoSpeed: Float = 1f,
 ) {
     // Markdown / HTML はソース編集をデフォルトにし、プレビューはトグルで切替える
     // (HANDOFF §10-E / §10-F: 「ソース表示とプレビュー表示の切替」)。
     val canPreview = category == Category.MARKDOWN || category == Category.HTML
     var previewMode by remember { mutableStateOf(false) }
+    var videoSpeed by remember { mutableFloatStateOf(initialVideoSpeed) }
 
     // 画像はスワイプで前後の画像へ。Intent で運ばれた siblings を最優先、
     // それが無い/不完全なら同フォルダから listFiles で集める (ローカル実ファイル限定の fallback)。
@@ -692,6 +849,9 @@ private fun ViewerScreen(
                             Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.viewer_edit_image))
                         }
                     }
+                    if (category == Category.VIDEO && !inPip) {
+                        VideoSpeedButton(speed = videoSpeed, onSpeedChange = { videoSpeed = it })
+                    }
                     if (category == Category.VIDEO && onEnterPip != null) {
                         IconButton(onClick = onEnterPip) {
                             Icon(Icons.Default.PictureInPictureAlt, contentDescription = stringResource(R.string.viewer_pip))
@@ -754,6 +914,11 @@ private fun ViewerScreen(
                     onOpenExternally = onOpenExternally,
                     inPip = inPip,
                     onPlayerChanged = onVideoPlayerChanged,
+                    skip = videoSkip,
+                    startPositionMs = startPositionMs,
+                    startPlaying = startPlaying,
+                    speed = videoSpeed,
+                    onSpeedChange = { videoSpeed = it },
                 )
                 Category.PDF -> PdfViewer(file, Modifier.fillMaxSize())
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

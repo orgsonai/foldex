@@ -30,6 +30,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- 動画編集の書き出し (Android 15 以降の前景サービスの種別 mediaProcessing) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <!-- Foldex の小窓で動画を再生する (設定で選んだときだけ使う。許可はユーザーが設定画面でオンにする) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 定期同期のアラームを端末再起動後に貼り直すため (アラームは再起動で消える) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -105,6 +108,12 @@
         <service
             android:name=".ui.videoedit.service.VideoExportService"
             android:foregroundServiceType="dataSync|mediaProcessing"
+            android:exported="false" />
+
+        <!-- Foldex の小窓で動画を再生し続ける前景サービス (FloatingVideoService)。 -->
+        <service
+            android:name=".ui.viewer.FloatingVideoService"
+            android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
         <!-- 時刻指定同期 (毎日/毎週/毎月/日時) のアラーム発火を受けて即時実行する。
