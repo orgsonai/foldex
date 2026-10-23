@@ -126,12 +126,15 @@
         </receiver>
 
         <!-- 内蔵ビューア (画像/テキスト/Markdown/HTML/音声/動画/PDF)。
+             動画はポップアップ再生 (PiP) できる。小窓との切り替えで作り直されないよう
+             configChanges に smallestScreenSize も入れる。
              他アプリの「アプリで開く」(ACTION_VIEW) からも起動できるよう exported=true にし、
              内蔵ビューアが表示できる MIME を intent-filter で宣言する。 -->
         <activity
             android:name=".ui.viewer.ViewerActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
             <intent-filter android:label="@string/app_name">
                 <action android:name="android.intent.action.VIEW" />

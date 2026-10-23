@@ -7,6 +7,7 @@ package com.zerotoship.foldex.core.model.home
  * HOME 画面のショートカット。グリッドのタイル 1 枚に相当する。
  *
  * - [LocalFolder]: ローカル絶対パスをファイルブラウザで開く。
+ * - [LocalFile]: よく使うファイルを、フォルダをたどらずに直接開く。開き方はタイルごとに選べる。
  * - [Function]: 機能ボタン (ファイル / ゴミ箱 / サーバ / 同期 / 設定 / 権限など)。固定の組み込みタイル。
  *
  * リモートサーバへの直リンクは P7 では未対応 (Connection を解決してから FileUri 化する経路が要るため)。
@@ -19,6 +20,13 @@ sealed class HomeShortcut {
         override val id: String,
         override val label: String,
         val path: String,
+    ) : HomeShortcut()
+
+    data class LocalFile(
+        override val id: String,
+        override val label: String,
+        val path: String,
+        val openWith: FileOpenTarget = FileOpenTarget.Auto,
     ) : HomeShortcut()
 
     /**
@@ -43,6 +51,38 @@ sealed class HomeShortcut {
         override val label: String,
         val kind: HomeFunction,
     ) : HomeShortcut()
+}
+
+/** HOME に置いたファイルの開き方。 */
+sealed class FileOpenTarget {
+    /** ファイル一覧でタップしたときと同じ (設定「開き方」の拡張子ごとの指定に従う)。 */
+    data object Auto : FileOpenTarget()
+
+    /** 内蔵ビューアで開く。 */
+    data object BuiltIn : FileOpenTarget()
+
+    /** 毎回アプリを選ぶ。 */
+    data object Ask : FileOpenTarget()
+
+    /** 決めたアプリで開く。 */
+    data class App(val packageName: String) : FileOpenTarget()
+
+    /** 保存用の文字列。[parse] で戻す。 */
+    fun encode(): String = when (this) {
+        Auto -> "auto"
+        BuiltIn -> "builtin"
+        Ask -> "ask"
+        is App -> "app:$packageName"
+    }
+
+    companion object {
+        fun parse(raw: String?): FileOpenTarget = when {
+            raw == "builtin" -> BuiltIn
+            raw == "ask" -> Ask
+            raw != null && raw.startsWith("app:") && raw.length > 4 -> App(raw.removePrefix("app:"))
+            else -> Auto
+        }
+    }
 }
 
 /** 組み込み機能タイルの種類。 */

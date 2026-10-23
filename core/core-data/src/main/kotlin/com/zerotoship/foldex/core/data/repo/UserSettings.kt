@@ -77,4 +77,10 @@ data class UserSettings(
      * が書き込みのたびにこのファイルへも追記する。null なら永久保存オフ (アプリ内ログのローテのみ)。
      */
     val permanentLogUri: String? = null,
+    /**
+     * HOME の「画像」「動画」で隠すフォルダの絶対パス。配下のフォルダもまとめて隠れる
+     * (サムネイルのキャッシュのように、1 つの親の下へ大量のフォルダを作るアプリがあるため)。
+     * ファイル一覧には影響しない。
+     */
+    val hiddenMediaFolders: Set<String> = emptySet(),
 )

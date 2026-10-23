@@ -1,0 +1,5 @@
+1.14.12
+- Videos can play in a pop-up window. Tap the pop-up button at the top, or go home while a video is playing
+- Pinch with two fingers to zoom videos (drag with one finger to move while zoomed)
+- In Images and Videos on Home, long-press a folder to hide it, including all folders under a parent
+- Pin frequently used files to Home. Choose how each one opens (built-in viewer or an app) from the tile's ⋮ menu

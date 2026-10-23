@@ -26,7 +26,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -40,7 +43,10 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,13 +57,16 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.Alignment
@@ -173,6 +182,23 @@ fun MediaCollectionScreen(
         FilePropertiesDialog(node = node, onDismiss = { viewModel.dismissProperties() })
     }
 
+    state.hideChoices?.let { choices ->
+        HideFolderDialog(
+            choices = choices,
+            onHide = { viewModel.hideFolder(it) },
+            onDismiss = { viewModel.dismissHideDialog() },
+        )
+    }
+    if (state.showingHiddenFolders) {
+        HiddenFoldersDialog(
+            paths = state.hiddenFolders.sorted(),
+            counts = state.hiddenItemCounts,
+            label = viewModel::hiddenFolderLabel,
+            onUnhide = { viewModel.unhideFolder(it) },
+            onDismiss = { viewModel.showHiddenFolders(false) },
+        )
+    }
+
     Scaffold(
         topBar = {
             val title = when {
@@ -199,6 +225,14 @@ fun MediaCollectionScreen(
                             if (state.isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.navigate_back),
                         )
+                    }
+                },
+                actions = {
+                    // 隠したものがあるときだけ、戻すための入口を出す。
+                    if (!state.isSelectionMode && state.openedFolder == null && state.hiddenFolders.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.showHiddenFolders(true) }) {
+                            Icon(Icons.Default.VisibilityOff, contentDescription = stringResource(R.string.media_hidden_folders))
+                        }
                     }
                 },
             )
@@ -279,9 +313,8 @@ fun MediaCollectionScreen(
                             FolderTile(
                                 folder = folder,
                                 onClick = { viewModel.openFolder(folder.path) },
-                                onLongClick = {
-                                    if (folder.path != OTHER_FOLDER_PATH) onOpenLocalFolder(folder.path)
-                                },
+                                onOpenLocation = { onOpenLocalFolder(folder.path) },
+                                onHide = { viewModel.requestHideFolder(folder.path) },
                             )
                         }
                     }
@@ -341,14 +374,36 @@ private fun PullableMessage(text: String) {
     }
 }
 
+/** 長押しで「場所を開く」「非表示にする」を出す。実体パスの無い「その他」は長押ししても何も出さない。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FolderTile(folder: MediaFolder, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun FolderTile(
+    folder: MediaFolder,
+    onClick: () -> Unit,
+    onOpenLocation: () -> Unit,
+    onHide: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .aspectRatio(0.85f)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { if (folder.path != OTHER_FOLDER_PATH) menuOpen = true },
+            ),
     ) {
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.sel_open_location)) },
+                leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
+                onClick = { menuOpen = false; onOpenLocation() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.media_hide_folder)) },
+                leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
+                onClick = { menuOpen = false; onHide() },
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -449,6 +504,88 @@ private fun MediaTile(
             }
         }
     }
+}
+
+/** どの階層で隠すかを選ぶ。深いフォルダから順に並べ、行を押すとその場で隠す。 */
+@Composable
+private fun HideFolderDialog(
+    choices: List<HideChoice>,
+    onHide: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.media_hide_title)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    stringResource(R.string.media_hide_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                choices.forEach { choice ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onHide(choice.path) }
+                            .padding(vertical = 10.dp),
+                    ) {
+                        Text(choice.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(R.string.media_hide_choice_count, choice.folderCount, choice.itemCount),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+/** 隠したフォルダの一覧。「表示する」で 1 つずつ戻す。 */
+@Composable
+private fun HiddenFoldersDialog(
+    paths: List<String>,
+    counts: Map<String, Int>,
+    label: (String) -> String,
+    onUnhide: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.media_hidden_folders)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    stringResource(R.string.media_hidden_folders_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                paths.forEach { path ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(label(path), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                stringResource(R.string.media_hidden_count, counts[path] ?: 0),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = { onUnhide(path) }) { Text(stringResource(R.string.media_unhide)) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
+    )
 }
 
 @Composable

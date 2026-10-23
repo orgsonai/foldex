@@ -214,6 +214,8 @@
     <string name="home_termux_note">This belongs to another app. Root access or sharing from Termux is required.</string>
     <string name="home_sd_card">SD card</string>
     <string name="home_all_files_required">All files access is required</string>
+    <string name="home_change_open_with">Open with</string>
+    <string name="home_file_missing">File not found. It may have been moved or deleted</string>
 
     <!-- File browser and drawer -->
     <string name="drawer_quick_access">Quick access</string>
@@ -330,8 +332,8 @@
     <string name="folder_not_found">Folder not found: %1$s</string>
     <string name="share_chooser_title">Share</string>
     <string name="share_failed">Could not share: %1$s</string>
-    <string name="home_local_folders_only">Only local folders can be added to Home</string>
-    <plurals name="home_folders_added"><item quantity="one">Added %d folder to Home</item><item quantity="other">Added %d folders to Home</item></plurals>
+    <string name="home_local_folders_only">Only folders and files on this device can be added to Home</string>
+    <plurals name="home_folders_added"><item quantity="one">Added %d item to Home</item><item quantity="other">Added %d items to Home</item></plurals>
     <string name="operation_compressing">Compressing…</string>
     <string name="operation_compress_failed">Compression failed: %1$s</string>
     <string name="operation_destination_unresolved">Could not resolve the destination</string>
@@ -810,6 +812,15 @@
     <string name="media_permission_required">Permission is required to access media</string>
     <string name="media_permission_help">If you have already granted “All files access,” go back and open this screen again.</string>
     <string name="media_permission_grant">Allow media access</string>
+    <string name="media_hide_folder">Hide</string>
+    <string name="media_hide_title">Hide from which folder?</string>
+    <string name="media_hide_help">The chosen folder and every folder inside it are hidden from Images and Videos. No files are deleted, and they still appear in the file list.</string>
+    <string name="media_hide_choice_count">Hides %1$d folders · %2$d items</string>
+    <string name="media_folder_hidden">Hid “%1$s”</string>
+    <string name="media_hidden_folders">Hidden folders</string>
+    <string name="media_hidden_folders_help">Tap Show to bring a folder back. This list is shared by Images and Videos.</string>
+    <string name="media_hidden_count">%1$d items</string>
+    <string name="media_unhide">Show</string>
     <!-- Viewer shell -->
     <string name="viewer_external_open_failed">Could not open this file.</string>
     <string name="viewer_loading">Loading %1$s…</string>
@@ -1108,6 +1119,9 @@
 
     <!-- Video editor -->
     <string name="viewer_edit_video">Edit video (testing)</string>
+    <string name="viewer_pip">Pop-up player</string>
+    <string name="viewer_pip_pause">Pause</string>
+    <string name="viewer_pip_play">Play</string>
     <string name="sel_open_video_editor">Open in video editor (testing)</string>
     <string name="video_edit_open_no_local_video">Select at least one video stored on this device.</string>
     <string name="video_edit_open_local_only">Files on NAS or other storage were skipped. The video editor is in testing and only uses files on this device.</string>

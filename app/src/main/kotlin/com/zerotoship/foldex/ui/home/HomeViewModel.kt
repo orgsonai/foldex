@@ -4,20 +4,32 @@
 package com.zerotoship.foldex.ui.home
 
 import android.content.Context
+import android.content.Intent
 import android.os.Environment
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zerotoship.foldex.R
 import com.zerotoship.foldex.core.data.repo.ConnectionRepository
 import com.zerotoship.foldex.core.data.repo.HomeShortcutRepository
+import com.zerotoship.foldex.core.data.repo.OpenWithMode
+import com.zerotoship.foldex.core.data.repo.OpenWithRepository
+import com.zerotoship.foldex.core.data.repo.SettingsRepository
 import com.zerotoship.foldex.core.model.Connection
+import com.zerotoship.foldex.core.model.home.FileOpenTarget
 import com.zerotoship.foldex.core.model.home.HomeFunction
 import com.zerotoship.foldex.core.model.home.HomeShortcut
+import com.zerotoship.foldex.core.model.filetype.Category
+import com.zerotoship.foldex.core.model.filetype.FileTypeRegistry
+import com.zerotoship.foldex.ui.archive.ArchiveExplorerActivity
+import com.zerotoship.foldex.ui.filebrowser.ZipOps
+import com.zerotoship.foldex.ui.viewer.ViewerActivity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -38,6 +50,8 @@ class HomeViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repo: HomeShortcutRepository,
     private val connections: ConnectionRepository,
+    private val openWithRepo: OpenWithRepository,
+    private val settingsRepo: SettingsRepository,
 ) : ViewModel() {
 
     /** 接続タブ全部の Connection (ハンバーガードロワー表示と「追加」候補に使う)。 */
@@ -83,8 +97,15 @@ class HomeViewModel @Inject constructor(
         all.filter { it.id in hidden }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** パスがファイルならファイルのタイル、それ以外はフォルダのタイルとして追加する。 */
     fun addLocalFolder(label: String, path: String) {
-        viewModelScope.launch { repo.addLocalFolder(label, path) }
+        viewModelScope.launch {
+            if (File(path).isFile) repo.addLocalFile(label, path) else repo.addLocalFolder(label, path)
+        }
+    }
+
+    fun setFileOpenTarget(id: String, target: FileOpenTarget) {
+        viewModelScope.launch { repo.setFileOpenTarget(id, target) }
     }
 
     fun addSafFolder(label: String, documentUri: String) {
@@ -110,8 +131,105 @@ class HomeViewModel @Inject constructor(
 
     data class SafTree(val label: String, val documentUri: String)
 
+    // --- HOME に置いたファイル ---
+
+    /**
+     * タイルのファイルを開く Intent を作る。ファイルが無くなっていれば null。
+     *
+     * 「自動」はファイル一覧でタップしたときと同じ順で決める
+     * (APK はインストール、ZIP は中身の閲覧、内蔵ビューアがあれば内蔵、無ければアプリを選ぶ)。
+     */
+    suspend fun openIntentFor(sc: HomeShortcut.LocalFile): Intent? {
+        val file = File(sc.path)
+        if (!file.isFile) return null
+        val category = categoryOf(file)
+        val external = { chooser: Boolean ->
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(fileProviderUri(file), mimeOf(file))
+                // 外部エディタが保存できるよう WRITE も付ける (ファイル一覧と同じ)。
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            if (chooser) Intent.createChooser(view, file.name) else view
+        }
+        val builtIn = {
+            when {
+                category == Category.ARCHIVE && ZipOps.isLikelyZip(file.name) ->
+                    ArchiveExplorerActivity.intent(context = context, localZipPath = file.absolutePath, name = file.name)
+                category.hasBuiltInViewer -> ViewerActivity.intent(
+                    context = context,
+                    localPath = file.absolutePath,
+                    name = file.name,
+                    category = category,
+                    editable = true,
+                    editableLimitKb = settingsRepo.loaded.value?.editorEditableLimitKb ?: 512,
+                )
+                else -> external(true)
+            }
+        }
+        return when (val target = sc.openWith) {
+            FileOpenTarget.BuiltIn -> builtIn()
+            FileOpenTarget.Ask -> external(true)
+            is FileOpenTarget.App -> external(false).setPackage(target.packageName)
+            FileOpenTarget.Auto -> {
+                val ext = file.name.substringAfterLast('.', "").lowercase()
+                when (openWithRepo.overrides.first()[ext] ?: OpenWithMode.DEFAULT) {
+                    OpenWithMode.EXTERNAL -> external(false)
+                    OpenWithMode.ASK -> external(true)
+                    else -> if (category == Category.APK) {
+                        Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(fileProviderUri(file), "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                    } else {
+                        builtIn()
+                    }
+                }
+            }
+        }
+    }
+
+    /** 内蔵ビューアで開けるファイルか (開き方の選択肢に「内蔵ビューア」を出すかどうか)。 */
+    fun hasBuiltInViewer(sc: HomeShortcut.LocalFile): Boolean {
+        val file = File(sc.path)
+        val category = categoryOf(file)
+        return category.hasBuiltInViewer || (category == Category.ARCHIVE && ZipOps.isLikelyZip(file.name))
+    }
+
+    /** このファイルを開ける端末のアプリ。Foldex 自身は「内蔵ビューア」で選べるので除く。 */
+    fun appsFor(sc: HomeShortcut.LocalFile): List<AppChoice> = runCatching {
+        val file = File(sc.path)
+        val pm = context.packageManager
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(fileProviderUri(file), mimeOf(file))
+        pm.queryIntentActivities(view, 0)
+            .map { it.activityInfo.packageName }
+            .distinct()
+            .filter { it != context.packageName }
+            .map { AppChoice(it, appLabel(it)) }
+            .sortedBy { it.label.lowercase() }
+    }.getOrElse { emptyList() }
+
+    /** アプリの表示名。アンインストール済みなどで引けなければパッケージ名のまま。 */
+    fun appLabel(packageName: String): String = runCatching {
+        val pm = context.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+    }.getOrElse { packageName }
+
+    data class AppChoice(val packageName: String, val label: String)
+
+    private fun categoryOf(file: File): Category {
+        val category = FileTypeRegistry.categorize(file.name)
+        // 拡張子の無い空ファイルは、ファイル一覧と同じく書きかけのテキストとして扱う。
+        return if (category == Category.UNKNOWN && file.length() == 0L) Category.TEXT else category
+    }
+
+    private fun mimeOf(file: File): String = FileTypeRegistry.mimeTypeFor(file.name) ?: "*/*"
+
+    private fun fileProviderUri(file: File) =
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
     private fun HomeShortcut.withLabel(newLabel: String): HomeShortcut = when (this) {
         is HomeShortcut.LocalFolder -> copy(label = newLabel)
+        is HomeShortcut.LocalFile -> copy(label = newLabel)
         is HomeShortcut.SafFolder -> copy(label = newLabel)
         is HomeShortcut.RemoteConnection -> copy(label = newLabel)
         is HomeShortcut.Function -> copy(label = newLabel)

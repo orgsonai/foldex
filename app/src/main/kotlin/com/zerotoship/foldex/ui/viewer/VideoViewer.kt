@@ -5,6 +5,10 @@ package com.zerotoship.foldex.ui.viewer
 
 import android.view.ViewGroup
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,13 +24,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -51,6 +61,10 @@ import java.io.File
  * - リモートファイルは [mediaUri] (content://com.zerotoship.foldex.streaming/...) を直接渡し、
  *   ContentProvider 経由で pipe ストリーミング再生する (全DLを待たない)。
  *   ローカルファイルは [file] から file URI を組み立てる。
+ * - 2 本指でつまむと拡大・縮小 (1〜5 倍)、拡大中は 1 本指でずらせる。
+ *   操作バーは拡大せず、映像の面 ([PlayerView.getVideoSurfaceView]) だけを拡大する。
+ * - ポップアップ再生 (PiP) 中は小窓に操作ボタンを重ねない。一時停止は小窓のボタンで行う
+ *   ([ViewerActivity] が [onPlayerChanged] で受け取ったプレーヤーを操作する)。
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -65,6 +79,10 @@ fun VideoViewer(
      */
     mediaUri: String? = null,
     onOpenExternally: (File) -> Unit = {},
+    /** ポップアップ再生 (PiP) の小窓に出ているか。 */
+    inPip: Boolean = false,
+    /** 再生に使うプレーヤーを Activity へ渡す (ポップアップ再生の操作用)。破棄時は null。 */
+    onPlayerChanged: (Player?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -102,9 +120,54 @@ fun VideoViewer(
             playWhenReady = true
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
+    DisposableEffect(player) {
+        onPlayerChanged(player)
+        onDispose {
+            onPlayerChanged(null)
+            player.release()
+        }
+    }
 
-    Box(modifier.fillMaxSize().background(Color.Black)) {
+    // つまんで拡大した倍率と、拡大中にずらした量 (px)。動画を替えたり小窓にしたら元に戻す。
+    var zoom by remember(playUri) { mutableFloatStateOf(1f) }
+    var pan by remember(playUri) { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(inPip) {
+        if (inPip) {
+            zoom = 1f
+            pan = Offset.Zero
+        }
+    }
+
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(playUri, inPip) {
+                if (inPip) return@pointerInput
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    do {
+                        // PlayerView より先に受け取る (Initial)。消費すると PlayerView にはキャンセルが届き、
+                        // つまんだだけで操作バーが出たり消えたりしない。
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val fingers = event.changes.count { it.pressed }
+                        // 1 本指は拡大中だけずらす。等倍のときはタップを PlayerView に任せる。
+                        if (fingers >= 2 || zoom > 1f) {
+                            val newZoom = (zoom * event.calculateZoom()).coerceIn(1f, 5f)
+                            val maxX = size.width * (newZoom - 1f) / 2f
+                            val maxY = size.height * (newZoom - 1f) / 2f
+                            val moved = pan + event.calculatePan()
+                            val changed = newZoom != zoom || moved != pan
+                            zoom = newZoom
+                            pan = Offset(moved.x.coerceIn(-maxX, maxX), moved.y.coerceIn(-maxY, maxY))
+                            if (fingers >= 2 || changed) {
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
+    ) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -120,6 +183,16 @@ fun VideoViewer(
             update = { view ->
                 // 再生中だけ keepScreenOn を立てる。一時停止/終了でディスプレイは通常通り消える。
                 view.keepScreenOn = isPlaying
+                // 小窓では操作バーが映像を覆ってしまうので出さない。
+                view.useController = !inPip
+                if (inPip) view.hideController()
+                // SurfaceView は Compose の graphicsLayer では拡大できないので、映像の面の View を直接拡大する。
+                view.videoSurfaceView?.apply {
+                    scaleX = zoom
+                    scaleY = zoom
+                    translationX = pan.x
+                    translationY = pan.y
+                }
             },
             modifier = Modifier.fillMaxSize(),
         )

@@ -55,10 +55,16 @@ class MediaCollectionViewModel @Inject constructor(
         // 削除の行き先は設定に従う。ファイルブラウザ側と同じ挙動にするため同じ設定を見る。
         viewModelScope.launch {
             settingsRepo.settings.collect { s ->
+                val hiddenChanged = s.hiddenMediaFolders != _state.value.hiddenFolders
                 _state.value = _state.value.copy(
                     deleteBehavior = s.deleteBehavior,
                     confirmBeforeDelete = s.confirmBeforeDelete,
+                    hiddenFolders = s.hiddenMediaFolders,
+                    // 最後の 1 つを戻したら、空の一覧を出し続けない。
+                    showingHiddenFolders = _state.value.showingHiddenFolders && s.hiddenMediaFolders.isNotEmpty(),
                 )
+                // 非表示を変えたら、端末を読み直さずに手元の一覧から絞り直す。
+                if (hiddenChanged) applyItems()
             }
         }
     }
@@ -103,10 +109,96 @@ class MediaCollectionViewModel @Inject constructor(
         viewModelScope.launch { loadItems() }
     }
 
+    /** 端末から読んだ全件。非表示のフォルダもここには残し、[applyItems] で絞る。 */
+    private var allItems: List<MediaItem> = emptyList()
+
     private suspend fun loadItems() {
-        val items = withContext(Dispatchers.IO) { runCatching { query() }.getOrElse { emptyList() } }
-        val folders = computeFolders(items)
-        _state.value = _state.value.copy(items = items, folders = folders)
+        allItems = withContext(Dispatchers.IO) { runCatching { query() }.getOrElse { emptyList() } }
+        applyItems()
+    }
+
+    /** [allItems] から非表示のフォルダを除いて一覧とフォルダを作り直す。 */
+    private fun applyItems() {
+        val current = _state.value
+        val hidden = current.hiddenFolders
+        val items = allItems.filter { item -> item.filePath?.let { isUnderHidden(File(it).parent, hidden) } != true }
+        val opened = current.openedFolder?.takeUnless { isUnderHidden(it, hidden) }
+        val keys = items.mapTo(HashSet()) { it.contentUri.toString() }
+        _state.value = current.copy(
+            items = items,
+            folders = computeFolders(items),
+            hiddenItemCounts = hidden.associateWith { h ->
+                allItems.count { item -> item.filePath?.let { isUnderHidden(File(it).parent, setOf(h)) } == true }
+            },
+            openedFolder = opened,
+            selectedUris = current.selectedUris.filterTo(HashSet()) { it in keys },
+        )
+    }
+
+    // --- フォルダの非表示 ---
+
+    /**
+     * フォルダを隠す前に、どの階層で隠すかを選ばせる。
+     * サムネイルのキャッシュなどは 1 つの親の下に大量のフォルダを作るので、親ごと隠せるようにする。
+     */
+    fun requestHideFolder(folderPath: String) {
+        if (folderPath == OTHER_FOLDER_PATH) return
+        val roots = storageRoots()
+        val folders = _state.value.folders
+        val choices = ArrayList<HideChoice>()
+        var cur: File? = File(folderPath)
+        // 端末のストレージの一番上 (/storage/emulated/0 など) は隠す候補にしない。全部消えてしまうため。
+        while (cur != null && cur.path != "/" && cur.path !in roots) {
+            val path = cur.path
+            val under = folders.filter { isUnderHidden(it.path, setOf(path)) }
+            choices.add(
+                HideChoice(
+                    path = path,
+                    label = relativeToRoot(path, roots),
+                    folderCount = under.size,
+                    itemCount = under.sumOf { it.count },
+                ),
+            )
+            cur = cur.parentFile
+        }
+        if (choices.isEmpty()) return
+        _state.value = _state.value.copy(hideChoices = choices)
+    }
+
+    fun dismissHideDialog() {
+        _state.value = _state.value.copy(hideChoices = null)
+    }
+
+    fun hideFolder(path: String) {
+        _state.value = _state.value.copy(hideChoices = null)
+        viewModelScope.launch {
+            settingsRepo.hideMediaFolder(path)
+            _state.value = _state.value.copy(
+                lastMessage = context.getString(R.string.media_folder_hidden, File(path).name),
+            )
+        }
+    }
+
+    fun showHiddenFolders(show: Boolean) {
+        _state.value = _state.value.copy(showingHiddenFolders = show)
+    }
+
+    fun unhideFolder(path: String) {
+        viewModelScope.launch { settingsRepo.unhideMediaFolder(path) }
+    }
+
+    /** 非表示の一覧に出す、端末のストレージの一番上からの道のり。 */
+    fun hiddenFolderLabel(path: String): String = relativeToRoot(path, storageRoots())
+
+    /** 端末のストレージの一番上 (内部ストレージ・SD カード)。外部ファイル置き場の手前までを使う。 */
+    private fun storageRoots(): Set<String> =
+        context.getExternalFilesDirs(null)
+            .mapNotNull { dir -> dir?.path?.substringBefore("/Android/data/", "")?.takeIf { it.isNotEmpty() } }
+            .toSet()
+
+    private fun relativeToRoot(path: String, roots: Set<String>): String {
+        val root = roots.firstOrNull { path.startsWith("$it/") } ?: return path
+        return path.removePrefix("$root/")
     }
 
     /** 指定パス配下に「入る」(= フォルダごとビューから一覧へ)。`null` で全フォルダ一覧に戻る。 */
@@ -436,6 +528,20 @@ data class MediaFolder(
     val latestModifiedSec: Long,
 )
 
+/** フォルダを隠すときの階層の候補。[folderCount] と [itemCount] は隠すと一覧から消える数。 */
+data class HideChoice(
+    val path: String,
+    val label: String,
+    val folderCount: Int,
+    val itemCount: Int,
+)
+
+/** [path] が [hidden] のどれかと同じか、その中にあるか。`null` (実体パス不明) は隠さない。 */
+internal fun isUnderHidden(path: String?, hidden: Set<String>): Boolean {
+    if (path == null || hidden.isEmpty()) return false
+    return hidden.any { path == it || path.startsWith("$it/") }
+}
+
 data class MediaCollectionState(
     val kind: MediaKind,
     val items: List<MediaItem> = emptyList(),
@@ -456,6 +562,14 @@ data class MediaCollectionState(
     val renameNode: FileNode? = null,
     /** プロパティダイアログの対象 (null なら出さない)。 */
     val propertiesTarget: FileNode? = null,
+    /** 隠すフォルダ (と配下) の絶対パス。設定に保存され、画像と動画で共通。 */
+    val hiddenFolders: Set<String> = emptySet(),
+    /** 非表示にしたフォルダごとの、一覧から外した件数。 */
+    val hiddenItemCounts: Map<String, Int> = emptyMap(),
+    /** どの階層で隠すかの候補 (null ならダイアログを出さない)。深い順。 */
+    val hideChoices: List<HideChoice>? = null,
+    /** 非表示にしたフォルダの一覧を出しているか。 */
+    val showingHiddenFolders: Boolean = false,
     /** 設定「削除の行き先」。ファイルブラウザと同じ設定を見る。 */
     val deleteBehavior: DeleteBehavior = DeleteBehavior.TRASH,
     val confirmBeforeDelete: Boolean = true,
