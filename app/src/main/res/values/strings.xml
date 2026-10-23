@@ -1141,6 +1141,11 @@
     <string name="popup_channel_desc">Shown while a video plays in the Foldex pop-up window</string>
     <string name="popup_notification_text">Playing in the pop-up window</string>
     <string name="popup_skip_seconds">%ds</string>
+    <string name="viewer_speed">Playback speed</string>
+    <string name="viewer_brightness">Brightness</string>
+    <string name="viewer_volume">Volume</string>
+    <string name="viewer_resumed_at">Resumed from %1$s</string>
+    <string name="viewer_play_from_start">Start over</string>
     <string name="sel_open_video_editor">Open in video editor (testing)</string>
     <string name="video_edit_open_no_local_video">Select at least one video stored on this device.</string>
     <string name="video_edit_open_local_only">Files on NAS or other storage were skipped. The video editor is in testing and only uses files on this device.</string>

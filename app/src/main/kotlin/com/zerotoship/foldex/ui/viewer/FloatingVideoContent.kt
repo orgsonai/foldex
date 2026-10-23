@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.SouthEast
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -33,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -47,7 +50,7 @@ import kotlinx.coroutines.delay
  * Foldex の小窓の中身。映像を窓いっぱいに出し、タップで操作ボタンを出し入れする。
  *
  * 操作ボタンは中央に「巻き戻し・再生/一時停止・早送り」、左上に「閉じる」、右上に「全画面に戻す」、
- * 右下に大きさを変えるつまみ (つまみの操作そのものは [FloatingVideoFrame] が受ける)。
+ * 左下に再生速度、右下に大きさを変えるつまみ (つまみの操作そのものは [FloatingVideoFrame] が受ける)。
  * 再生中は最後の操作から [AUTO_HIDE_MS] で操作ボタンを隠す。
  */
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -60,6 +63,9 @@ internal fun FloatingVideoContent(
     interactionCount: Int,
     /** 巻き戻し・早送りボタンに添える量 (例: 「10秒」「5%」)。 */
     skipLabel: String,
+    /** 今の再生速度。左下のボタンに出し、押すと次の速度へ。 */
+    speed: Float,
+    onCycleSpeed: () -> Unit,
     onToggleControls: () -> Unit,
     onHideControls: () -> Unit,
     onTogglePlay: () -> Unit,
@@ -75,6 +81,7 @@ internal fun FloatingVideoContent(
             onHideControls()
         }
     }
+    val speedDescription = stringResource(R.string.viewer_speed)
     Box(
         modifier
             .fillMaxSize()
@@ -123,6 +130,13 @@ internal fun FloatingVideoContent(
             }
             IconButton(onClick = onExpand, modifier = Modifier.align(Alignment.TopEnd)) {
                 Icon(Icons.Default.OpenInFull, contentDescription = stringResource(R.string.popup_expand), tint = Color.White)
+            }
+            TextButton(onClick = onCycleSpeed, modifier = Modifier.align(Alignment.BottomStart)) {
+                Text(
+                    videoSpeedLabel(speed),
+                    color = Color.White,
+                    modifier = Modifier.semantics { contentDescription = speedDescription },
+                )
             }
             Icon(
                 Icons.Default.SouthEast,

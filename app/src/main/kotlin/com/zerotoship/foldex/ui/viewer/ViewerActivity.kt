@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -256,6 +257,7 @@ class ViewerActivity : ComponentActivity() {
             source = source,
             positionMs = player.currentPosition,
             playing = player.playWhenReady,
+            speed = player.playbackParameters.speed,
             skip = currentSettings.videoSkip,
         )
         player.pause()
@@ -337,6 +339,7 @@ class ViewerActivity : ComponentActivity() {
         if (category == Category.VIDEO) videoSource = FloatingVideoService.Source(path, name, streamingMediaUri)
         val startPositionMs = intent.getLongExtra(EXTRA_START_POSITION, 0L)
         val startPlaying = intent.getBooleanExtra(EXTRA_START_PLAYING, true)
+        val startSpeed = intent.getFloatExtra(EXTRA_START_SPEED, 1f)
         val htmlSite: HtmlSite? = run {
             val uris = intent.getStringArrayExtra(EXTRA_HTML_FOLDER_URIS)?.map { FileUri.fromStorageStringOrNull(it) }
             val names = intent.getStringArrayExtra(EXTRA_HTML_FOLDER_NAMES)?.toList()
@@ -388,6 +391,7 @@ class ViewerActivity : ComponentActivity() {
                     videoSkip = settings.videoSkip,
                     startPositionMs = startPositionMs,
                     startPlaying = startPlaying,
+                    initialVideoSpeed = startSpeed,
                 )
                 OverlayPermissionDialog()
             }
@@ -612,6 +616,7 @@ class ViewerActivity : ComponentActivity() {
         private const val EXTRA_HTML_FOLDER_NAMES = "foldex.viewer.html_folder_names"
         private const val EXTRA_START_POSITION = "foldex.viewer.start_position"
         private const val EXTRA_START_PLAYING = "foldex.viewer.start_playing"
+        private const val EXTRA_START_SPEED = "foldex.viewer.start_speed"
 
         fun intent(
             context: Context,
@@ -634,6 +639,7 @@ class ViewerActivity : ComponentActivity() {
             /** 動画を再生し始める位置と、すぐ再生するか (Foldex の小窓から全画面に戻すとき)。 */
             startPositionMs: Long = 0L,
             startPlaying: Boolean = true,
+            startSpeed: Float = 1f,
         ): Intent =
             Intent(context, ViewerActivity::class.java)
                 .putExtra(EXTRA_PATH, localPath)
@@ -643,6 +649,7 @@ class ViewerActivity : ComponentActivity() {
                 .putExtra(EXTRA_EDITABLE_LIMIT_KB, editableLimitKb)
                 .putExtra(EXTRA_START_POSITION, startPositionMs)
                 .putExtra(EXTRA_START_PLAYING, startPlaying)
+                .putExtra(EXTRA_START_SPEED, startSpeed)
                 .apply {
                     if (siblings.isNotEmpty()) putExtra(EXTRA_SIBLINGS, siblings.toTypedArray())
                     if (!initialImageId.isNullOrBlank()) putExtra(EXTRA_INITIAL_ID, initialImageId)
@@ -759,11 +766,14 @@ private fun ViewerScreen(
     /** 動画を再生し始める位置と、すぐ再生するか。 */
     startPositionMs: Long = 0L,
     startPlaying: Boolean = true,
+    /** 動画の再生速度の初期値 (Foldex の小窓から戻したとき、小窓の速度を引き継ぐ)。 */
+    initialVideoSpeed: Float = 1f,
 ) {
     // Markdown / HTML はソース編集をデフォルトにし、プレビューはトグルで切替える
     // (HANDOFF §10-E / §10-F: 「ソース表示とプレビュー表示の切替」)。
     val canPreview = category == Category.MARKDOWN || category == Category.HTML
     var previewMode by remember { mutableStateOf(false) }
+    var videoSpeed by remember { mutableFloatStateOf(initialVideoSpeed) }
 
     // 画像はスワイプで前後の画像へ。Intent で運ばれた siblings を最優先、
     // それが無い/不完全なら同フォルダから listFiles で集める (ローカル実ファイル限定の fallback)。
@@ -839,6 +849,9 @@ private fun ViewerScreen(
                             Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.viewer_edit_image))
                         }
                     }
+                    if (category == Category.VIDEO && !inPip) {
+                        VideoSpeedButton(speed = videoSpeed, onSpeedChange = { videoSpeed = it })
+                    }
                     if (category == Category.VIDEO && onEnterPip != null) {
                         IconButton(onClick = onEnterPip) {
                             Icon(Icons.Default.PictureInPictureAlt, contentDescription = stringResource(R.string.viewer_pip))
@@ -904,6 +917,8 @@ private fun ViewerScreen(
                     skip = videoSkip,
                     startPositionMs = startPositionMs,
                     startPlaying = startPlaying,
+                    speed = videoSpeed,
+                    onSpeedChange = { videoSpeed = it },
                 )
                 Category.PDF -> PdfViewer(file, Modifier.fillMaxSize())
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

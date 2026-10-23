@@ -20,6 +20,7 @@ import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
@@ -87,11 +88,14 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
     private val isPlayingState = mutableStateOf(false)
     private val controlsVisibleState = mutableStateOf(true)
     private val interactionCount = mutableIntStateOf(0)
+    private val speedState = mutableFloatStateOf(1f)
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             isPlayingState.value = isPlaying
             notifyState()
+            // 止めるたびに位置を覚える (全画面のビューアと同じく、次に開くと続きから)。
+            if (!isPlaying) savePosition()
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -102,7 +106,10 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             // 最後まで再生したら、次の操作がすぐできるようにボタンを出す。
-            if (playbackState == Player.STATE_ENDED) controlsVisibleState.value = true
+            if (playbackState == Player.STATE_ENDED) {
+                controlsVisibleState.value = true
+                source?.let { VideoPositionStore.remove(this@FloatingVideoService, it.playUri) }
+            }
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -146,6 +153,8 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         removeWindow()
+        // 新しくビューアを開いたなどで、外から止められたときも位置を覚える。
+        savePosition()
         player?.removeListener(playerListener)
         player?.release()
         player = null
@@ -195,9 +204,11 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
                 setMediaItem(MediaItem.fromUri(src.playUri))
                 val position = intent.getLongExtra(EXTRA_POSITION, 0L)
                 if (position > 0) seekTo(position)
+                setPlaybackSpeed(intent.getFloatExtra(EXTRA_SPEED, 1f))
                 prepare()
                 playWhenReady = intent.getBooleanExtra(EXTRA_PLAYING, true)
             }
+        speedState.floatValue = newPlayer.playbackParameters.speed
         player = newPlayer
         aspect = DEFAULT_ASPECT
         controlsVisibleState.value = !newPlayer.playWhenReady
@@ -253,6 +264,8 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
                         controlsVisible = controlsVisibleState.value,
                         interactionCount = interactionCount.intValue,
                         skipLabel = skipLabel(),
+                        speed = speedState.floatValue,
+                        onCycleSpeed = { cycleSpeed(); interactionCount.intValue++ },
                         onToggleControls = {
                             controlsVisibleState.value = !controlsVisibleState.value
                             interactionCount.intValue++
@@ -355,6 +368,22 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
         }
     }
 
+    /** 小窓の速度ボタン。押すたびに次の速度へ (2 倍の次は 0.5 倍に戻る)。 */
+    private fun cycleSpeed() {
+        val p = player ?: return
+        val index = VIDEO_SPEEDS.indexOf(speedState.floatValue)
+        val next = VIDEO_SPEEDS[(index + 1).mod(VIDEO_SPEEDS.size)]
+        p.setPlaybackSpeed(next)
+        speedState.floatValue = next
+    }
+
+    private fun savePosition() {
+        val p = player ?: return
+        val src = source ?: return
+        if (p.playbackState == Player.STATE_ENDED) return
+        VideoPositionStore.save(this, src.playUri, p.currentPosition, p.duration)
+    }
+
     /** [direction] が負なら巻き戻し、正なら早送り。 */
     private fun seekBy(direction: Int) {
         val p = player ?: return
@@ -376,6 +405,7 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
                 streamingMediaUri = src.streamingUri,
                 startPositionMs = p.currentPosition,
                 startPlaying = p.isPlaying,
+                startSpeed = p.playbackParameters.speed,
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             // 「他のアプリの上に重ねて表示」の許可があるので、裏からでも画面を開ける。
             runCatching { startActivity(intent) }
@@ -385,6 +415,7 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
 
     private fun stopNow() {
         removeWindow()
+        savePosition()
         player?.pause()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -453,6 +484,7 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
         private const val EXTRA_STREAMING_URI = "streaming_uri"
         private const val EXTRA_POSITION = "position"
         private const val EXTRA_PLAYING = "playing"
+        private const val EXTRA_SPEED = "speed"
         private const val EXTRA_SKIP_AMOUNT = "skip_amount"
         private const val EXTRA_SKIP_PERCENT = "skip_percent"
         private const val CHANNEL_ID = "foldex_video_popup"
@@ -476,7 +508,7 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
             private set
 
         /** 小窓で再生を始める。画面が前面にある間に呼ぶ。許可の確認は呼び出し側で済ませておく。 */
-        fun start(context: Context, source: Source, positionMs: Long, playing: Boolean, skip: VideoSkip) {
+        fun start(context: Context, source: Source, positionMs: Long, playing: Boolean, speed: Float, skip: VideoSkip) {
             val intent = Intent(context, FloatingVideoService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_PATH, source.localPath)
@@ -484,6 +516,7 @@ class FloatingVideoService : Service(), LifecycleOwner, SavedStateRegistryOwner 
                 .putExtra(EXTRA_STREAMING_URI, source.streamingUri)
                 .putExtra(EXTRA_POSITION, positionMs)
                 .putExtra(EXTRA_PLAYING, playing)
+                .putExtra(EXTRA_SPEED, speed)
                 .putExtra(EXTRA_SKIP_AMOUNT, skip.amount)
                 .putExtra(EXTRA_SKIP_PERCENT, skip.percent)
             ContextCompat.startForegroundService(context, intent)

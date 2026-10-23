@@ -1131,6 +1131,11 @@
     <string name="popup_channel_desc">Foldex の小窓で動画を再生している間に表示します</string>
     <string name="popup_notification_text">小窓で再生中</string>
     <string name="popup_skip_seconds">%d秒</string>
+    <string name="viewer_speed">再生速度</string>
+    <string name="viewer_brightness">明るさ</string>
+    <string name="viewer_volume">音量</string>
+    <string name="viewer_resumed_at">%1$s から続きを再生</string>
+    <string name="viewer_play_from_start">最初から</string>
     <string name="sel_open_video_editor">動画編集で開く（テスト中）</string>
     <string name="video_edit_open_no_local_video">端末内の動画を 1 つ以上選んでください。</string>
     <string name="video_edit_open_local_only">NAS などにあるファイルは除きました。テスト中の動画編集は端末内のファイルだけを使えます。</string>
